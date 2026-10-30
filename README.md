@@ -4,7 +4,7 @@
 
 `实时监控` · `帧耗时` · `启动测试` · `布局检查` · `系统追踪` · `APK 分析`
 
-参考 [AndroidPerformanceStudio](https://github.com/yuchuangu85/AndroidPerformanceStudio) 的工作台组织方式独立实现；目前聚焦核心采集与离线分析，尚未复刻参考项目的全部功能。
+目前聚焦核心采集与离线分析。
 
 ---
 

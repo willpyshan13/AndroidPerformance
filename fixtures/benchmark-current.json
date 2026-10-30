@@ -1,0 +1,7 @@
+{
+  "context": { "build": { "model": "Example device", "version": { "sdk": 34 } } },
+  "benchmarks": [{ "className": "com.example.StartupBenchmark", "name": "startup", "metrics": {
+    "timeToInitialDisplayMs": { "median": 408, "runs": [395, 408, 420] },
+    "frameDurationCpuMs": { "median": 13.02, "runs": [12.2, 13.02, 14] }
+  } }]
+}

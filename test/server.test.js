@@ -1,0 +1,33 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { once } from 'node:events';
+import { request } from 'node:http';
+import { createApp } from '../src/server.js';
+
+test('local HTTP API, origin protection, frames import and persistent session round-trip',async t=>{
+  const dir=await mkdtemp(join(tmpdir(),'apw-test-'));
+  const adb={path:'/fake/adb',devices:async()=>[{serial:'ABC',state:'device',model:'Pixel'}]};
+  const app=createApp({adb,dataDir:dir,token:'test-token'});app.listen(0,'127.0.0.1');await once(app,'listening');
+  t.after(async()=>{await new Promise(r=>app.close(r));await rm(dir,{recursive:true,force:true});});
+  const base=`http://127.0.0.1:${app.address().port}`;
+  const headers={'X-Workbench-Token':'test-token','Content-Type':'application/json'};
+  const html=await (await fetch(base)).text();assert.match(html,/test-token/);assert.doesNotMatch(html,/__API_TOKEN__/);
+  assert.equal((await fetch(`${base}/api/devices`)).status,403);
+  assert.equal((await fetch(`${base}/api/devices`,{headers:{...headers,Origin:'https://evil.example'}})).status,403);
+  const invalidHostStatus=await new Promise((resolve,reject)=>{const req=request(`${base}/api/devices`,{headers:{...headers,Host:'evil.example'}},res=>{res.resume();resolve(res.statusCode);});req.on('error',reject);req.end();});
+  assert.equal(invalidHostStatus,403);
+  assert.equal((await (await fetch(`${base}/api/devices`,{headers})).json()).devices[0].serial,'ABC');
+  assert.equal((await fetch(`${base}/api/sessions`,{method:'POST',headers,body:'bad JSON'})).status,400);
+  const record={name:'演示监控',kind:'monitor',source:'demo',packageName:'com.example.app',payload:{samples:[{source:'demo',timestamp:1,cpu:{percent:10}}]}};
+  const response=await fetch(`${base}/api/sessions`,{method:'POST',headers,body:JSON.stringify(record)});assert.equal(response.status,201);
+  const saved=await response.json();assert.equal(saved.schemaVersion,1);
+  const list=await (await fetch(`${base}/api/sessions`,{headers})).json();assert.equal(list.sessions[0].id,saved.id);assert.equal(list.sessions[0].source,'demo');
+  const loaded=await (await fetch(`${base}/api/sessions/${saved.id}`,{headers})).json();assert.deepEqual(loaded.payload,record.payload);
+  assert.equal((await fetch(`${base}/api/sessions/00000000-0000-0000-0000-000000000000`,{headers})).status,404);
+  const text=await readFile(new URL('../fixtures/gfxinfo.txt',import.meta.url),'utf8');
+  const frames=await (await fetch(`${base}/api/frames/import`,{method:'POST',headers,body:JSON.stringify({text,budget:16.667})})).json();assert.equal(frames.source,'import');assert.equal(frames.count,4);
+  assert.equal((await fetch(`${base}/api/frames/import`,{method:'POST',headers,body:JSON.stringify({text:'invalid',budget:16.667})})).status,400);
+});

@@ -1,0 +1,88 @@
+{
+  "name": "android-performance-workbench",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.js",
+  "author": "Android Performance Workbench",
+  "description": "Local-first Android performance workbench powered by ADB",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "desktop": "electron .",
+    "package:mac": "electron-builder --mac dir --arm64",
+    "package:dmg": "electron-builder --mac dmg --arm64",
+    "package:win": "electron-builder --win nsis --x64",
+    "package:linux": "electron-builder --linux AppImage",
+    "test": "node --test",
+    "test:device": "node scripts/device-smoke.js",
+    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check scripts/prepare-apk-tools.js",
+    "prepare:adb": "bash scripts/prepare-adb.sh",
+    "prepare:apk-tools": "node scripts/prepare-apk-tools.js"
+  },
+  "build": {
+    "appId": "dev.androidperformance.workbench",
+    "productName": "Android Performance",
+    "asar": true,
+    "directories": {
+      "output": "dist/v${version}",
+      "buildResources": "desktop/resources"
+    },
+    "files": [
+      "desktop/main.js",
+      "desktop/preload.cjs",
+      "desktop/resources/icon.png",
+      "src/**",
+      "public/**",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "desktop/resources/icon.png",
+      "identity": "-",
+      "extraResources": [
+        {
+          "from": "tools/platform-tools",
+          "to": "platform-tools",
+          "filter": [
+            "adb",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        },
+        {
+          "from": "tools/apk-tools",
+          "to": "apk-tools",
+          "filter": [
+            "aapt2",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "icon": "desktop/resources/icon.png",
+      "target": "nsis"
+    },
+    "linux": {
+      "icon": "desktop/resources/icon.png",
+      "category": "Development",
+      "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0"
+  }
+}

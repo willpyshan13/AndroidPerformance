@@ -30,6 +30,32 @@ export function parseCsv(text){
   }
   if(quoted)throw new Error('Trace Processor CSV 输出被截断');if(row.length||field){row.push(field);rows.push(row);}return rows;
 }
+export function buildReadOnlyTraceQuery(input){
+ if(typeof input!=='string'||Buffer.byteLength(input,'utf8')<1||Buffer.byteLength(input,'utf8')>16*1024||input.includes('\0'))throw new Error('SQL 查询必须为 1–16 KiB 文本');
+ if(/--|\/\*|\*\//.test(input)||/["`]/.test(input))throw new Error('SQL 查询暂不接受注释或带引号的标识符');
+ let sql=input.trim(),module='';
+ if(/^INCLUDE\b/i.test(sql)){
+   const match=sql.match(/^INCLUDE\s+PERFETTO\s+MODULE\s+([a-zA-Z0-9_.]+)\s*;\s*/i);
+   if(!match)throw new Error('仅支持标准 INCLUDE PERFETTO MODULE 声明');module=match[0];sql=sql.slice(match[0].length);
+ }
+ sql=sql.replace(/;\s*$/,'').trim();if(!sql)throw new Error('每次只能执行一条 SQL 查询');
+ let visible='',quoted=false;
+ for(let i=0;i<sql.length;i++){const c=sql[i];if(quoted){if(c==="'"&&sql[i+1]==="'"){visible+='  ';i++;}else if(c==="'"){quoted=false;visible+=' ';}else visible+=' ';}else if(c==="'"){quoted=true;visible+=' ';}else visible+=c;}
+ if(quoted)throw new Error('SQL 字符串没有闭合');
+ if(visible.includes(';'))throw new Error('每次只能执行一条 SQL 查询');
+ if(!/^\s*(SELECT|WITH)\b/i.test(visible))throw new Error('只允许 SELECT 或 WITH 查询');
+ if(/\b(ATTACH|DETACH|PRAGMA|CREATE|DROP|INSERT|UPDATE|DELETE|REPLACE|VACUUM|SAVEPOINT|BEGIN|COMMIT|ROLLBACK|LOAD_EXTENSION|READFILE|WRITEFILE)\b/i.test(visible))throw new Error('查询包含不允许的写入或外部文件操作');
+ return `${module}SELECT * FROM (${sql}) LIMIT 501`;
+}
+export async function queryTraceSql(path,{sql,locator=locateTraceProcessor,runner=exec}={}){
+ const query=buildReadOnlyTraceQuery(sql),binary=await locator();let output;
+ try{output=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}
+ catch(error){throw new Error(`自定义追踪查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}
+ const rows=parseCsv(output.stdout);if(!rows.length||!rows[0].length||rows[0].length>50)throw new Error('SQL 查询没有返回可显示的列，或列数超过 50');
+ const columns=rows[0];if(columns.some(name=>Buffer.byteLength(name,'utf8')>200))throw new Error('SQL 列名过长');
+ const data=rows.slice(1);if(data.some(row=>row.length!==columns.length))throw new Error('SQL 查询返回了不完整的行');
+ return {columns,rows:data.slice(0,500),truncated:data.length>500};
+}
 export function parseTraceSummary(csv){
   const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='kind,label,count,value')throw new Error('Trace Processor 返回了意外的列');
   const result={bounds:null,slices:[],threads:[],binder:[],errors:[],sliceEvents:[],schedEvents:[],truncated:{slices:false,sched:false}};

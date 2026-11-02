@@ -1,5 +1,13 @@
 # 当前验证记录（2026-11-02）
 
+## 系统追踪自定义 SQL 查询增量
+
+- 对当前追踪会话执行 PerfettoSQL，将 CSV 转成可读表格；限制只读 `SELECT` / `WITH`、可选标准模块声明、单条语句、16 KiB 输入、500 行和 50 列。
+- 拒绝 DML / DDL、PRAGMA、文件读写、SQL 注释和过期追踪会话；输出值按 HTML 转义显示。
+- Trace Processor 单元验证覆盖 CSV 引号、分号字面值、写入语句拒绝、模块语句、行截断和列数上限。追踪 HTTP 集成验证已用合成 Chrome trace 执行 `SELECT name, ts, dur FROM slice` 并收到 `render` 切片；不安全 SQL 返回 400。
+- 完整 `npm test`：187 项，172 通过、0 失败、15 项因未配置官方外部样本而跳过；`npm run check` 与 `git diff --check` 通过。
+- 尚未做图形界面的真实浏览器交互回归；设备 ADB 与 Perfetto 采集不是该离线 SQL 路径的前置条件。
+
 ## Benchmark 自动回读增量
 
 - `npm test`：186 项，171 通过、0 失败、15 项因未配置外部官方样本而跳过；`npm run check` 和 `git diff --check` 通过。

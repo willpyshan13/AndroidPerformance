@@ -3,11 +3,19 @@ import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
 import {access,readFile} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
-import {analyzeTraceUpload,parseCsv,parseTraceSummary,locateTraceProcessor} from '../src/trace-analysis.js';
+import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,locateTraceProcessor} from '../src/trace-analysis.js';
 const req=(chunks,headers={})=>{const r=Readable.from(chunks);r.headers=headers;return r;};
 test('CSV handles escaped quotes and embedded newlines',()=>{
  assert.deepEqual(parseCsv('"a","b"\r\n"x, y","z""q\nq"\n'),[['a','b'],['x, y','z"q\nq']]);
  assert.throws(()=>parseCsv('"unclosed'),/截断/);
+});
+test('custom trace SQL is read-only, bounded and returns escaped CSV cells',async()=>{
+ const query=buildReadOnlyTraceQuery("WITH x AS (SELECT 'DROP; UPDATE' AS label) SELECT label FROM x;");assert.match(query,/LIMIT 501$/);assert.match(buildReadOnlyTraceQuery('INCLUDE PERFETTO MODULE android.startup.time_to_display; SELECT * FROM slice'),/^INCLUDE PERFETTO MODULE .*;\s+SELECT \* FROM/);
+ for(const sql of ['DELETE FROM slice','SELECT 1; SELECT 2','PRAGMA table_info(slice)','SELECT * FROM readfile(\'/etc/passwd\')','SELECT 1 -- comment'])assert.throws(()=>buildReadOnlyTraceQuery(sql));
+ let called;const result=await queryTraceSql('/tmp/example.trace',{sql:'SELECT 1 AS number',locator:async()=>'/trace-processor',runner:async(binary,args,options)=>{called={binary,args,options};return {stdout:'number,label\n1,"a,b"\n'};}});
+ assert.deepEqual(result,{columns:['number','label'],rows:[['1','a,b']],truncated:false});assert.equal(called.args[3],'/tmp/example.trace');assert.match(called.args[4],/LIMIT 501$/);assert.equal(called.options.timeout,120000);
+ const many=await queryTraceSql('/tmp/example.trace',{sql:'SELECT 1',locator:async()=>'/trace-processor',runner:async()=>({stdout:'n\n'+Array.from({length:501},(_,i)=>i).join('\n')+'\n'})});assert.equal(many.rows.length,500);assert.equal(many.truncated,true);
+ await assert.rejects(queryTraceSql('/tmp/example.trace',{sql:'SELECT 1',locator:async()=>'/trace-processor',runner:async()=>({stdout:Array.from({length:51},(_,i)=>`c${i}`).join(',')+'\n'})}),/列数超过 50/);
 });
 test('trace summary keeps timestamps as exact strings and missing evidence empty',()=>{
  const r=parseTraceSummary('"kind","label","count","value"\n"bounds","trace","9007199254740993","9007199254741093"\n"slice","776F726B","2","12.5"\n');

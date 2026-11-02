@@ -11,7 +11,7 @@ import { locateAapt2 } from './apk.js';
 import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzePerfUpload } from './perf-upload.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -244,6 +244,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
           traceBusy=true;try{return json(await querySliceArguments(traceSession.path,{sliceId:body.sliceId}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/query'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json({...await queryTraceSql(traceSession.path,{sql:body.sql}),sessionId:traceSession.sessionId});}finally{traceBusy=false;}
         }
         if(path==='/api/trace/binder-breakdown'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

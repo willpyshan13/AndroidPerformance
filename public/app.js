@@ -224,7 +224,7 @@ function composeStabilityPanel(){
 }
 function composeCallTreeRows(nodes,depth=0){
  return (nodes||[]).flatMap(node=>[
-  `<tr><td style="padding-left:${12+depth*16}px">${depth?'↳ ':''}${esc(node.name)}${node.recursive?' · 递归':''}</td><td>${node.executions.toLocaleString()}</td><td>${node.skips.toLocaleString()}</td></tr>`,
+  `<tr><td style="padding-left:${12+depth*16}px">${depth?'↳ ':''}${esc(node.name)}${node.composeKey!==undefined?` · key ${node.composeKey}`:''}${node.recursive?' · 递归':''}</td><td>${node.executions.toLocaleString()}</td><td>${node.skips.toLocaleString()}</td></tr>`,
   ...(!node.recursive&&depth<12?composeCallTreeRows(node.children,depth+1):[])
  ]).join('');
 }

@@ -4,10 +4,11 @@
 
 - 新增可选 Kotlin 2.2.21 Compose 编译器插件和 `ApwComposeAutomaticProbe.kt` 运行时入口。插件识别目标模块编译的 `@Composable` 函数，将记录调用放入 Compose 编译器生成的非跳过分支；自动模式不需要在各个 Composable 手写 probe。
 - 事件采用独立 `APW2`（函数体执行）与 `APW3`（Composer 跳过）格式，记录进程会话、函数名、父函数、累计函数/边计数和设备单调时钟。解析器在新版事件中构建 Logcat 窗口内的聚合调用树；旧版 APW2 和 `APW1` 显式 probe 仍兼容解析。
+- 新版事件同时记录 Compose Compiler 从 `startRestartGroup` 读取的组 key；调用树显示该 key，可与 Agent 的 `CompositionData` 组合组节点 `compose-key` 对照。API 25 / Compose 1.7.6 真机结果中，`InstrumentedScreen` 的 `-345845228` 与 Agent 运行时组一致，`StaticChild` 的 `-981513431` 也一致。该关联验证的是函数调用节点到运行时组身份的匹配；它不把相邻 State 读取关系推断为因果，State Reads 仍按 RecomposeScope 单独计数。
 - 插件 `gradle jar` 构建成功；真实 Compose 1.7.6 页面在 API 25 设备触发三次状态更新后，桌面 ADB snapshot 读回 16 条 APW2/APW3 记录、0 条无效，并构建三层关系 `onCreate.<anonymous> → InstrumentedScreen → StaticChild`；父项执行 4 次，静态子项执行 1 次、跳过 3 次。`javap` 确认进入/退出钩子按父子顺序嵌入字节码，正常与 skip 分支分别记录。验证使用临时 smoke APK，不代表用户目标应用已接入插件。
-- 插件目前只支持匹配 Kotlin 2.2.21 编译器 API，且只插桩本次编译的目标模块，不覆盖未重编译依赖；调用树按函数名聚合 Logcat 窗口内记录，不能区分同名 Composable 的多个实例，也不是完整运行时组树，不提供 State Reads 或 Jank 因果。每次执行写一条 debug 日志，正式测量前应移除。
-- 该计数和聚合调用树不提供完整 Composable 运行时实例树、State Reads、同名实例区分或 Jank 因果，也不代替完整 Compose Runtime Inspector。临时 smoke APK 在验证完成后卸载，并恢复用户原 Activity。
-- 最终回归：`npm test` 共 223 项，207 通过、0 失败、16 项因未配置可选外部样本而跳过；`npm run check` 与 `git diff --check` 通过。
+- 插件目前只支持匹配 Kotlin 2.2.21 编译器 API，且只插桩本次编译的目标模块，不覆盖未重编译依赖；调用树按函数名和可用组 key 聚合 Logcat 窗口内记录，不能区分同名 Composable 的多个实例，也不是完整运行时组树，不提供 State Reads 或 Jank 因果。部分 lambda 没有 restart-group key；环形日志也可能截断调用边。每次执行写一条 debug 日志，正式测量前应移除。
+- 该计数和聚合调用树不提供完整 Composable 运行时实例树、State Reads 因果或 Jank 因果，也不代替完整 Compose Runtime Inspector。临时 smoke APK 在验证完成后卸载，并恢复用户原 Activity。
+- 本轮完整回归：224 项，208 通过、0 失败、16 项因未配置可选外部样本而跳过；`npm run check` 与 `git diff --check` 通过。测试期间修正了 Benchmark API 测试的整秒时间夹具，避免跨秒时序造成偶发误失败。
 
 ## 应用内 Android View Debug Agent
 
@@ -17,7 +18,7 @@
 - API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
 - Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。另以独立临时 debug APK 运行真实 Compose Runtime 页面验证 probe 的重组计数；目标 Compose 应用仍须接入 Agent/probe 后验证。
 - Compose Runtime 检查增量：Agent 反射读取 `AbstractComposeView` 的 `CompositionData` 组合组树，并从 `observations.asMap()` 统计各 `RecomposeScope` 关联的已观察 State 数量；不输出 State 实例或值。Compose 1.7.6 临时 fixture 在 API 25 真机返回 30 个组合组、7 条 State-scope 关联，4 个组带非零关联，兼容性警告为 0；节点嵌入同一布局 XML 并可在界面层级中查看。该树仍不是完整 Composable 函数调用树，源码标签在三次自然状态更新后仍为空，因此 Agent 不会强制重组来触发应用副作用；也没有帧关联。`View.draw` 对 Surface 等硬件层可能不完整。
-- 完整回归：218 项，202 通过、0 失败、16 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
+- 当时完整回归：218 项，202 通过、0 失败、16 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
 
 ## Compose Runtime probe（显式插桩）
 

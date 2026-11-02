@@ -45,6 +45,9 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
         val enter = pluginContext.referenceFunctions(
             CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticEnter"))
         ).singleOrNull() ?: return
+        val enterKeyed = pluginContext.referenceFunctions(
+            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticEnterKeyed"))
+        ).singleOrNull() ?: return
         val exit = pluginContext.referenceFunctions(
             CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticExit"))
         ).singleOrNull() ?: return
@@ -64,10 +67,18 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
                     pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, record, signature
                 )
                 var skipGate: IrWhen? = null
+                var composeGroupKey: Int? = null
                 body.transform(object : IrElementTransformerVoid() {
                     override fun visitWhen(expression: IrWhen): IrExpression {
                         if (expression.branches.any { containsSkipCall(it.result) }) skipGate = expression
                         return super.visitWhen(expression)
+                    }
+
+                    override fun visitCall(expression: IrCall): IrExpression {
+                        if (composeGroupKey == null && expression.symbol.owner.name.asString() == "startRestartGroup") {
+                            composeGroupKey = IrCalls.firstValueArgument(expression)?.let(IrCalls::intConstValue)
+                        }
+                        return super.visitCall(expression)
                     }
                 }, null)
                 if (skipGate == null) {
@@ -90,10 +101,15 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
                         IrCalls.prependToBranch(branch, skipCall)
                     }
                 }
-                body.statements.add(0, IrCalls.stringCall(
+                val enterCall = composeGroupKey?.let { key -> IrCalls.stringIntCall(
+                    declaration.startOffset, declaration.endOffset,
+                    pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, pluginContext.irBuiltIns.intType,
+                    enterKeyed, signature, key
+                ) } ?: IrCalls.stringCall(
                     declaration.startOffset, declaration.endOffset,
                     pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, enter, signature
-                ))
+                )
+                body.statements.add(0, enterCall)
                 body.statements.add(IrCalls.unitCall(
                     declaration.startOffset, declaration.endOffset,
                     pluginContext.irBuiltIns.unitType, exit

@@ -36,7 +36,7 @@ test('CPU events API queries the requested device and returns supported events',
 });
 
 test('benchmark API runs instrumentation, auto-loads only a freshly updated report and rejects invalid arguments',async t=>{
- const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0,statCalls=0;const now=Math.floor(Date.now()/1000);
+ const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0,statCalls=0;const now=Math.floor((Date.now()+5000)/1000);
  const adb=new Adb('/fake',async(_path,args)=>{calls++;if(args.includes("'stat'")){statCalls++;return {stdout:statCalls===1?`${now-2} 12\n`:`${now} 20\n`};}return {stdout:args.includes("'head'")?'{"benchmarks":[]}':'OK (1 test)\n'};});
  const app=createApp({adb,dataDir:dir,token:'test'});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
  const url=`http://127.0.0.1:${app.address().port}/api/benchmark/run`,headers={'Content-Type':'application/json','X-Workbench-Token':'test'};

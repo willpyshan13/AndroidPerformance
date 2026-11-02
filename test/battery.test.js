@@ -33,6 +33,14 @@ test('battery snapshot archive validates and rejects malformed resource entries'
  snapshot.jobs[0].timeMs=-1;assert.throws(()=>validateRecord({kind:'battery',source:'import',payload:snapshot}),/资源统计/);
 });
 
+test('repeated battery experiments validate ordered same-UID samples and the final snapshot',()=>{
+ const first=parseBatteryStats(raw,'com.example.demo',{serial:'ABC',source:'adb'}),last=structuredClone(first);last.timestamp=first.timestamp+1000;last.network.wifiRxBytes+=10;
+ const record={kind:'battery',source:'adb',packageName:first.packageName,payload:{packageName:first.packageName,snapshot:last,before:first,samples:[first,last]}};
+ assert.doesNotThrow(()=>validateRecord(record));
+ assert.throws(()=>validateRecord({...record,payload:{...record.payload,samples:[last,first]}}),/时间顺序/);
+ assert.throws(()=>validateRecord({...record,payload:{...record.payload,snapshot:first}}),/最后一个样本/);
+});
+
 test('UID power estimate is recognized only from one valid UID pwi row',()=>{
  const record='9,10123,l,pwi,uid,0.00123,0,0,0\n';const parsed=parseBatteryStats(raw+record,'com.example.demo');
  assert.deepEqual(parsed.power,{estimatedMah:0.00123,rawValue:'0.00123',source:'batterystats-pwi'});

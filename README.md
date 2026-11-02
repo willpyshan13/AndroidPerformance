@@ -40,7 +40,7 @@
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
 | CPU 采样 | 采集和导入 simpleperf 数据，查看正向调用树、热点调用方、火焰图、采样点时间线与函数汇总 | Android NDK simpleperf |
 | 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异 | `am dumpheap`、本地 HPROF |
-| 电池与资源 | 采集或导入 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及两次快照差值；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
+| 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
 | 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签与零尺寸线索；支持导入 XML | UIAutomator |
@@ -104,7 +104,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 
 - **CPU 采样**：需要 simpleperf、可调试或可 profile 的目标和允许采样的设备；按照当前源码重新打包的 macOS 版本内置 simpleperf，源码运行也可使用 Android NDK；既有 0.2.0 包不含此功能。导入 perf.data 还需要 Python 3；也可直接导入 folded stacks。权重是事件周期，不等同于 CPU 百分比；时间线显示采样点而非线程调度状态，支持按时间范围筛选。调用方树按当前火焰图范围汇总包含权重，递归调用可能重复计权，同名符号可能合并。
 - **CPU 和内存**：CPU 优先根据相邻 `/proc` 计数器计算主进程利用率，单核为 100%；首个样本、进程重启或在线 CPU 数变化时需要重新建立基线。权限不足时回退到 `cpuinfo` 的应用及子进程窗口，超过 30 秒未更新则显示不可用。内存为主进程快照；电池信息不代表应用耗电量。
-- **电池与资源**：统计属于 UID 的 since-charged 累计窗口，共享 UID 不能按应用拆分；两次同设备快照仅在窗口标识一致且计数未下降时计算可用差值，不能据此推算耗电量。离线导入可导出原始 Battery Historian checkin；设备导出会重新读取设备当前 checkin，不代表此前快照的原始文件。离线文件上限为 12 MiB；保存实验保留基线与结束快照，载入时重新计算差值；JSON 报告可导入本机档案。
+- **电池与资源**：统计属于 UID 的 since-charged 累计窗口，共享 UID 不能按应用拆分；两次同设备快照仅在窗口标识一致且计数未下降时计算可用差值，不能据此推算耗电量。可设置 2–50 次、1–3600 秒间隔采样；采样时间线显示累计读数，停止会保留已有样本。离线导入可导出原始 Battery Historian checkin；设备导出会重新读取设备当前 checkin，不代表此前快照的原始文件。保存实验和 JSON 报告包含完整样本序列；离线文件上限为 12 MiB。
 - **帧与启动**：gfxinfo 历史缓冲区与平台累计 janky frames 的范围可能不同；超过自选预算不等同于平台 Jank。连续帧分组仅包含同一 PROFILEDATA 段中原始记录相邻、起始间隔不超过 100 ms 的超预算帧；缺失或无效记录会打断分组。FrameTimeline 模式要求 Android 12 及以上，请求系统帧数据源；有数据的真实设备录制尚待验证。普通追踪中是否包含该数据取决于设备的 Perfetto 版本。启动 TotalTime 不等同于 TTFD，温 / 热启动的实际状态以设备返回的 LaunchState 为准。编译状态读取设备报告的 Dexopt 数据，不证明 Baseline Profile 生效；兼容性尚待更多真机验证。冷启动会 force-stop 目标应用；帧分析建议先重置统计、重现操作，再读取数据。
 - **布局与基准**：UIAutomator 提供可访问性层级，不是完整 View / Compose 树；截图与层级顺序采集，动画期间可能不一致。Benchmark 变化是描述性比较，不是显著性检验；sampledMetrics 如未提供中位数，会计算合并样本的中位数，样本不等同于独立实验。
 - **堆分析**：采集通常需要可调试应用；字段和数组元素数据字节不等于浅大小或保留大小，支持分页查看已索引实例、跟随引用、查找有限的候选根路径和浏览近似支配图。最多索引 100 万个对象，支配图限 20 万对象和 75 万条引用。支配图基于可见 GC 根、字段、数组、类及静态字段关系；不区分强弱引用，可能缺少运行时关系。记录数据字节不含对象头、对齐等信息，不能作为保留大小；快照对比或路径结果都不能证明泄漏。
@@ -120,7 +120,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 162 项通过、0 失败；15 项需要未配置的可选外部样本 | `npm test` |
+| 自动测试 | 166 项通过、0 失败；15 项需要未配置的可选外部样本 | `npm test` |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 

@@ -65,7 +65,20 @@ export function validateRecord(body) {
       if (snapshot.network !== null && (!snapshot.network || typeof snapshot.network !== 'object' || !Object.values(snapshot.network).every(v => optionalNumber(v)))) fail('网络统计格式错误');
       for (const key of ['wakelocks', 'jobs', 'syncs', 'sensors', ...(snapshot.alarms === undefined ? [] : ['alarms'])]) if (!Array.isArray(snapshot[key]) || snapshot[key].length > 200000 || !snapshot[key].every(r => r && typeof r.name === 'string' && (key === 'wakelocks' ? r.partial === null || (r.partial && optionalNumber(r.partial.timeMs) && optionalNumber(r.partial.count)) : optionalNumber(r.timeMs) && optionalNumber(r.count)))) fail('资源统计格式错误');
     };
-    if (p.snapshot) { validateSnapshot(p.snapshot); if (p.before !== null && p.before !== undefined) validateSnapshot(p.before); if (p.packageName !== p.snapshot.packageName) fail('电池实验包名不一致'); }
+    if (p.snapshot) {
+      validateSnapshot(p.snapshot); if (p.before !== null && p.before !== undefined) validateSnapshot(p.before);
+      if (p.packageName !== p.snapshot.packageName) fail('电池实验包名不一致');
+      if (p.samples !== undefined) {
+        if (!Array.isArray(p.samples) || p.samples.length < 2 || p.samples.length > 50) fail('电池重复采样数量错误');
+        let previousTimestamp=-Infinity;
+        for(const sample of p.samples){
+          validateSnapshot(sample);
+          if(sample.packageName!==p.packageName||sample.uid!==p.snapshot.uid||sample.serial!==p.snapshot.serial||sample.timestamp<=previousTimestamp)fail('电池重复采样的设备、应用或时间顺序不一致');
+          previousTimestamp=sample.timestamp;
+        }
+        if(p.samples.at(-1).timestamp!==p.snapshot.timestamp)fail('电池结束快照与最后一个样本不一致');
+      }
+    }
     else validateSnapshot(p); // Early single-snapshot records remain readable.
   }
   if(body.kind==='apk'){

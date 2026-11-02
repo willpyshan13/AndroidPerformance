@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {supportedLanguages,translate,localizeTextNodes} from '../public/i18n.js';
 
 test('language selector supports Chinese and English while preserving user content',()=>{
@@ -30,4 +31,11 @@ test('English localization changes static UI labels but skips code, table conten
   assert.equal(nodes[0].nodeValue,'APK 体积组成');
   assert.equal(nodes[4].nodeValue,'CPU 架构');
   assert.equal(nodes[5].nodeValue,'参考项目 ↗');
+});
+
+test('every literal action button label used by the application has an English translation',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const labels=[...app.matchAll(/button\(\s*(['"])(.*?)\1\s*,\s*(['"])(.*?)\3/g)].map(match=>match[4]);
+  const untranslated=[...new Set(labels)].filter(label=>!['activity','chart','image','layers','play','upload'].includes(label)&&translate(label,'en-US')===label);
+  assert.deepEqual(untranslated,[]);
 });

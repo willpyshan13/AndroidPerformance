@@ -437,3 +437,10 @@ npm run test:device -- \
 - 原生 Windows x64 runner 构建 NSIS/MSI 后，静默安装 MSI 到临时目录，再从安装路径启动应用。Java runtime 首次解包、本机 HTTP 服务、主页面、四个 JavaScript 模块、渲染器导航与主视图均通过；完成后 MSI 卸载成功。GitHub Actions run [41517484533](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41517484533) 的 Windows package、MSI install smoke 和 artifact upload steps 全部成功。NSIS 安装器尚未执行安装路径 smoke。
 - smoke 暴露本机服务未开放 `/i18n.js`：入口脚本因此没有渲染导航。已补静态资源路由，并新增 HTTP 回归测试检查入口的模块依赖；当前全量测试 293 项，277 通过、0 失败、16 个可选官方样本测试跳过，`npm run check` 通过。
 - 获批 host 桌面上的开发模式 Electron smoke 返回 16 个导航项，且主视图已渲染。沙盒内 Electron 的 SIGABRT 仍说明该受限运行环境不适用于可见桌面启动测试。
+
+## CPU sample interaction indexing（2026-11-03）
+
+- CPU timeline now builds per-bin and chronological sample indexes when loading up to 50,000 samples. Bin selection uses only that bin's candidates; arbitrary time-range selection uses binary search over timestamps and processes only samples inside the selected range.
+- Added regression coverage for unsorted timestamps, duplicate and inclusive boundaries, thread filtering, and a guard that fails if bin/range interaction scans the full sample list. The original `timeNs` string is retained for monotonic-clock FrameTimeline correlation.
+- This verifies query behavior and index use, not end-to-end browser rendering performance on large or highly fragmented real profiles; that benchmark remains open.
+- CPU-specific tests: 15 passed. Full suite: 294 tests, 278 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.

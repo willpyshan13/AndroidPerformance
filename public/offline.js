@@ -412,17 +412,18 @@ export function buildSampleTimeline(input, bins=60) {
       const time=BigInt(s.timeNs),weight=Number(s.period);if(time===0n||!Number.isSafeInteger(weight)||weight<=0)throw Error();
       if(s.frames.some(f=>typeof f!=='string'||!f||f.length>1000||/[;\r\n]/.test(f))||typeof s.thread!=='string'||/[;\r\n]/.test(s.thread))throw Error();
       if(origin===null||time<origin)origin=time;if(last===null||time>last)last=time;
-      valid.push({time,weight,frames:s.frames,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
+      valid.push({time,timeNs:s.timeNs,weight,frames:s.frames,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
     }catch{skipped++;}
   }
   if(!valid.length)return {available:false,skipped,truncated:!!input.truncated,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null};
   const span=last-origin;if(span>604800000000000n)throw new Error('时间线超过 7 天范围');
-  const groups=new Map();
-  for(const s of valid){s.bin=span===0n?0:Math.min(bins-1,Number((s.time-origin)*BigInt(bins)/span));
+  const groups=new Map(),samplesByBin=Array.from({length:bins},()=>[]);
+  for(const s of valid){s.bin=span===0n?0:Math.min(bins-1,Number((s.time-origin)*BigInt(bins)/span));samplesByBin[s.bin].push(s);
     let g=groups.get(s.thread);if(!g){g={thread:s.thread,pid:s.pid,tid:s.tid,counts:Array(bins).fill(0),weights:Array(bins).fill(0),total:0};groups.set(s.thread,g);}
     g.counts[s.bin]++;g.weights[s.bin]+=s.weight;g.total+=s.weight;if(!Number.isSafeInteger(g.total))throw new Error('时间线权重超出安全范围');
   }
-  return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,skipped,truncated:!!input.truncated};
+  const samplesByTime=[...valid].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
+  return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,samplesByBin,samplesByTime,skipped,truncated:!!input.truncated};
 }
 // Count observed sample records only, not inferred lost samples or CPU time.
 export function sampleQuality(timeline){
@@ -455,7 +456,8 @@ export function sampleStackChart(timeline, limit=8) {
 export function profileForTimeBin(timeline,bin,thread=null) {
   if(!timeline?.available||!Number.isInteger(bin)||bin<0||bin>=timeline.bins)throw new Error('时间范围无效');
   if(thread!==null&&typeof thread!=='string')throw new Error('线程筛选无效');
-  const lines=timeline.samples.filter(s=>s.bin===bin&&(thread===null||s.thread===thread)).map(s=>`${[s.thread,...s.frames].join(';')} ${s.weight}`);
+  const candidates=timeline.samplesByBin?.[bin]||timeline.samples.filter(s=>s.bin===bin);
+  const lines=candidates.filter(s=>thread===null||s.thread===thread).map(s=>`${[s.thread,...s.frames].join(';')} ${s.weight}`);
   if(!lines.length)throw new Error('所选时间范围没有样本');
   return parseFoldedStacks(lines.join('\n'));
 }
@@ -463,9 +465,12 @@ export function profileForTimeBin(timeline,bin,thread=null) {
 export function profileForTimeRange(timeline,startMs,endMs,thread=null) {
   if(!timeline?.available||!Number.isFinite(startMs)||!Number.isFinite(endMs)||startMs<0||endMs<startMs||endMs>timeline.durationMs)throw new Error('时间范围无效，请输入快照范围内的起止毫秒');
   if(thread!==null&&typeof thread!=='string')throw new Error('线程筛选无效');
-  const origin=timeline.samples.reduce((a,s)=>s.time<a?s.time:a,timeline.samples[0].time);
-  const start=BigInt(Math.round(startMs*1e6)),end=BigInt(Math.round(endMs*1e6));
-  const lines=timeline.samples.filter(s=>{const delta=s.time-origin;return delta>=start&&delta<=end&&(thread===null||s.thread===thread);}).map(s=>`${[s.thread,...s.frames].join(';')} ${s.weight}`);
+  const ordered=timeline.samplesByTime||[...timeline.samples].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0),origin=ordered[0].time;
+  const start=origin+BigInt(Math.round(startMs*1e6)),end=origin+BigInt(Math.round(endMs*1e6));
+  const lowerBound=value=>{let lo=0,hi=ordered.length;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<value)lo=mid+1;else hi=mid;}return lo;};
+  const upperBound=value=>{let lo=0,hi=ordered.length;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<=value)lo=mid+1;else hi=mid;}return lo;};
+  const first=lowerBound(start),last=upperBound(end),lines=[];
+  for(let i=first;i<last;i++){const s=ordered[i];if(thread===null||s.thread===thread)lines.push(`${[s.thread,...s.frames].join(';')} ${s.weight}`);}
   if(!lines.length)throw new Error('所选时间范围没有采样点');
   return parseFoldedStacks(lines.join('\n'));
 }

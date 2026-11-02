@@ -46,6 +46,7 @@ test('sample timeline preserves large nanosecond timestamps and filters by sampl
  const {buildSampleTimeline,profileForTimeBin}=await import('../public/offline.js');
  const input={event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:[{timeNs:'1700000000000000000',pid:1,tid:2,thread:'t',period:'10',frames:['main','a']},{timeNs:'1700000001000000000',pid:1,tid:2,thread:'t',period:'20',frames:['main','b']}]};
  const grouped=buildSampleTimeline(input);assert.equal(grouped.groups[0].pid,1);assert.equal(grouped.groups[0].tid,2);
+ assert.equal(grouped.samples[0].timeNs,'1700000000000000000');
  assert.equal(grouped.clockId,'monotonic');
  const t=buildSampleTimeline(input,2);assert.equal(t.durationMs,1000);assert.deepEqual(t.groups[0].counts,[1,1]);
  const p=profileForTimeBin(t,1);assert.equal(p.root.weight,20);assert.equal(p.symbols.find(x=>x.name==='b').self,20);
@@ -64,6 +65,22 @@ test('time range filters sample timestamps precisely and rejects invalid or empt
  const t=buildSampleTimeline({event:'cpu-clock',samples:[{timeNs:'9000000000000000',pid:1,tid:1,thread:'t',period:'3',frames:['a']},{timeNs:'9000000010000000',pid:1,tid:1,thread:'t',period:'7',frames:['b']}]});
  assert.equal(profileForTimeRange(t,0,0).root.weight,3);assert.equal(profileForTimeRange(t,0,10).root.weight,10);
  assert.throws(()=>profileForTimeRange(t,1,9),/没有采样点/);assert.throws(()=>profileForTimeRange(t,10,0),/时间范围无效/);
+});
+test('sample range and bin queries use compact indexes with unsorted timestamps and inclusive boundaries',async()=>{
+ const {buildSampleTimeline,profileForTimeBin,profileForTimeRange}=await import('../public/offline.js');
+ const timeline=buildSampleTimeline({samples:[
+  {timeNs:'7000000',period:'5',thread:'worker',pid:1,tid:2,frames:['end']},
+  {timeNs:'1000000',period:'2',thread:'main',pid:1,tid:1,frames:['before']},
+  {timeNs:'4000000',period:'3',thread:'main',pid:1,tid:1,frames:['start']},
+  {timeNs:'7000000',period:'7',thread:'main',pid:1,tid:1,frames:['end-main']},
+  {timeNs:'5000000',period:'11',thread:'worker',pid:1,tid:2,frames:['inside']},
+ ]},3);
+ assert.deepEqual(timeline.samplesByTime.map(sample=>sample.time.toString()),['1000000','4000000','5000000','7000000','7000000']);
+ assert.equal(timeline.samplesByBin.reduce((sum,bin)=>sum+bin.length,0),timeline.samples.length);
+ timeline.samples=new Proxy(timeline.samples,{get(target,key,receiver){if(key==='filter'||key===Symbol.iterator)throw new Error('full sample scan');return Reflect.get(target,key,receiver);}});
+ assert.equal(profileForTimeRange(timeline,3,6).root.weight,26);
+ assert.equal(profileForTimeRange(timeline,3,6,'main-1/1').root.weight,10);
+ assert.equal(profileForTimeBin(timeline,2).root.weight,23);
 });
 test('time filtering can isolate one recorded thread without mixing other threads',async()=>{
  const {buildSampleTimeline,profileForTimeBin,profileForTimeRange}=await import('../public/offline.js');

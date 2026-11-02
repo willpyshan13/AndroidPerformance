@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {buildMenuTemplate} from '../desktop/menu.js';
+import {nativeText} from '../desktop/locale.js';
 
 function flatten(items){return items.flatMap(item=>[item.label||'',...(item.submenu?flatten(item.submenu):[])]);}
 
@@ -23,9 +24,16 @@ test('macOS menu keeps native application roles in both languages',()=>{
  assert.equal(en[0].label,'Android Performance');assert.equal(en[0].submenu[0].role,'about');assert.equal(en.find(item=>item.label==='File').submenu.at(-1).role,'close');
 });
 
+test('native dialogs and validation messages follow the persisted desktop language',()=>{
+ assert.equal(nativeText('zh-CN','选择本地源码目录','Select Local Source Directory'),'选择本地源码目录');
+ assert.equal(nativeText('en-US','选择本地源码目录','Select Local Source Directory'),'Select Local Source Directory');
+});
+
 test('Electron restores the saved menu language and rebuilds the menu after language changes',async()=>{
  const main=await readFile(new URL('../desktop/main.js',import.meta.url),'utf8');
  assert.match(main,/appearanceLanguage=normalizeAppearance\(settings\)\.language/);
  assert.match(main,/installMenu\(appearanceLanguage\); createWindow\(\)/);
  assert.match(main,/await saveSettings\(appearance\);appearanceLanguage=appearance\.language;installMenu\(appearanceLanguage\)/);
+ assert.match(main,/nativeText\(appearanceLanguage,'选择 Android Platform Tools 中的 adb 程序','Select adb from Android Platform Tools'\)/);
+ assert.match(main,/nativeText\(appearanceLanguage,'选择本地源码目录','Select Local Source Directory'\)/);
 });

@@ -457,3 +457,10 @@ npm run test:device -- \
 - The native Electron menu now reads the persisted `zh-CN` / `en-US` preference at startup and is rebuilt immediately when the language setting changes. Navigation actions, accelerators, platform roles, records-folder access, ADB selection, settings, and Perfetto handoff are retained.
 - Pure menu tests verify Chinese and English labels, absence of untranslated Chinese in English menu labels, navigation routes, and macOS application/close roles. The latest rebuilt arm64 `.app` includes the menu module and passed the packaged renderer/resource smoke.
 - Full suite: 298 tests, 282 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.
+
+## Localized native desktop dialogs（2026-11-03）
+
+- ADB/source/AGI file pickers, capture-close confirmation, download messages, startup and common ADB/AGI errors now use the persisted Chinese or English desktop language.
+- Added localization and package inclusion regression checks. Targeted desktop tests: 5 passed; full suite pending.
+- Full suite after dialog localization: 299 tests, 283 passed, 0 failed, 16 optional official-sample tests skipped; syntax and whitespace checks passed.
+- Rebuilt the macOS arm64 `.app`; packaged-app smoke passed with the renderer, Java runtime, Trace Processor, and Perfetto UI ready. The archive contains `desktop/main.js`, `desktop/menu.js`, and `desktop/locale.js`.

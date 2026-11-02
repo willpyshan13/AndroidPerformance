@@ -470,3 +470,10 @@ npm run test:device -- \
 - Desktop smoke now seeds an `en-US` preference before launch and reads the top-level Electron menu labels from the running app. It requires English `File` and `Analyze` entries and rejects any Chinese menu label on macOS, MSI, and NSIS paths.
 - Rebuilt and launched the macOS arm64 `.app`; its persisted English menu check passed alongside the renderer and bundled Java, Trace Processor, and Perfetto UI checks. Windows installer behavior awaits the next native GitHub Actions run.
 - `npm test`: 299 tests, 283 passed, 0 failed, 16 optional official-sample tests skipped. `npm run check` and `git diff --check` passed.
+
+## Home quick actions and clean-profile startup（2026-11-03）
+
+- Added homepage cards for CPU, heap, battery, GPU, Benchmark, and source workspaces so all 13 analysis modules have direct home entry points. Added English descriptions for the new cards.
+- The packaged-app smoke now waits for the actual overview cards, verifies every expected route, and captures Electron 45 renderer console errors. This caught a clean-profile crash: the first `last()` call read `state.samples.at(-1)` before `samples` existed. Initializing the collection fixes a blank home on first launch without prior device data.
+- Rebuilt and launched the macOS arm64 `.app` with a clean profile and saved `en-US` preference. The smoke verified 16 navigation items, all 13 quick-action routes, English native menu labels, and bundled Java, Trace Processor, and Perfetto UI. Passed.
+- Full suite: 300 tests, 284 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.

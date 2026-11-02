@@ -14,6 +14,17 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });
 
+test('home quick actions cover every analysis module and localize the newly exposed tools',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderOverview()'),end=app.indexOf('function renderMonitor()',start),source=app.slice(start,end);
+ assert.match(app,/info: null, status: null, samples: \[\]/,'a clean desktop profile must have an empty sample collection before the first render');
+ const routes=[...source.matchAll(/\['([a-z-]+)'/g)].map(match=>match[1]);
+ assert.deepEqual(routes,['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk']);
+ assert.match(source,/data-quick-action-route="\$\{route\}"/);
+ for(const label of ['采集或导入 simpleperf，分析热点与调用栈','采集 HPROF，检查实例、引用和泄漏候选','比较电池快照、UID 资源与功耗证据','校验 GPU 产物并交给 AGI 或追踪分析','比较 AndroidX 基准报告与运行结果','连接只读源码，定位性能证据候选']){
+  const translated=translate(label,'en-US');assert.ok(translated!==label,`missing English translation: ${label}`);assert.doesNotMatch(translated,/[\u3400-\u9fff]/);
+ }
+});
+
 test('CPU and FrameTimeline correlation labels describe the PID and time-overlap boundary',()=>{
  assert.equal(translate('CPU 采样与 FrameTimeline 关联','en-US'),'CPU samples and FrameTimeline correlation');
  assert.match(translate('仅在 perf.data 明确记录 CLOCK_MONOTONIC 时启用。请人工确认两份文件来自同一设备和同一段交互；采样按 PID 与帧进程匹配，落入帧区间只表示时间重合，不代表函数耗时或因果。','en-US'),/CLOCK_MONOTONIC.*PID.*temporal overlap.*causation/);

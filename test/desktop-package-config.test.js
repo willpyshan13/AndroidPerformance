@@ -16,9 +16,9 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const smoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
  assert.match(smoke,/msiexec\.exe/);assert.match(smoke,/APPLICATIONFOLDER=/);assert.match(smoke,/\['\/x', msiInstaller/);assert.match(smoke,/runNsis\(\['\/S', `\/D=\$\{installDir\}`\]\)/);assert.match(smoke,/uninstallerName\), \['\/S'\]/);assert.match(smoke,/installed desktop smoke passed/);
  const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
- assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/menuLabels/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
+ assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/menuLabels/);assert.match(macSmoke,/quickActionRoutes/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
  const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);
- assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);assert.match(smoke,/menuLabels/);
+ assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);assert.match(smoke,/menuLabels/);assert.match(smoke,/quickActionRoutes/);
  assert.ok(pkg.build.files.includes('desktop/menu.js'),'the localized native menu module must be packaged');
  assert.ok(pkg.build.files.includes('desktop/locale.js'),'the native dialog localization module must be packaged');
  assert.doesNotMatch(pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n'),/tools\/java-runtime=>java-runtime/);

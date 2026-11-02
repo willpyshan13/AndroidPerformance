@@ -66,6 +66,9 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   try {
     const { origin, rendererReady, rendererState, menuLabels } = await waitForReady(child, readyFile, () => childError?.message || childOutput, () => childError);
     if (!rendererReady) throw new Error(`${label}: desktop renderer did not build its navigation and main view: ${JSON.stringify(rendererState)}`);
+    const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
+    const missingQuickActions=requiredQuickActions.filter(route=>!rendererState.quickActionRoutes?.includes(route));
+    if(missingQuickActions.length)throw new Error(`${label}: desktop home is missing quick actions: ${missingQuickActions.join(', ')}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
     if (!page.ok) throw new Error(`${label}: main page returned HTTP ${page.status}`);

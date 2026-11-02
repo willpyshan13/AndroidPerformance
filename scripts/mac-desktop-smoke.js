@@ -56,7 +56,10 @@ try {
     await delay(200);
   }
   if (!ready) throw new Error('Packaged macOS app did not start its local service within 60 seconds');
-  if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify(ready.rendererState)}`);
+  if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify(ready.rendererState)}${childOutput ? `\n${childOutput}` : ''}`);
+  const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
+  const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
+  if(missingQuickActions.length)throw new Error(`Packaged macOS home is missing quick actions: ${missingQuickActions.join(', ')}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);

@@ -72,17 +72,17 @@ function createWindow() {
       const deadline = Date.now() + 10_000;
       let rendererState;
       do {
-        rendererState = await window.webContents.executeJavaScript("({title:document.title,readyState:document.readyState,navItems:document.querySelectorAll('#nav .nav-item').length,mainPresent:document.querySelector('#main')!==null,mainText:document.querySelector('#main')?.innerText?.slice(0,160)||'',script:document.querySelector('script[type=module]')?.src||''})");
-        if (rendererState.navItems > 0 && rendererState.mainPresent) break;
+        rendererState = await window.webContents.executeJavaScript("({title:document.title,readyState:document.readyState,navItems:document.querySelectorAll('#nav .nav-item').length,quickActionRoutes:Array.from(document.querySelectorAll('[data-quick-action-route]'),item=>item.dataset.quickActionRoute),mainPresent:document.querySelector('#main')!==null,mainText:document.querySelector('#main')?.innerText?.slice(0,160)||'',script:document.querySelector('script[type=module]')?.src||''})");
+        if (rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13) break;
         await new Promise(resolve => setTimeout(resolve, 100));
       } while (Date.now() < deadline);
-      const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent;
+      const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });
     } catch (error) { console.error('Desktop smoke readiness check failed:', error); }
   });
   if (process.env.APW_SMOKE_READY_FILE) {
-    window.webContents.on('console-message', (_event, details) => console.error(`Renderer console ${details.level}: ${details.message} (${details.sourceId}:${details.lineNumber})`));
+    window.webContents.on('console-message', details => console.error(`Renderer console ${details.level}: ${details.message} (${details.sourceId}:${details.lineNumber})`));
     window.webContents.on('did-fail-load', (_event, code, description, url) => console.error(`Renderer navigation failed (${code}): ${description} ${url}`));
     window.webContents.on('render-process-gone', (_event, details) => console.error(`Renderer process exited: ${details.reason} (${details.exitCode})`));
   }

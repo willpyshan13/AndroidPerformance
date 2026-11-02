@@ -46,7 +46,7 @@ async function chooseAdb() {
   try {
     if (!['adb', 'adb.exe'].includes(basename(path).toLowerCase())) throw new Error(nativeText(appearanceLanguage,'请选择 Android Platform Tools 中名为 adb 或 adb.exe 的程序','Select a file named adb or adb.exe from Android Platform Tools'));
     const candidate = new Adb(path);
-    if (!(await candidate.run(['version'])).startsWith('Android Debug Bridge version')) throw new Error('该程序未返回有效 ADB 版本');
+    if (!(await candidate.run(['version'])).startsWith('Android Debug Bridge version')) throw new Error(nativeText(appearanceLanguage,'该程序未返回有效 ADB 版本','The selected program did not return a valid ADB version'));
     await saveSettings({adbPath:path});
     runtimeAdb.path = path;
     runtimeAdb.cpuSnapshots.clear();

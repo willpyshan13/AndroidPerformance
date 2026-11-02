@@ -35,5 +35,6 @@ test('Electron restores the saved menu language and rebuilds the menu after lang
  assert.match(main,/installMenu\(appearanceLanguage\); createWindow\(\)/);
  assert.match(main,/await saveSettings\(appearance\);appearanceLanguage=appearance\.language;installMenu\(appearanceLanguage\)/);
  assert.match(main,/nativeText\(appearanceLanguage,'选择 Android Platform Tools 中的 adb 程序','Select adb from Android Platform Tools'\)/);
+ assert.match(main,/nativeText\(appearanceLanguage,'该程序未返回有效 ADB 版本','The selected program did not return a valid ADB version'\)/);
  assert.match(main,/nativeText\(appearanceLanguage,'选择本地源码目录','Select Local Source Directory'\)/);
 });

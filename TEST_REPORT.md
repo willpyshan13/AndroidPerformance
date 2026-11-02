@@ -513,5 +513,5 @@ npm run test:device -- \
 ## ART method trace 导入（2026-11-03）
 
 - CPU 页面新增独立 ART `.trace/.dmtrace` 导入入口；解析放在 module Worker 中运行，最多接受 256 MiB 文件，并限制事件、方法、线程及保留时间区间数量。支持标准 v1/v2/v3 与解析器覆盖的 v2/v3 streaming 格式，呈现线程调用时间线、调用次数、inclusive/self 时间及不完整调用提示；与 simpleperf 的 perf.data 采样证据分开展示。
-- 新增 `am profile` 设备采集：目标应用须已运行且 debuggable/profileable，可设置 3–30 秒和 100 µs–1 s 抽样间隔；设备停止跟踪后文件校验 SLOW magic、大小和本地 / 远端临时文件清理，再自动载入分析。
-- 回归覆盖嵌套调用、自身时间、v1/v2 记录宽度、unroll、streaming 内联元数据、尾部 clock summary（含 thread-cpu）、损坏头部和事件上限；模拟 ADB 与 HTTP API 测试覆盖启停命令、采样设置、产物返回及失败清理。全量套件：314 项，298 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接的 ADB 设备，尚未用真机导出文件核对格式兼容性和设备权限。历史 macOS packaged smoke 的 Electron 启动 SIGABRT 未在本功能中复测。
+- 新增 `am profile` 设备采集：目标应用须已运行且 debuggable/profileable，可设置 3–30 秒和 100 µs–1 s 抽样间隔；采集中可取消，取消后先停止设备跟踪并清理远端 / 本地临时文件。成功结果校验 SLOW magic 与大小，再自动载入分析。
+- 回归覆盖嵌套调用、自身时间、v1/v2 记录宽度、unroll、streaming 内联元数据、尾部 clock summary（含 thread-cpu）、损坏头部和事件上限；模拟 ADB 与 HTTP API 测试覆盖启停命令、取消、采样设置、产物返回及清理。全量套件：316 项，300 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接的 ADB 设备，尚未用真机导出文件核对格式兼容性和设备权限。历史 macOS packaged smoke 的 Electron 启动 SIGABRT 未在本功能中复测。

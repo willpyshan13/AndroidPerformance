@@ -43,7 +43,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false, macrobenchmarkBusy=false, macrobenchmarkArtifacts=new Map();
   let gpuBusy=false;
-  let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
+  let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;const artTraceCaptures=new Map();
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
   const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):null)});
   const server = http.createServer(async (req, res) => {
@@ -54,7 +54,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
     res.setHeader('Content-Security-Policy', perfettoAssetRequest
       ? "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors 'self'"
       : "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
-    const json = (value, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
+    const json = (value, status = 200) => { if(res.destroyed||res.writableEnded)return;res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
       const address = server.address();
       const hosts = [`127.0.0.1:${address?.port}`, `localhost:${address?.port}`];
@@ -425,9 +425,12 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/layout') return json(await adb.layout(body.serial));
         if (path === '/api/layout/agent') return json(await adb.layoutAgent(body.serial,body.packageName,body.token));
         if (path === '/api/compose/recompositions') return json(await adb.composeRecompositionSnapshot(body.serial,body.packageName));
+        if(path==='/api/cpu-profile/art-trace/cancel'){
+          if(typeof body.captureId!=='string'||!/^[-\da-f]{36}$/i.test(body.captureId))throw new Error('ART trace capture ID 无效');const active=artTraceCaptures.get(body.captureId);if(!active)return json({error:'ART trace 采集任务已结束'},404);active.abort();return json({cancelled:true});
+        }
         if(path==='/api/cpu-profile/art-trace'){
-          const data=await adb.captureArtMethodTrace(body.serial,body.packageName,body.seconds??10,body.samplingIntervalUs??1000);
-          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="art-method.trace"','X-Content-Type-Options':'nosniff'});return res.end(data);
+          if(typeof body.captureId!=='string'||!/^[-\da-f]{36}$/i.test(body.captureId))throw new Error('ART trace capture ID 无效');const captureController=new AbortController();artTraceCaptures.set(body.captureId,captureController);res.once('close',()=>{if(!res.writableFinished)captureController.abort();});
+          try{const data=await adb.captureArtMethodTrace(body.serial,body.packageName,body.seconds??10,body.samplingIntervalUs??1000,undefined,captureController.signal);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="art-method.trace"','X-Content-Type-Options':'nosniff'});return res.end(data);}finally{artTraceCaptures.delete(body.captureId);}
         }
         if (path === '/api/cpu-profile') {
           const capture=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp',traceOffCpu:body.traceOffCpu??false});

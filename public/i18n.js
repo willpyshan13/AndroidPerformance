@@ -590,6 +590,7 @@ const stateEn={
  'ART 方法轨迹已载入（':'ART method trace loaded (',' 次完整调用）': ' completed calls)',
  '采集 ART trace':'Capture ART trace','ART 跟踪时长':'ART trace duration','ART 采样间隔':'ART sampling interval','目标应用需正在运行且允许调试或性能分析；方法插桩会增加明显开销。':'The target app must be running and debuggable or profileable. Method instrumentation adds substantial overhead.',
  'ART trace 采集失败':'ART trace capture failed','ART 方法跟踪时长须为 3–30 秒':'ART method trace duration must be 3–30 seconds','ART 方法采样间隔须为 100–1,000,000 微秒':'ART sampling interval must be 100–1,000,000 microseconds',
+ '取消 ART 采集':'Cancel ART capture','正在停止 ART 方法跟踪…':'Stopping ART method tracing…','ART 方法跟踪已取消':'ART method tracing was cancelled',
  'ART 方法跟踪失败：':'ART method trace failed: ','设备拒绝启动 ART 方法跟踪':'The device refused to start ART method tracing','设备拒绝停止 ART 方法跟踪':'The device refused to stop ART method tracing',
  'ART trace 文件为空或超过 256 MiB 上限':'ART trace is empty or exceeds the 256 MiB limit','设备未返回有效的 ART method trace':'The device did not return a valid ART method trace',
  '目标应用通常需要 debuggable 或 profileable，且必须处于运行状态。':'The target app usually needs to be debuggable or profileable and must already be running.'

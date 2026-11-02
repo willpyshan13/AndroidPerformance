@@ -20,6 +20,10 @@ export function validateTarget(serial, packageName) {
   if (typeof serial !== 'string' || !/^[\w.:[\]-]{1,200}$/.test(serial)) throw new Error('请选择有效的设备');
   if (packageName !== undefined && (typeof packageName !== 'string' || !/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName))) throw new Error('应用包名无效');
 }
+function delayWithSignal(ms,signal){
+  if(signal?.aborted)return Promise.reject(new Error('ART 方法跟踪已取消'));
+  return new Promise((resolve,reject)=>{const timer=setTimeout(done,ms);function done(){signal?.removeEventListener('abort',abort);resolve();}function abort(){clearTimeout(timer);signal?.removeEventListener('abort',abort);reject(new Error('ART 方法跟踪已取消'));}signal?.addEventListener('abort',abort,{once:true});});
+}
 
 export async function locateAdb() {
   const candidates = [process.env.ADB_PATH,
@@ -339,7 +343,7 @@ export class Adb {
       finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData]),unlink(local)]);}
     });
   }
-  async captureArtMethodTrace(serial,packageName,seconds=10,samplingIntervalUs=1000,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))){
+  async captureArtMethodTrace(serial,packageName,seconds=10,samplingIntervalUs=1000,wait=delayWithSignal,signal){
     validateTarget(serial,packageName);
     if(!Number.isInteger(seconds)||seconds<3||seconds>30)throw new Error('ART 方法跟踪时长须为 3–30 秒');
     if(!Number.isInteger(samplingIntervalUs)||samplingIntervalUs<100||samplingIntervalUs>1000000)throw new Error('ART 方法采样间隔须为 100–1,000,000 微秒');
@@ -348,12 +352,12 @@ export class Adb {
       try{
         const start=await this.shell(serial,['am','profile','start','--sampling',String(samplingIntervalUs),packageName,remote],{timeout:30000,maxBuffer:1024*1024});
         if(/(?:^|\n)\s*(?:Error:|PROFILE FAILED|Unable to)/i.test(start))throw new Error(start.trim().slice(0,1000)||'设备拒绝启动 ART 方法跟踪');
-        started=true;await wait(seconds*1000);
+        started=true;await wait(seconds*1000,signal);
         const stop=await this.shell(serial,['am','profile','stop',packageName],{timeout:30000,maxBuffer:1024*1024});started=false;
         if(/(?:^|\n)\s*(?:Error:|PROFILE FAILED|Unable to)/i.test(stop))throw new Error(stop.trim().slice(0,1000)||'设备拒绝停止 ART 方法跟踪');
         const raw=(await this.shell(serial,['wc','-c',remote],{timeout:10000,maxBuffer:1024})).trim(),match=raw.match(/^(\d+)(?:\s|$)/),size=match?Number(match[1]):NaN;
         if(!Number.isSafeInteger(size)||size<4||size>256*1024*1024)throw new Error('ART trace 文件为空或超过 256 MiB 上限');
-        await this.run(['-s',serial,'pull',remote,local],{timeout:120000});
+        await this.run(['-s',serial,'pull',remote,local],{timeout:120000,signal});
         const data=await readFile(local);if(data.length!==size||data.subarray(0,4).toString('ascii')!=='SLOW')throw new Error('设备未返回有效的 ART method trace');
         return data;
       }catch(error){throw new Error(`ART 方法跟踪失败：${error.message}；目标应用通常需要 debuggable 或 profileable，且必须处于运行状态。`);}

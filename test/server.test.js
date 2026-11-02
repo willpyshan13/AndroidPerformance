@@ -63,8 +63,18 @@ test('ART method trace API forwards capture settings and returns the trace bytes
  let received;const adb={captureArtMethodTrace:async(...args)=>{received=args;return Buffer.from('SLOW\x03\x00\x20\x00');}};
  const dir=await mkdtemp(join(tmpdir(),'apw-art-trace-api-')),app=createApp({adb,dataDir:dir,token:'art-trace-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
  t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
- const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile/art-trace`,{method:'POST',headers:{'X-Workbench-Token':'art-trace-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:10,samplingIntervalUs:5000})});
- assert.equal(response.status,200);assert.equal(response.headers.get('content-disposition'),'attachment; filename="art-method.trace"');assert.deepEqual(Buffer.from(await response.arrayBuffer()),Buffer.from('SLOW\x03\x00\x20\x00'));assert.deepEqual(received,['ABC','com.example.demo',10,5000]);
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile/art-trace`,{method:'POST',headers:{'X-Workbench-Token':'art-trace-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:10,samplingIntervalUs:5000,captureId:'12345678-1234-4234-8234-123456789abc'})});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-disposition'),'attachment; filename="art-method.trace"');assert.deepEqual(Buffer.from(await response.arrayBuffer()),Buffer.from('SLOW\x03\x00\x20\x00'));assert.deepEqual(received.slice(0,5),['ABC','com.example.demo',10,5000,undefined]);assert.ok(received[5] instanceof AbortSignal);
+});
+
+test('ART method trace cancel API aborts the active capture while preserving the cleanup response',async t=>{
+ const captureId='12345678-1234-4234-8234-123456789abc';let captureSignal;let startedResolve;const started=new Promise(resolve=>{startedResolve=resolve;});
+ const adb={captureArtMethodTrace:async(_serial,_package,_seconds,_interval,_wait,signal)=>{captureSignal=signal;startedResolve();return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true}));}};
+ const dir=await mkdtemp(join(tmpdir(),'apw-art-trace-cancel-api-')),app=createApp({adb,dataDir:dir,token:'art-trace-cancel'});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});const base=`http://127.0.0.1:${app.address().port}`,headers={'X-Workbench-Token':'art-trace-cancel','Content-Type':'application/json'};
+ const capture=fetch(`${base}/api/cpu-profile/art-trace`,{method:'POST',headers,body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',captureId})});await started;
+ const cancel=await fetch(`${base}/api/cpu-profile/art-trace/cancel`,{method:'POST',headers,body:JSON.stringify({captureId})});assert.equal(cancel.status,200);assert.deepEqual(await cancel.json(),{cancelled:true});assert.equal(captureSignal.aborted,true);
+ const result=await capture;assert.equal(result.status,400);assert.match((await result.json()).error,/cancelled/);
 });
 
 test('CPU events API queries the requested device and returns supported events',async t=>{

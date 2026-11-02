@@ -24,6 +24,11 @@ test('ART method trace capture rejects bad duration and removes a partial remote
  const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.join(' ').includes("'profile' 'start'"))throw new Error('not debuggable');return {stdout:''};});
  await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',2),/3–30 秒/);assert.equal(calls.length,0);await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',5,1000,async()=>{}),/not debuggable/);assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
 });
+test('ART method trace cancellation stops the device profiler and removes its temporary file',async()=>{
+ const calls=[],controller=new AbortController(),adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:''};});
+ const capture=adb.captureArtMethodTrace('ABC','com.example.app',30,1000,undefined,controller.signal);setTimeout(()=>controller.abort(),5);
+ await assert.rejects(capture,/已取消/);assert.ok(calls.some(args=>args.join(' ').includes("'profile' 'stop' 'com.example.app'")));assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
+});
 test('CPU profile capture releases device lock and removes temporary files on device failure',async()=>{
  const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.join(' ').includes('getprop'))return {stdout:'arm64-v8a'};if(args.join(' ').includes('record'))throw new Error('not debuggable');return {stdout:''};});
  await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf'),/not debuggable/);

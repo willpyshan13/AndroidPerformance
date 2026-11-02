@@ -39,3 +39,6 @@
 :root[data-theme="dark"] .tree-node{color:#aab8bf}
 :root[data-theme="dark"] .tag.green{background:#1e3b35;color:#81d4bd}:root[data-theme="dark"] .tag.orange{background:#3b3020;color:#d9b878}:root[data-theme="dark"] .tag.red{background:#402624;color:#e6978d}
 :root[data-theme="dark"] .canvas-pane{background-color:#151e22}:root[data-theme="dark"] .canvas-pane .panel-head{background:var(--surface)}
+.phone-overlay rect.layout-diff-removed{stroke:#c44747;stroke-width:4px;fill:#e05a5a35}
+.baseline-replay{padding:0 12px 16px;border-top:1px solid var(--line)}
+.baseline-replay>.hint{display:block;padding-top:12px;text-align:center}

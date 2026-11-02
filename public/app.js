@@ -82,7 +82,7 @@ function statCard(label, value, unit, note, symbol, color = '', key = '') {
   return `<div class="stat-card"><div class="stat-top"><span>${tr(label)}</span><span class="stat-icon ${color}">${icon(symbol, 15)}</span></div><div class="stat-value"><span ${key ? `data-live="${key}"` : ''}>${value}</span><small>${unit}</small></div><div class="stat-foot"><span ${key==='cpu'?'data-cpu-label':''}>${tr(note)}</span></div></div>`;
 }
 function empty(title, text, symbol = 'activity', action = '') { return `<div class="empty">${icon(symbol, 28)}<strong>${tr(title)}</strong>${tr(text)}${action ? `<div>${action}</div>` : ''}</div>`; }
-const note = text => `<div class="metric-note">${icon('info', 15)}<span>${text}</span></div>`;
+const note = text => `<div class="metric-note">${icon('info', 15)}<span>${tr(text)}</span></div>`;
 const loading = label => `<span class="busy"><i class="spinner"></i>${label}</span>`;
 const last = () => state.samples.at(-1);
 const cpuLabel = () => last()?.source==='demo'?'演示 CPU':last()?.cpu?.method==='proc-stat'?'/proc 差值 · 主进程 · 单核 100%':'dumpsys cpuinfo · 应用进程合计';

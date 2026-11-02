@@ -55,3 +55,10 @@ test('literal empty states and section headings have English translations',async
   const untranslated=labels.filter(label=>/[\u3400-\u9fff]/.test(label)&&/[\u3400-\u9fff]/.test(translate(label,'en-US')));
   assert.deepEqual(untranslated,[]);
 });
+
+test('all literal capability and evidence notes have English translations',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const notes=[...new Set([...app.matchAll(/note\('([^']*[\u3400-\u9fff][^']*)'\)/g)].map(match=>match[1]))];
+  const untranslated=notes.filter(note=>/[\u3400-\u9fff]/.test(translate(note,'en-US')));
+  assert.deepEqual(untranslated,[]);
+});

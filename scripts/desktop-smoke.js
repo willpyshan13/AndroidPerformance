@@ -35,8 +35,8 @@ async function waitForReady() {
 }
 
 try {
-  const { origin, rendererReady } = await waitForReady();
-  if (!rendererReady) throw new Error('Desktop renderer did not build its navigation and main view');
+  const { origin, rendererReady, rendererState } = await waitForReady();
+  if (!rendererReady) throw new Error(`Desktop renderer did not build its navigation and main view: ${JSON.stringify(rendererState)}`);
   const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
   if (!page.ok) throw new Error(`Main page returned HTTP ${page.status}`);
   const html = await page.text();

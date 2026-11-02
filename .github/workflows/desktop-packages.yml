@@ -104,7 +104,7 @@ jobs:
       - run: npm run prepare:shark
       - run: npm run prepare:perfetto-ui
       - run: node scripts/run-npm-task.js ${{ matrix.command }}
-      - name: Install Windows MSI and verify desktop startup
+      - name: Install Windows MSI and NSIS packages and verify desktop startup
         if: runner.os == 'Windows'
         run: node scripts/desktop-smoke.js
       - uses: actions/upload-artifact@v7

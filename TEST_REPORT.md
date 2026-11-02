@@ -6,15 +6,15 @@
 - 桌面端生成 24 字节随机令牌，临时执行 `adb forward tcp:0 localabstract:<socket>` 并在结束时移除转发；目标端校验共享令牌。源码包包含集成说明；未接入 Agent 的应用继续使用 UIAutomator 回退。
 - 5 项集成测试覆盖转发/清理、令牌拒绝、截图不可用与截断标记、受令牌保护的 API 和源码 ZIP 内容。Java 源码以 Android 31 `android.jar` 编译通过。
 - API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
-- Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。该 fixture 验证反射桥接和设备传输，不等于真实 Compose Runtime 集成验证；目标 Compose 应用仍须接入 Agent 后验证。
+- Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。另以独立临时 debug APK 运行真实 Compose Runtime 页面验证 probe 的重组计数；目标 Compose 应用仍须接入 Agent/probe 后验证。
 - Agent 本身不提供 Composable 调用树、自动 skip 计数或 State Reads；可选 probe 仅统计显式插桩的函数；`View.draw` 对 Surface 等硬件层可能不完整。
-- 完整回归：218 项，203 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
+- 完整回归：218 项，202 通过、0 失败、16 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
 
 ## Compose Runtime probe（显式插桩）
 
-- 新增 `ApwComposeRecompositionProbe.kt`：Compose Compiler 2.2.21 + Compose Runtime/UI 1.11.1 编译通过。Probe 通过 `SideEffect` 记录每个插桩实例的调用计数、设备单调时钟与随机进程会话/实例 ID，不记录参数或 State 内容。
+- 新增 `ApwComposeRecompositionProbe.kt`：Compose Compiler 2.2.21 + Compose Runtime/UI 1.11.1 编译通过。Probe 通过 `SideEffect` 记录每个插桩实例的调用计数、设备单调时钟与随机进程会话/实例 ID，不记录参数或 State 内容。首次设备验证发现 probe 自身可能被 Compose 编译器跳过，已加 `@NonSkippableComposable`，并添加源码包回归断言。
 - 桌面端按已选包主进程 PID 读取 `APWCompose:D` main Logcat，聚合本缓冲区当前进程会话中同名实例的最高累计计数；限制返回最近 500 条事件。API 25 不支持 Logcat `--uid`，因此该功能使用 `pidof` + `logcat --pid`，不覆盖目标应用独立子进程。
-- 4 项新增单测覆盖会话隔离、实例聚合、格式/大小边界、PID 命令和受令牌保护 API。API 25 临时应用输出 3 条对应 wire-format 记录，桌面 ADB 读取正确得出 `FeedScreen` 两个实例合计 5 次；这是设备上的传输/parser 验证，不是实际 Compose UI 运行时集成测试。测试 APK 已卸载并恢复原 Activity。
+- 4 项新增单测覆盖会话隔离、实例聚合、格式/大小边界、PID 命令和受令牌保护 API。另建 Compose Compiler 2.2.21 + Compose Runtime/UI 1.11.1 临时页面，在 API 25 设备对同一 `FeedScreen` 实例触发 3 次真实状态重组；Logcat 计数 1–4 连续递增，workbench 的 ADB 采集函数读回 4 条事件、1 个实例、0 条无效记录。该验证覆盖临时 Compose 应用到桌面解析链路，不代表用户目标应用已接入；APK 已卸载并恢复原 Activity。
 - 同一兼容性修复还让网络 Agent 在旧版设备不支持 UID Logcat 过滤时回退到目标主进程 PID；新增一项回归测试验证该回退。
 
 ## Compose Compiler 稳定性报告导入
@@ -327,3 +327,8 @@ npm run test:device -- \
 - 安装包：`dist/v0.1.1/Android Performance-0.1.1-arm64.dmg`。
 
 应用通过 `codesign --verify --deep --strict`，内置 adb 已实际执行版本查询并用于桌面采集，DMG 通过 `hdiutil verify`。Perfetto 成功录制仍需支持该工具的设备验证。
+
+## 最近设备冒烟测试（2026-11-02）
+
+- API 25 / rk3399-all / `com.will.calendar.demo`：设备和应用发现、三次实时监视、连续进程 CPU、gfxinfo 读取与文本导入、79 节点布局和 266,343 字节截图、HAR 脱敏、Benchmark 对比、4 类记录持久化读回、远端 XML 清理及采集锁释放均通过。
+- Perfetto 录制按设备能力正确返回 unsupported（该 Android 7.1.2 设备无 `perfetto`）；设备冒烟合计 11 项通过、1 项不支持、1 项因未允许应用控制而跳过。报告写入 `/private/tmp/apw-device-smoke/report.json`，未控制目标应用启动或重置帧统计。

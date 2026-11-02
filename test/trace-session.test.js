@@ -32,6 +32,19 @@ test('trace sessions query windows and reject stale or out-of-range requests',as
  }finally{app.close();await once(app,'close');}
 });
 
+test('self-hosted Perfetto UI serves pinned assets locally and exposes only the retained trace with a token',async t=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdir}=await import('node:fs/promises'),uiDir=await mkdtemp(join(tmpdir(),'apw-perfetto-ui-test-'));
+ await mkdir(join(uiDir,'v59.1-test'),{recursive:true});await writeFile(join(uiDir,'index.html'),'<!doctype html><title>local-perfetto-fixture</title>');await writeFile(join(uiDir,'v59.1-test','trace_processor.wasm'),Buffer.from([0,97,115,109]));
+ const app=createApp({adb:{path:'adb'},token:'test',perfettoUiDir:uiDir});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(uiDir,{recursive:true,force:true});});
+ const origin=`http://127.0.0.1:${app.address().port}`,api=origin+'/api',headers={'X-Workbench-Token':'test'},data=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));
+ const ui=await fetch(origin+'/perfetto-ui/index.html'),uiText=await ui.text();assert.equal(ui.status,200,uiText);assert.match(ui.headers.get('content-type'),/text\/html/);assert.match(ui.headers.get('content-security-policy'),/frame-ancestors 'self'/);assert.match(uiText,/local-perfetto-fixture/);
+ const wasm=await fetch(origin+'/perfetto-ui/v59.1-test/trace_processor.wasm');assert.equal(wasm.headers.get('content-type'),'application/wasm');assert.deepEqual(Buffer.from(await wasm.arrayBuffer()),Buffer.from([0,97,115,109]));
+ const status=await fetch(api+'/status',{headers});assert.equal((await status.json()).perfettoUiAvailable,true);
+ const analyzed=await fetch(api+'/trace/analyze',{method:'POST',headers,body:data});assert.equal(analyzed.status,200);const session=await analyzed.json();assert.ok(session.sessionId);
+ assert.equal((await fetch(api+'/trace/current')).status,403);const current=await fetch(api+'/trace/current',{headers});assert.equal(current.status,200);assert.deepEqual(Buffer.from(await current.arrayBuffer()),data);
+});
+
 test('trace archives survive sessions and reject corrupted bytes without replacing current session',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const dir=await mkdtemp(join(tmpdir(),'apw-trace-archive-')),app=createApp({adb:{path:'adb'},token:'test',dataDir:dir});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});

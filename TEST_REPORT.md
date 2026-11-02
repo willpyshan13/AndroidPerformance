@@ -1,5 +1,13 @@
 # 当前验证记录（2026-11-02）
 
+## 本机完整 Perfetto UI 增量
+
+- `npm test`：185 项，170 通过、0 失败、15 项因未配置外部官方样本而跳过；新增静态资源服务、WASM MIME、本机 UI 可用状态、令牌保护的当前追踪读取测试。
+- `npm run check` 与 `git diff --check`：通过。
+- 浏览器导入 `fixtures/trace-sample.json` 后打开自托管 Perfetto v59.1，确认 Process 101 / main thread 及时间线内容显示；修改握手时序后控制台无错误。
+- 官方 UI 压缩包固定 SHA-256：`df4433f5d8d98d2c490249870944c819ff85206f61e55e5983bbcc2338c83904`。测试确认 UI 资源通过本机 HTTP 提供，追踪内容仅从本机受令牌保护的接口送入同源 iframe。
+- 当前 rk3399-all / Android 7.1.2 / API 25 不含 `perfetto`，所以此处验证导入与分析，不代表该设备已验证 Perfetto 录制。
+
 ## Perfetto 内存分配剖析增量
 
 - 完整 `npm test`：184 项，169 通过、0 失败、15 项因未配置外部官方样本而跳过；覆盖 heapprofd API 门控与配置、清理、汇总解析，以及 Trace Processor 在普通追踪上返回空采样。

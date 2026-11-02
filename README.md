@@ -44,7 +44,7 @@
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
 | 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签与零尺寸线索；支持导入 XML | UIAutomator |
-| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
+| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识 | AndroidX Benchmark JSON |
@@ -65,6 +65,7 @@ npm run prepare:adb        # 准备 macOS 官方 ADB，打包前需要
 npm run prepare:apk-tools  # 从本机 Android SDK 准备 AAPT2
 npm run prepare:simpleperf  # 准备 macOS simpleperf 资源（需要稳定版 NDK 和 r26 或更早版本）
 npm run prepare:trace-processor  # 下载并校验 macOS arm64 的官方 Trace Processor
+npm run prepare:perfetto-ui  # 下载并校验本机自托管的 Perfetto UI
 npm run desktop
 ```
 
@@ -112,7 +113,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 - **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照只包含受支持的文本源码，跳过符号链接及构建目录，最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位按声明名、文件中的类名和包名排列候选，无法证明方法所属类、区分重载或还原混淆与内联；请核对版本和源码。原生符号使用文本搜索。
 - **APK**：一次分析一个 APK；split APK 的结果只涵盖导入的文件。证书页面展示签名结构和证书信息，**不验证签名完整性或证书信任链**。
 
-尚未实现完整 Perfetto 时间线与深度诊断、精确保留大小和泄漏分析、完整 Compose Inspector、应用级能耗归因、未经接入的应用网络采集，以及自定义 Perfetto SQL 查询。
+仍需补齐：精确保留大小和泄漏分析、完整 Compose Inspector、应用级能耗归因、未经接入的应用网络采集，以及主工作台内自定义 Perfetto SQL 查询。完整 Perfetto UI 可作为本机嵌入分析器使用；该界面里的 SQL 查询不会自动进入工作台报告。
 
 ## 验证记录
 
@@ -150,6 +151,8 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 启动页面可对已导入的 Perfetto 追踪查询启动区间和 TTID/TTFD；需要追踪包含相关 Android 事件，TTFD 还依赖应用的 fully drawn 报告。该结果不会自动与启动实验逐次配对，已用 Perfetto 官方 Android 12 冷启动样本验证；本机设备采集仍待验证。
 
 系统追踪录制可选择包含当前应用的 ATrace 标记；目标应用需要实际提供标记，勾选本身不保证 TTID/TTFD 可计算。导入或录制的追踪可以保存到本机档案、重新载入或导出原始文件；档案载入前会校验 SHA-256。
+
+完整 Perfetto UI 使用自托管的 v59.1 静态资源。点击追踪页“在本机完整 Perfetto 中查看”会通过本机服务将当前追踪送入同源 iframe；分享与下载开关默认关闭，追踪留在本机浏览器内存。源码运行前执行 `npm run prepare:perfetto-ui`；桌面打包会将该资源放入应用资源目录。主工作台与 Perfetto UI 各自使用不同 CSP，Perfetto 仅允许本机资源、WASM 和本地 worker。
 
 CPU 采样完成后会下载并尝试自动载入分析；若解析失败，下载的原始文件仍可使用。采样可以保存为本机档案，载入前校验 SHA-256 并重新分析。支持指定本机 `symfs` 符号目录并重新解析，符号文件需要与采样中的路径和构建 ID 对应；不匹配的文件会被 simpleperf 拒绝，无法解析的函数仍显示为 `unknown`。
 

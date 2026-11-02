@@ -24,3 +24,7 @@ macOS 打包前执行 `npm run prepare:simpleperf`，从本机 Android NDK 复�
 ## Perfetto Trace Processor
 
 macOS arm64 运行 `npm run prepare:trace-processor` 从 Perfetto 官方地址下载固定 v59.1 二进制并验证 SHA-256，同时保存 Apache 2.0 许可证。文件位于忽略提交的 `tools/trace-processor/`，打包时保留版本来源及许可证。其他平台可通过 `TRACE_PROCESSOR_PATH` 配置兼容的 Trace Processor，尚未验证。
+
+## Perfetto UI
+
+运行 `npm run prepare:perfetto-ui` 下载官方 Perfetto v59.1 可自托管 UI。准备脚本会校验固定 SHA-256、限制 ZIP 路径与解压大小，并保存 Apache-2.0 许可证。应用从本机服务提供静态资源，通过 Perfetto 同源嵌入接口载入追踪；追踪不会发送到 `ui.perfetto.dev`。

@@ -8,3 +8,4 @@ tools/platform-tools/
 tools/apk-tools/
 tools/simpleperf/
 tools/trace-processor/
+tools/perfetto-ui/

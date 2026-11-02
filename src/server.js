@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { join, dirname, extname, resolve } from 'node:path';
+import { readFile, writeFile, mkdir, readdir, access, stat } from 'node:fs/promises';
+import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Adb, locateAdb } from './adb.js';
@@ -32,10 +32,11 @@ async function readBody(req) {
   catch { throw Object.assign(new Error('JSON 格式错误'), { status: 400 }); }
 }
 
-export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer }) {
+export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir }) {
   const gpuDir=join(dataDir,'gpu-artifacts');
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
+  const perfettoUiRoot=perfettoUiDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'perfetto-ui'):join(root,'tools','perfetto-ui'));
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false;
   let gpuBusy=false;
@@ -44,7 +45,10 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    const perfettoAssetRequest=(()=>{try{return new URL(req.url,'http://localhost').pathname.startsWith('/perfetto-ui/');}catch{return false;}})();
+    res.setHeader('Content-Security-Policy', perfettoAssetRequest
+      ? "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors 'self'"
+      : "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     const json = (value, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
       const address = server.address();
@@ -55,6 +59,17 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const path = url.pathname;
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET') return json({ error: '不支持的请求' }, 405);
+        if(path.startsWith('/perfetto-ui/')){
+          let relativePath;try{relativePath=decodeURIComponent(path.slice('/perfetto-ui/'.length));}catch{return json({error:'Perfetto UI 路径无效'},400);}
+          if(!relativePath||relativePath.includes('\\')||relativePath.split('/').some(part=>!part||part==='.'||part==='..'))return json({error:'Perfetto UI 路径无效'},400);
+          const file=resolve(perfettoUiRoot,relativePath),relativeFile=relative(perfettoUiRoot,file);
+          if(relativeFile==='..'||relativeFile.startsWith(`..${process.platform==='win32'?'\\':'/'}`))return json({error:'Perfetto UI 路径无效'},400);
+          try{
+            const size=(await stat(file)).size,mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.map':'application/json; charset=utf-8','.wasm':'application/wasm','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.woff2':'font/woff2','.svg':'image/svg+xml'}[extname(file)]||'application/octet-stream';
+            res.writeHead(200,{'Content-Type':mime,'Content-Length':size,'Cache-Control':'public, max-age=31536000, immutable'});const stream=createReadStream(file);stream.on('error',()=>res.destroy());return stream.pipe(res);
+          }catch{return json({error:'Perfetto UI 尚未准备，请运行 npm run prepare:perfetto-ui'},404);}
+        }
+        if(path==='/perfetto-ui'||path==='/perfetto-ui/') {res.writeHead(302,{Location:'/perfetto-ui/index.html#!/?mode=embedded'});return res.end();}
         const files = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/demo.js': 'demo.js', '/offline.js': 'offline.js', '/favicon.svg': 'favicon.svg' };
         if (!files[path]) return json({ error: '页面不存在' }, 404);
         let content = await readFile(join(root, 'public', files[path]));
@@ -68,7 +83,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const pkg = url.searchParams.get('package');
       if (req.method === 'GET') {
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
-        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), platform: process.platform, desktop, dataDir });
+        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), platform: process.platform, desktop, dataDir });
+        if(path==='/api/trace/current'){
+          if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
+          const size=(await stat(traceSession.path)).size;res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});const stream=createReadStream(traceSession.path);stream.on('error',()=>res.destroy());return stream.pipe(res);
+        }
         if (path === '/api/devices') return json({ devices: await adb.devices() });
         if (path === '/api/device') return json(await adb.info(serial));
         if (path === '/api/packages') return json({ packages: await adb.packages(serial) });

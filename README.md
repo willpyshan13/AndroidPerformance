@@ -12,16 +12,18 @@
 
 ### 安装桌面版
 
-目前已验证 **macOS Apple Silicon** 构建：
+已由 GitHub Actions 原生 runner 构建并上传以下桌面安装包：
 
-| 方式 | 文件 | 使用方法 |
+| 平台 | 安装包 | CI 产物 |
 | --- | --- | --- |
-| 安装 | `dist/v0.2.0/Android Performance-0.2.0-arm64.dmg` | 打开镜像，将应用拖到「应用程序」 |
-| 直接运行 | `dist/v0.2.0/mac-arm64/Android Performance.app` | 双击打开 |
+| macOS Apple Silicon | DMG | [Actions 安装包](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41453722724) |
+| macOS Intel | DMG | 同一 Actions run 的 `android-performance-macos-x64` artifact |
+| Windows x64 | NSIS EXE | 同一 Actions run 的 `android-performance-windows-x64` artifact |
+| Linux x64 | AppImage | 同一 Actions run 的 `android-performance-linux-x64` artifact |
 
-当前 0.2.0 安装包内置运行环境、基于 Google Platform Tools 的 ADB 和 AAPT2，无需另外安装 Node.js 或启动浏览器；新源码构建的 macOS 包还会内置 simpleperf。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。当前 Platform Tools 在部分 macOS 环境可能需要对已校验下载包中的项目副本使用本机 ad-hoc 签名，详见 [工具准备说明](tools/README.md)。
+CI artifact 保存 14 天。安装包包含 Electron、平台原生 ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。Windows 首次启动会把 Java runtime 解压到应用数据目录，以供 Shark 和 Compose Inspector 使用。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
-> 当前为本地 ad-hoc 签名的开发构建，尚未使用 Apple Developer 证书或公证。对外分发前还需完成正式签名、公证和其他设备的兼容性验证。
+Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装包构建和上传，尚未在 Windows/macOS/Linux 桌面上逐一安装启动。macOS 使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。
 
 ### 连接 Android 设备
 
@@ -64,7 +66,7 @@ npm ci
 npm run prepare:adb        # 准备 macOS 官方 ADB，打包前需要
 npm run prepare:apk-tools  # 从本机 Android SDK 准备 AAPT2
 npm run prepare:simpleperf  # 准备 macOS simpleperf 资源（需要稳定版 NDK 和 r26 或更早版本）
-npm run prepare:trace-processor  # 下载并校验 macOS arm64 的官方 Trace Processor
+npm run prepare:trace-processor  # 下载并校验当前主机架构的官方 Trace Processor
 npm run prepare:perfetto-ui  # 下载并校验本机自托管的 Perfetto UI
 npm run prepare:shark        # 下载并校验 Shark 及 Java runtime
 npm run desktop
@@ -92,7 +94,7 @@ npm run package:win       # Windows x64 NSIS
 npm run package:linux     # Linux x64 AppImage
 ```
 
-Windows / Linux 的原生工具准备与打包配置已加入 GitHub Actions 矩阵，macOS x64 也有独立目标；这些非当前主机目标须等工作流在原生 runner 执行后才算验证。
+GitHub Actions 原生 runner 已验证 macOS arm64/x64 DMG、Windows x64 NSIS EXE、Linux x64 AppImage 的构建与 artifact 上传。Linux arm64 尚未进入打包矩阵；Windows runtime 解压仍需安装后的桌面冒烟验证。
 
 ## 数据与隐私
 

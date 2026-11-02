@@ -94,6 +94,7 @@ function renderNav() {
 }
 function updateChrome() {
   document.title=state.language==='en-US'?'Android Performance · Workbench':'Android Performance · 性能工作台';
+  $('.brand').setAttribute('aria-label',tr('Android Performance 概览'));
   document.querySelector('.workspace-label').firstChild.textContent=`${tr('工作空间')} `;
   document.querySelector('.local-indicator').lastChild.textContent=` ${tr('本地运行 · 数据保存在本机')}`;
   $('.breadcrumb').firstChild.textContent=`${tr('工作空间')} `;
@@ -106,7 +107,7 @@ function updateChrome() {
   $('#mode-btn').textContent = tr(state.demo ? '退出演示' : '进入演示');
   $('#connection-status').textContent = tr(state.demo ? '演示模式' : state.serial ? 'ADB 已连接' : '未连接设备');
   $('#connection-status').className = `connection-status ${state.demo ? 'demo' : state.serial ? 'connected' : ''}`;
-  const message = state.demo ? '当前为演示模式：图表和设备信息来自内置示例。退出演示并连接 Android 设备，即可采集真实数据。' : state.error;
+  const message = state.demo ? tr('当前为演示模式：图表和设备信息来自内置示例。退出演示并连接 Android 设备，即可采集真实数据。') : state.error;
   $('#notice').textContent = message; $('#notice').hidden = !message;
   $('#footer-status').textContent = tr(state.monitoring ? `正在采集 · 每 ${state.interval / 1000} 秒 · ${state.samples.length} 个样本` : state.replay ? '正在查看已保存的采集记录' : state.demo ? '演示模式 · 示例数据' : state.serial ? '设备已连接 · 准备就绪' : '等待设备连接');
 }
@@ -821,7 +822,7 @@ function render() {
   renderNav(); renderDeviceOptions(); updateChrome();
   const views={ overview:renderOverview, monitor:renderMonitor, 'cpu-profile':renderCpuProfile, frames:renderFrames, startup:renderStartup, layout:renderLayout, heap:renderHeap, battery:renderBattery, gpu:renderGpu, trace:renderTrace, network:renderNetwork, benchmark:renderBenchmark, apk:renderApk, source:renderSource, sessions:renderSessions, settings:renderSettings };
   $('#main').innerHTML=(views[state.route]||renderOverview)();
-  localizeTextNodes($('#main'),state.language);
+  localizeTextNodes(document.body,state.language);
   requestAnimationFrame(()=>{ drawCharts(); if(state.route==='layout'&&state.selectedNode!==null) selectNode(state.selectedNode); const flame=$('.flame-scroll');if(state.route==='cpu-profile'&&flame)flame.scrollTop=flame.scrollHeight; });
 }
 

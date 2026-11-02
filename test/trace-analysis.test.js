@@ -14,6 +14,13 @@ test('trace summary keeps timestamps as exact strings and missing evidence empty
  assert.equal(r.bounds.startNs,'9007199254740993');assert.deepEqual(r.slices,[{name:'work',count:2,totalMs:12.5}]);assert.deepEqual(r.threads,[]);
  assert.throws(()=>parseTraceSummary('bad\n'),/列/);
 });
+test('heap allocation profile parser preserves signed samples and callsite metadata',async()=>{
+ const {parseHeapProfileSummary,queryHeapProfile}=await import('../src/trace-analysis.js');
+ const csv='"id","parent_id","name_hex","mapping_hex","source_hex","line_number","self_unreleased_bytes","cumulative_unreleased_bytes","self_allocated_bytes","cumulative_allocated_bytes"\n"1","","6D616C6C6F63","6C6962632E736F2E","","","-1024","-100","2048","4096"\n"2","1","6D7946756E63","6170702E736F","7372632F4D61696E2E637070","42","512","924","1024","2048"\n';
+ const r=parseHeapProfileSummary(csv,'native');assert.equal(r.available,true);assert.equal(r.sites[0].name,'malloc');assert.equal(r.sites[0].selfUnreleasedBytes,'-1024');assert.equal(r.sites[1].source,'src/Main.cpp');assert.equal(r.sites[1].line,'42');assert.equal(r.totalAllocatedBytes,'4096');assert.equal(r.totalUnreleasedBytes,'-100');
+ assert.throws(()=>parseHeapProfileSummary(csv,'other'),/模式无效/);assert.throws(()=>parseHeapProfileSummary(csv.replace('"2048"','"-2"'),'art'),/数值无效/);assert.throws(()=>parseHeapProfileSummary('bad\n'),/列无效/);
+ let sql;const queried=await queryHeapProfile('/private/trace',{mode:'art',locator:async()=>'/trusted/trace_processor',runner:async(binary,args)=>{assert.equal(binary,'/trusted/trace_processor');sql=args.at(-1);return {stdout:csv};}});assert.equal(queried.mode,'art');assert.match(sql,/INCLUDE PERFETTO MODULE android\.memory\.heap_profile\.summary_tree/);assert.match(sql,/ORDER BY cumulative_alloc_size DESC LIMIT 501/);
+});
 test('trace upload uses fixed query and cleans temporary files',async()=>{
  let path;const r=await analyzeTraceUpload(req([Buffer.from('test')]),{locator:async()=>'/trusted/tp',runner:async(binary,args)=>{assert.equal(binary,'/trusted/tp');assert.equal(args[0],'--no-agent');path=args[3];assert.equal((await readFile(path)).toString(),'test');return {stdout:'"kind","label","count","value"\n"bounds","trace","1","2"\n'};}});
  assert.equal(r.fileBytes,4);await assert.rejects(access(path));
@@ -23,6 +30,11 @@ test('official trace processor analyzes a synthetic Chrome trace',async(t)=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const stream=createReadStream(new URL('../fixtures/trace-sample.json',import.meta.url));stream.headers={};const result=await analyzeTraceUpload(stream);
  assert.equal(result.bounds.startNs,'1000000');assert.equal(result.bounds.endNs,'47000000');assert.equal(result.slices.find(x=>x.name==='startup').totalMs,25);assert.deepEqual(result.threads,[]);assert.equal(result.binder[0].totalMs,3);
+});
+test('Trace Processor heap-profile query reports no samples for an ordinary trace',async(t)=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {queryHeapProfile}=await import('../src/trace-analysis.js'),result=await queryHeapProfile(new URL('../fixtures/trace-sample.json',import.meta.url).pathname,{mode:'native'});
+ assert.equal(result.available,false);assert.deepEqual(result.sites,[]);assert.equal(result.mode,'native');
 });
 test('trace names containing quotes and newlines survive the native CSV exporter',async(t)=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}

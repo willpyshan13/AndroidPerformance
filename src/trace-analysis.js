@@ -94,6 +94,35 @@ export async function querySliceArguments(path,{sliceId,locator=locateTraceProce
  const args=rows.slice(0,200).map(row=>{if(row.length!==3)throw new Error('切片参数行无效');return {key:decode(row[0]),type:decode(row[1]),value:decode(row[2])};});return {args,truncated:rows.length>200};
 }
 
+export function parseHeapProfileSummary(csv,mode='native'){
+ if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
+ const rows=parseCsv(csv),header=rows.shift(),expected='id,parent_id,name_hex,mapping_hex,source_hex,line_number,self_unreleased_bytes,cumulative_unreleased_bytes,self_allocated_bytes,cumulative_allocated_bytes';
+ if(!header||header.join(',')!==expected)throw new Error('内存分配剖析返回列无效');
+ const decode=hex=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(hex))throw new Error('内存剖析文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
+ const integer=(value,signed=false)=>{if(!(signed?/^-?\d+$/:/^\d+$/).test(value)||value.length>20)throw new Error('内存剖析数值无效');const n=BigInt(value);if(n<-(1n<<63n)||n>(1n<<63n)-1n)throw new Error('内存剖析数值超出范围');return value;};
+ const sites=rows.slice(0,500).map(row=>{
+   if(row.length!==10)throw new Error('内存剖析记录不完整');
+   const id=integer(row[0]),parentId=row[1]===''?null:integer(row[1]);
+   return {id,parentId,name:decode(row[2]),mapping:decode(row[3]),source:decode(row[4]),line:row[5]===''?null:integer(row[5]),selfUnreleasedBytes:integer(row[6],true),cumulativeUnreleasedBytes:integer(row[7],true),selfAllocatedBytes:integer(row[8]),cumulativeAllocatedBytes:integer(row[9])};
+ });
+ const totals=sites.reduce((best,x)=>BigInt(x.cumulativeAllocatedBytes)>BigInt(best.cumulativeAllocatedBytes)?x:best,{cumulativeAllocatedBytes:'0',cumulativeUnreleasedBytes:'0'});
+ return {mode,sites,totalAllocatedBytes:totals.cumulativeAllocatedBytes,totalUnreleasedBytes:totals.cumulativeUnreleasedBytes,truncated:rows.length>500,available:sites.length>0};
+}
+export async function queryHeapProfile(path,{mode='native',locator=locateTraceProcessor,runner=exec}={}){
+ if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
+ const query=`INCLUDE PERFETTO MODULE android.memory.heap_profile.summary_tree;
+ SELECT CAST(id AS TEXT) AS id,COALESCE(CAST(parent_id AS TEXT),'') AS parent_id,
+ hex(CAST(COALESCE(name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(mapping_name,'') AS BLOB)) AS mapping_hex,
+ hex(CAST(COALESCE(source_file,'') AS BLOB)) AS source_hex,COALESCE(CAST(line_number AS TEXT),'') AS line_number,
+ CAST(self_size AS TEXT) AS self_unreleased_bytes,CAST(cumulative_size AS TEXT) AS cumulative_unreleased_bytes,
+ CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes
+ FROM android_heap_profile_summary_tree ORDER BY cumulative_alloc_size DESC LIMIT 501`;
+ const binary=await locator();let output;
+ try{output=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:8*1024*1024,encoding:'utf8',windowsHide:true});}
+ catch(error){throw new Error(`内存分配剖析查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}
+ return parseHeapProfileSummary(output.stdout,mode);
+}
+
 export const FRAME_TIMELINE_QUERY=`WITH expected AS (
  SELECT upid,surface_frame_token,display_frame_token,layer_name,COUNT(*) AS n,MIN(ts) AS ts,MIN(dur) AS dur
  FROM expected_frame_timeline_slice WHERE dur >= 0 GROUP BY upid,surface_frame_token,display_frame_token,layer_name

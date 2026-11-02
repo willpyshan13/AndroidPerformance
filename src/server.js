@@ -11,7 +11,7 @@ import { locateAapt2 } from './apk.js';
 import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzePerfUpload } from './perf-upload.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -133,6 +133,17 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
             const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:result.bounds,fileBytes:result.fileBytes};
             if(previous)await previous.cleanup();return json({...result,sessionId,viewBounds:result.bounds});
           }finally{traceBusy=false;}
+        }
+        if(path==='/api/heap-profile/analyze'){
+          if(traceBusy){req.resume();return json({error:'已有追踪任务正在处理，请等待完成'},409);}
+          const mode=req.headers['x-heap-profile-mode']||'native';if(!['native','art'].includes(mode)){req.resume();throw new Error('内存剖析模式无效');}
+          traceBusy=true;let session;
+          try{
+            const analyzed=await analyzeTraceUpload(req,{retain:true});session=analyzed.session;
+            const profile=await queryHeapProfile(session.path,{mode});if(closed){await session.cleanup();throw new Error('服务已关闭');}
+            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:analyzed.result.bounds,fileBytes:analyzed.result.fileBytes};session=undefined;
+            if(previous)await previous.cleanup();return json({...analyzed.result,heapProfile:profile,sessionId,viewBounds:analyzed.result.bounds});
+          }finally{if(session)await session.cleanup();traceBusy=false;}
         }
         if (path === '/api/cpu-profile/analyze') {
           if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在分析，请等待完成'},409);}
@@ -312,6 +323,10 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           const data = await adb.trace(body.serial, body.seconds ?? 10, body.mode ?? 'standard',body.packageName??null);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="capture.perfetto-trace"' });
           return res.end(data);
+        }
+        if(path==='/api/heap-profile'){
+          const mode=body.mode??'native',data=await adb.heapProfile(body.serial,body.packageName,body.seconds??10,mode,body.samplingIntervalBytes??4096);
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="capture-${mode==='art'?'art':'native'}-heap.perfetto-trace"`});return res.end(data);
         }
         if (path === '/api/sessions') {
           validateRecord(body);

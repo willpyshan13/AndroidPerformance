@@ -318,4 +318,29 @@ export class Adb {
       }
     });
   }
+  async heapProfile(serial,packageName,seconds=10,mode='native',samplingIntervalBytes=4096){
+    validateTarget(serial,packageName);
+    if(!Number.isInteger(seconds)||seconds<5||seconds>30)throw new Error('内存剖析时长须为 5–30 秒');
+    if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
+    if(!Number.isSafeInteger(samplingIntervalBytes)||samplingIntervalBytes<4096||samplingIntervalBytes>1048576)throw new Error('采样间隔须为 4 KiB–1 MiB');
+    return this.exclusive(serial,async()=>{
+      const sdk=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim();
+      if(!/^\d+$/.test(sdk))throw new Error('无法读取设备 Android API 级别');
+      const api=Number(sdk),minimum=mode==='art'?31:29;
+      if(api<minimum)throw new Error(`${mode==='art'?'ART 分配样本':'Native 堆剖析'}需要 Android ${mode==='art'?'12（API 31）':'10（API 29）'}或更高版本`);
+      let available=false;try{available=!!(await this.shell(serial,['which','perfetto'])).trim();}catch{}
+      if(!available)throw new Error('当前设备没有 perfetto 程序，无法采集内存分配剖析');
+      const id=randomUUID(),remote=`/data/misc/perfetto-traces/apw-heap-${id}.perfetto-trace`,local=join(tmpdir(),`apw-heap-${id}.perfetto-trace`),configRemote=`/data/misc/perfetto-configs/apw-heap-${id}.pbtxt`,configLocal=join(tmpdir(),`apw-heap-${id}.pbtxt`);
+      try{
+        const heaps=api>=31?`heaps: "${mode==='art'?'com.android.art':'libc.malloc'}"`:'';
+        const config=`duration_ms: ${seconds*1000}\nbuffers { size_kb: 32768 }\ndata_sources { config { name: "android.heapprofd" target_buffer: 0 heapprofd_config { sampling_interval_bytes: ${samplingIntervalBytes} process_cmdline: "${packageName}" ${heaps} continuous_dump_config { dump_interval_ms: 5000 } } } }\n`;
+        await writeFile(configLocal,config,{flag:'wx',mode:0o600});
+        await this.run(['-s',serial,'push',configLocal,configRemote],{timeout:30000});
+        await this.shell(serial,['perfetto','--txt','-c',configRemote,'-o',remote],{timeout:(seconds+30)*1000,maxBuffer:4*1024*1024});
+        await this.run(['-s',serial,'pull',remote,local],{timeout:120000});
+        const size=(await stat(local)).size;if(!size||size>256*1024*1024)throw new Error('内存剖析追踪为空或超过 256 MiB 上限');
+        return await readFile(local);
+      }finally{await Promise.allSettled([this.shell(serial,['rm','-f',remote,configRemote]),unlink(local),unlink(configLocal)]);}
+    });
+  }
 }

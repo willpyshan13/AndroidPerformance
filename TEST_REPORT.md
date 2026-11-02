@@ -1,5 +1,12 @@
 # 当前验证记录（2026-11-02）
 
+## Perfetto 内存分配剖析增量
+
+- 完整 `npm test`：184 项，169 通过、0 失败、15 项因未配置外部官方样本而跳过；覆盖 heapprofd API 门控与配置、清理、汇总解析，以及 Trace Processor 在普通追踪上返回空采样。
+- `npm run check`：通过。`git diff --check`：通过。
+- 真机页面：已连接的 rk3399 all / Android 7.1.2 / API 25 显示 Native 模式因设备没有 Perfetto 而禁用；切换到 ART 模式显示需要 API 31+ 并禁用。未尝试运行设备采样。
+- **真实 Native / ART heapprofd 采集尚未验证**：当前设备版本过旧且没有 Perfetto。支持设备上的系统 debuggable/profileable 条件、权限、结果样本质量仍待实机验证。
+
 ## 布局、电池与真机 HPROF 增量
 
 - 完整 `npm test`：181 项，166 通过、0 失败、15 项因未配置外部官方样本而跳过。

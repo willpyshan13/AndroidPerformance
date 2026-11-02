@@ -75,6 +75,7 @@
       "icon": "desktop/resources/icon.png",
       "identity": "-",
       "extraResources": [
+        { "from": "tools/java-runtime", "to": "java-runtime" },
         {
           "from": "tools/platform-tools",
           "to": "platform-tools",

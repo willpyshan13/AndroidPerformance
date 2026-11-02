@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary,benchmarkExperimentUncertainty} from '../public/offline.js';
+import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary,benchmarkExperimentUncertainty,buildBenchmarkExperimentComparisonReport} from '../public/offline.js';
 import {validateRecord} from '../src/records.js';
 const benchmark=(params,metrics={time:{runs:[1,3]}})=>({name:'test',className:'Example',params,metrics});
 const parse=(benchmarks,context={})=>parseBenchmark({context,benchmarks});
@@ -66,4 +66,11 @@ test('experiment-level Benchmark uncertainty uses saved reports as units and det
  assert.equal(benchmarkExperimentUncertainty([report(0),report(0),report(0),report(0),report(0)],current,key).reason,'基线中位数为零，不能计算相对区间');
  const duplicate={results:[{key,median:100},{key,median:101}]};assert.equal(benchmarkExperimentUncertainty([duplicate,...baseline.slice(1)],current,key).baselineExperiments,4);
  assert.throws(()=>benchmarkExperimentUncertainty(baseline,current,key,{resamples:10}),/参数无效/);
+});
+
+test('independent Benchmark metric report exports evidence, context warnings and its interval',()=>{
+ const key='time',context=model=>({build:{model,device:'device',version:{sdk:35},fingerprint:'fp'},compilationMode:'speed',cpuLocked:true,cpuCoreCount:8,cpuMaxFreqHz:2000000000,sustainedPerformanceModeEnabled:true,artMainlineVersion:'1'}),report=(value,index,model)=>({sessionId:`${model}-${index}`,sessionName:`${model} run ${index}`,sessionTimestamp:1700000000000+index,context:context(model),results:[{key,median:value,name:'startup',className:'Example',params:{mode:'cold'},metric:'timeNs',metricType:'time'}]}),baseline=[99,100,101,102,103].map((v,i)=>report(v,i,'baseline')),current=[109,110,111,112,113].map((v,i)=>report(v,i,'current'));
+ const output=buildBenchmarkExperimentComparisonReport(baseline,current,key);
+ assert.equal(output.schemaVersion,1);assert.equal(output.kind,'benchmark-experiment-comparison');assert.equal(output.metric.name,'startup');assert.equal(output.baseline[0].sessionId,'baseline-0');assert.equal(output.baseline[0].median,99);assert.equal(output.estimate.available,true);assert.ok(output.contextWarnings.includes('设备型号不一致'));assert.equal(output.limitations.length,2);
+ assert.throws(()=>buildBenchmarkExperimentComparisonReport(baseline.slice(0,4),current,key),/参数无效/);
 });

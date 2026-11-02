@@ -39,6 +39,7 @@ const en={
  '基准对比':'Benchmark Comparison',
  '独立实验组不确定性':'Independent Experiment Uncertainty',
  '分析独立实验组':'Analyze independent experiment groups',
+ '导出指标实验报告':'Export metric experiment report','实验组指标报告已导出':'Experiment metric report exported','没有可导出的指标':'There is no metric to export',
  '报告级统计':'Report-level statistics',
  '独立实验单位':'Independent experiment units',
  '基线实验单位':'Baseline experiment units',

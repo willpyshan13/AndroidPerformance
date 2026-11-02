@@ -138,6 +138,7 @@ test('independent Benchmark experiment comparison localizes its statistical limi
   ];
   assert.equal(translate('独立实验组不确定性','en-US'),'Independent Experiment Uncertainty');
   assert.equal(translate('分析独立实验组','en-US'),'Analyze independent experiment groups');
+  assert.equal(translate('导出指标实验报告','en-US'),'Export metric experiment report');
   assert.deepEqual(guidance.filter(text=>translate(text,'en-US')===text),[]);
 });
 

@@ -408,3 +408,10 @@ npm run test:device -- \
 - 新增回归覆盖确定性、最少样本、零基线、重复指标与参数边界；中英文标签和说明检查通过。`npm run check`、`git diff --check` 通过。完整 `npm test`：290 项，274 通过、0 失败、16 项因未配置可选官方样本而跳过。
 - macOS arm64 `.app` 目录包重新构建成功，`codesign --verify --deep --strict` 通过，asar 包含更新后的界面与统计模块。未创建 DMG。
 - 本轮 ADB 未发现设备，因此没有真机 Benchmark 实验数据；区间实现目前以合成数据测试。
+
+
+## Benchmark 实验组报告导出（2026-11-03）
+
+- 统计详情新增逐指标 JSON 导出，包含两组逐报告中位数、保存记录身份与时间、执行上下文、差异/缺失警告、95% Bootstrap 区间及解释限制，便于归档和复核。
+- 新增测试覆盖报告格式、环境差异、样本身份和组规模边界；对应英文标签检查通过。`npm run check`、`git diff --check` 均通过。完整 `npm test`：291 项，275 通过、0 失败、16 项因未配置可选官方样本而跳过。
+- macOS arm64 `.app` 目录包重建成功，`codesign --verify --deep --strict` 通过。本机 ADB 成功启动，但本轮设备列表为空，无法进行真机 Benchmark 报告验证。

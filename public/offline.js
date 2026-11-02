@@ -311,6 +311,15 @@ export function benchmarkExperimentUncertainty(baselineReports,currentReports,ke
  return {available:true,baselineExperiments:before.length,currentExperiments:after.length,baselineMedian,currentMedian,deltaPercent,lowerPercent:quantile(.025),upperPercent:quantile(.975),resamples:distribution.length,method:'独立报告中位数的百分位 Bootstrap',seeded:true};
 }
 
+export function buildBenchmarkExperimentComparisonReport(baselineReports,currentReports,key){
+ if(!Array.isArray(baselineReports)||!Array.isArray(currentReports)||baselineReports.length<5||currentReports.length<5||baselineReports.length>100||currentReports.length>100||typeof key!=='string'||!key)throw new Error('独立实验统计参数无效');
+ const find=report=>{const rows=Array.isArray(report?.results)?report.results.filter(row=>row?.key===key):[];return rows.length===1?rows[0]:null;};
+ const sample=[...baselineReports,...currentReports].map(find).find(Boolean);if(!sample)throw new Error('至少一侧没有唯一且有效的报告级指标');
+ const contextWarnings=[];for(const reports of [baselineReports,currentReports])for(let i=1;i<reports.length;i++)contextWarnings.push(...benchmarkContextWarnings(reports[0],reports[i]));contextWarnings.push(...benchmarkContextWarnings(baselineReports[0],currentReports[0]));
+ const serialize=reports=>reports.map(report=>{const row=find(report);return {sessionId:report.sessionId||null,name:report.sessionName||report.fileName||'Benchmark 报告',timestamp:report.sessionTimestamp||report.timestamp||null,context:report.context||null,median:row&&Number.isFinite(row.median)?row.median:null,metricPresent:!!row};});
+ return {schemaVersion:1,kind:'benchmark-experiment-comparison',timestamp:Date.now(),metric:{key,name:sample.name,className:sample.className,params:sample.params,metric:sample.metric,metricType:sample.metricType},baseline:serialize(baselineReports),current:serialize(currentReports),contextWarnings:[...new Set(contextWarnings)],estimate:benchmarkExperimentUncertainty(baselineReports,currentReports,key),limitations:['Each separately saved report is one experiment unit; within-report runs are summarized by the report median.','The bootstrap interval is exploratory, not a p-value, significance test, proof of causation, or proof that runs are independent. Verify run independence and comparability from the actual test procedure.']};
+}
+
 // HPROF object IDs are snapshot-local. Match unambiguous class names only.
 export function compareHeaps(baseline, current) {
   const group = heap => {

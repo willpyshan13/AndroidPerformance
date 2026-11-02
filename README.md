@@ -49,7 +49,7 @@ Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装�
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
-| 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；可运行已安装的 instrumentation，或选择带 Gradle Wrapper 的 Macrobenchmark 工程执行 connected Android Test，并载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
+| 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；可运行已安装的 instrumentation，或选择带 Gradle Wrapper 的 Macrobenchmark 工程执行 connected Android Test，并载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看并导出逐指标的报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
 | 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 函数及布局类名定位 Java/Kotlin 声明候选 | 本机目录或公开 Git 仓库 |
 | APK 分析 | 查看包信息、权限、组件、文件大小、DEX、原生库、证书和 Manifest | 本地 APK、AAPT2 |
 | 外观设置 | 跟随系统或切换浅色/深色主题，设置 90%–120% 缩放；桌面偏好退出后保留 | 系统外观与本机设置 |
@@ -125,7 +125,7 @@ GitHub Actions 原生 runner 已验证 macOS arm64/x64 DMG、Windows x64 NSIS EX
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 290 项，274 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
+| 自动测试 | 291 项，275 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 

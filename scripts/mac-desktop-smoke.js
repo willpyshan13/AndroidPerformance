@@ -73,6 +73,8 @@ try {
   const routeChecks=ready.rendererState.routeChecks;
   const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
   if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo)||!routeChecks.demo.find(result=>result.route==='#cpu-profile')?.stackTimeline)throw new Error(`Packaged macOS route/CPU stack chart smoke failed: ${JSON.stringify(routeChecks)}`);
+  const untranslated=routeChecks.demo.flatMap(result=>result.untranslated.map(text=>({route:result.route,text})));
+  if(untranslated.length){const reportPath=join(tmpdir(),'android-performance-untranslated-english.json');await writeFile(reportPath,JSON.stringify(untranslated,null,2));throw new Error(`Packaged macOS English route smoke found ${untranslated.length} untranslated UI strings; details: ${reportPath}`);}
   if(!ready.rendererState.cpuPngExport?.ok||ready.rendererState.cpuPngExport.type!=='image/png')throw new Error(`Packaged macOS CPU PNG export smoke failed: ${JSON.stringify(ready.rendererState.cpuPngExport)}`);
   if(!ready.rendererState.cpuLargeTimeline?.ok||ready.rendererState.cpuLargeTimeline.totalMs>30_000)throw new Error(`Packaged macOS 50k CPU timeline raster smoke failed: ${JSON.stringify(ready.rendererState.cpuLargeTimeline)}`);
   if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
@@ -88,7 +90,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, and 50k CPU timeline raster ready (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings})})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, 50k CPU timeline raster, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,englishRoutes:routeChecks.demo.length})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

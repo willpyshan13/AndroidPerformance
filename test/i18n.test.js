@@ -14,6 +14,16 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });
 
+test('dynamic English labels translate changing counts and local paths without rewriting captured values',()=>{
+ assert.equal(translate('2 秒','en-US'),'2 sec');
+ assert.equal(translate('90 个样本','en-US'),'90 samples');
+ assert.equal(translate('8 节点','en-US'),'8 nodes');
+ assert.equal(translate('0 项本地证据','en-US'),'0 local evidence items');
+ assert.equal(translate('起点 11/03, 06:40 · 显示区间 12,067.0 ms','en-US'),'Start 11/03, 06:40 · displayed range 12,067.0 ms');
+ assert.equal(translate('com.example.app','en-US'),'com.example.app');
+ assert.equal(translate('Pixel 8','en-US'),'Pixel 8');
+});
+
 test('all literal tr strings in the application have English translations',async()=>{
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
  const keys=[...new Set([...app.matchAll(/\btr\(\s*(['"])(.*?)\1\s*\)/gs)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)))];

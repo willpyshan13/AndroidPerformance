@@ -370,7 +370,7 @@ function selectNode(id) {
   state.selectedNode=id;
   const isolate=$('[data-action=layout-isolate]');if(isolate)isolate.disabled=false;
   $$('.tree-node').forEach(node=>node.classList.toggle('active',Number(node.dataset.node)===id));
-  if ($('#properties')) $('#properties').innerHTML=properties();
+  if ($('#properties')) { $('#properties').innerHTML=properties(); localizeTextNodes($('#properties'),state.language); }
   const overlay=$('#phone-overlay'), bounds=state.nodes[id]?.bounds;
   if (!overlay) return;
   const [width,height]=layoutSize();

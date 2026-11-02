@@ -39,3 +39,10 @@ test('every literal action button label used by the application has an English t
   const untranslated=[...new Set(labels)].filter(label=>!['activity','chart','image','layers','play','upload'].includes(label)&&translate(label,'en-US')===label);
   assert.deepEqual(untranslated,[]);
 });
+
+test('every static table and definition-list heading with Chinese text has an English translation',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const labels=[...app.matchAll(/<(?:th|dt)>([^<$`]+)</g)].map(match=>match[1].trim());
+  const untranslated=[...new Set(labels)].filter(label=>/[\u3400-\u9fff]/.test(label)&&translate(label,'en-US')===label);
+  assert.deepEqual(untranslated,[]);
+});

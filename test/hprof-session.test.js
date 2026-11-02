@@ -21,6 +21,9 @@ test('heap sessions support indexed queries, preserve old session on failure and
   const baseline=await baseResponse.json();assert.equal(baseResponse.status,200,JSON.stringify(baseline));assert.equal(baseline.indexedObjects,null);assert.equal(baseline.sessionId,undefined);
   const [afterBaseline]=await query('object',{sessionId:first.sessionId,id:'00000004'});assert.equal(afterBaseline.status,200);
   const [pathStatus,path]=await query('root-path',{sessionId:first.sessionId,id:'00000004'});assert.equal(pathStatus.status,200);assert.equal(path.found,false);assert.equal(path.incomplete,true);
+  const [pathsStatus,paths]=await query('root-paths',{sessionId:first.sessionId,targets:['00000004'],excludeNonStrong:true});assert.equal(pathsStatus.status,200);assert.equal(paths.items.length,1);assert.equal(paths.items[0].found,false);assert.equal(paths.excludeNonStrong,true);
+  const [leakStatus,leaks]=await query('leakcanary-retained',{sessionId:first.sessionId});assert.equal(leakStatus.status,200);assert.deepEqual(leaks.markerClasses,[]);assert.deepEqual(leaks.items,[]);
+  assert.equal((await query('root-paths',{sessionId:first.sessionId,targets:['bad']}))[0].status,400);
   const [incomingStatus,incoming]=await query('incoming',{sessionId:first.sessionId,id:'00000004'});assert.equal(incomingStatus.status,200);assert.deepEqual(incoming.items,[]);assert.equal((await query('incoming',{sessionId:'stale',id:'00000004'}))[0].status,400);
   const [bad]=await upload(Buffer.from('bad'));assert.equal(bad.status,400);
   const [still]=await query('object',{sessionId:first.sessionId,id:'00000004'});assert.equal(still.status,200);

@@ -310,6 +310,45 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       incomplete:true,searchLimitReached:!root&&queue.length>50000,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,edgeLimitReached:graph.limited,
       note:excludeNonStrong?'已排除可识别的 WeakReference、SoftReference 和 PhantomReference 的 referent 字段；其他引用语义和运行时关系可能未覆盖，结果不能证明对象存活原因或内存泄漏。':'候选路径涵盖已索引对象的实例字段、对象数组、类对象和静态字段；不区分强、弱引用进行搜索，已识别的弱、软、虚引用会标注；可能缺少运行时关系，不能证明对象存活原因或内存泄漏。'};
   }
+  function rootPaths(targets,{excludeNonStrong=false}={}){
+    if(!Array.isArray(targets)||targets.length>500||targets.some(id=>typeof id!=='string'||!new RegExp(`^[a-f0-9]{${idSize*2}}$`).test(id)))throw new Error('对象路径列表无效');
+    if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
+    if(!targets.length)return {items:[],reachable:0,indexed:index.size,edgeCount:0,excludeNonStrong,incomplete:false,missingTargets:0,skipped:0,edgeLimitReached:false,searchLimitReached:false};
+    for(const target of targets)objectDetail(target);
+    const graph=buildReverseGraph(),outgoing=new Map();
+    for(const [target,refs] of graph.edges)for(const edge of refs){if(excludeNonStrong&&edge.referenceKind)continue;let list=outgoing.get(edge.id);if(!list){list=[];outgoing.set(edge.id,list);}list.push({id:target,label:edge.label,referenceKind:edge.referenceKind});}
+    const parents=new Map(),queue=[];for(const id of rootIds.keys())if(index.has(id)&&!parents.has(id)){parents.set(id,null);queue.push(id);}
+    for(let cursor=0;cursor<queue.length&&cursor<50000;cursor++){
+      const parent=queue[cursor];for(const edge of outgoing.get(parent)||[]){if(parents.has(edge.id))continue;parents.set(edge.id,{id:parent,label:edge.label,referenceKind:edge.referenceKind});queue.push(edge.id);}
+    }
+    const className=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):names.get(item.cls)||item.cls||'未知类';
+    const results=targets.map(target=>{
+      if(!parents.has(target))return {target,found:false,path:[],rootTags:[],visited:parents.size,searchLimitReached:queue.length>50000};
+      const chain=[];let node=target;
+      while(node){chain.push(node);node=parents.get(node)?.id||null;}
+      chain.reverse();const path=chain.map((id,i)=>{const item=index.get(id),next=i+1<chain.length?parents.get(chain[i+1]):null;return {id,className:className(item),via:next?.label||null,referenceKind:next?.referenceKind||null};});
+      return {target,found:true,path,rootTags:rootIds.get(chain[0])||[],visited:parents.size,searchLimitReached:queue.length>50000};
+    });
+    return {items:results,reachable:parents.size,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,incomplete:graph.incomplete,missingTargets:graph.missingTargets,skipped:graph.skipped,edgeLimitReached:graph.limited,searchLimitReached:queue.length>50000};
+  }
+  function leakCanaryRetainedObjects(){
+    const markerClasses=classes.filter(c=>/(?:^|\.)KeyedWeakReference$/.test(c.name)),watchers=[];let scanned=0,unavailable=0,cleared=0,scanLimitReached=false;
+    for(const cls of markerClasses){
+      for(const item of byClass.get(cls.id)||[]){
+        if(scanned>=5000){scanLimitReached=true;break;}scanned++;if(item.kind!=='instance'){unavailable++;continue;}
+        const decoded=decodeSample(cls.id,item,0,100);if(decoded.warning&&decoded.warning!=='字段仅显示当前页'){unavailable++;continue;}
+        const fields=decoded.fields,referents=fields.filter(f=>f.name==='referent'&&f.declaringClass==='java.lang.ref.Reference'&&f.type===2);
+        if(referents.length!==1){unavailable++;continue;}const targetId=referents[0].value;
+        if(!targetId){cleared++;continue;}if(!index.has(targetId)){unavailable++;continue;}
+        const stringValue=name=>{const found=fields.filter(f=>f.name===name&&f.type===2);if(found.length!==1||!found[0].value)return null;const value=index.get(found[0].value);return value&&names.get(value.cls)==='java.lang.String'?stringPreview(value):null;};
+        watchers.push({watcherId:item.id,className:names.get(cls.id)||cls.name,targetId,targetClassName:names.get(index.get(targetId)?.cls)||'未知类',key:stringValue('key'),description:stringValue('description')||stringValue('name')});
+      }
+      if(scanLimitReached)break;
+    }
+    const paths=watchers.length?rootPaths(watchers.slice(0,500).map(item=>item.targetId),{excludeNonStrong:true}):{items:[],reachable:0,indexed:index.size,edgeCount:0,excludeNonStrong:true,incomplete:false,missingTargets:0,skipped:0,edgeLimitReached:false,searchLimitReached:false},pathByTarget=new Map(paths.items.map(item=>[item.target,item]));
+    const items=watchers.slice(0,500).map(watcher=>({...watcher,path:pathByTarget.get(watcher.targetId)||null}));
+    return {...paths,graphAnalyzed:watchers.length>0,items,markerClasses:markerClasses.map(c=>c.name),scanned,liveReferences:watchers.length,cleared,unavailable,scanLimitReached,truncated:scanLimitReached||watchers.length>500||indexTruncated,indexTruncated,note:'LeakCanary KeyedWeakReference 只标识 heap dump 中仍可读取的 watched object。路径仅排除可识别的 WeakReference、SoftReference 和 PhantomReference referent 字段，使用本工具已索引的对象关系，不包含 Shark 的 Android reference matchers、object inspectors、泄漏指纹或 retained size；找到强路径不是泄漏结论，未找到强路径也可能由数据不完整造成。'};
+  }
   let dominatorCache=null;
   function dominatorTree({parentId=null,offset=0,limit=100,excludeNonStrong=false}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('分页参数无效');
@@ -336,5 +375,5 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:children[i].length};}),
       note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，其他引用语义仍可能未识别':'未区分强弱引用'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
   }
-  return {summary,objectDetail,classInstances,bitmaps,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,incomingReferences,dominatorTree};
+  return {summary,objectDetail,classInstances,bitmaps,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
 }

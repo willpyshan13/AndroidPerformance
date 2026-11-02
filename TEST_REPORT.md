@@ -1,5 +1,13 @@
 # 当前验证记录（2026-11-02）
 
+## LeakCanary watched-object 路径候选增量
+
+- HPROF 解析器识别 `KeyedWeakReference` 子类，读取 `referent`、LeakCanary `key` 和可用的 `description` / `name`；已清除 referent 单独计数，索引外对象和不完整字段布局按不可用计数。
+- 新增批量 GC 根路径查询，一次建立已索引的强引用图，为最多 500 个 watched object 复用路径遍历；排除可识别的 WeakReference / SoftReference / PhantomReference referent 字段。UI 可查看候选对象、key、描述和路径。
+- 合成 HPROF 覆盖找到强路径、没有强路径、已清除 referent、key 字符串解析、批量路径共享和输入校验；HTTP 回归覆盖新 API、会话校验及无 marker 快照。
+- 该实现不包含 Shark 的 Android reference matchers、object inspectors、leak fingerprint 或 retained-size 计算，不将根路径结果称为已确认泄漏。真机或真实 LeakCanary HPROF 样本尚未验证。
+- 完整 `npm test`：194 项，179 通过、0 失败、15 项因未配置官方外部样本而跳过；`npm run check` 与 `git diff --check` 通过。
+
 ## HPROF 快照对比增量
 
 - 快照对比新增按对象数量筛选增长、减少和不变类，并显示以基线为分母的对象数变化率及记录字段 / 元素字节变化率；基线为零时不伪造百分比，显示新增状态或不可用。

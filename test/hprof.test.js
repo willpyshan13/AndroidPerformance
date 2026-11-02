@@ -118,6 +118,20 @@ test('GC root paths include class static fields and expose class object details'
  assert.equal(path.found,true);assert.deepEqual(path.path.map(p=>[p.id,p.via]),[['0000000a','静态字段 singleton'],['0000001e',null]]);
  assert.equal(h.objectDetail('0000000a').fields.find(f=>f.name==='静态字段 singleton').value,'0000001e');
 });
+test('LeakCanary KeyedWeakReference markers resolve watched objects and batch strong root paths',()=>{
+ const instance=(id,cls,...values)=>Buffer.concat([Buffer.from([0x21]),n4(id),n4(0),n4(cls),n4(values.length*4),...values.map(n4)]);
+ const chars='watch-12345',charArray=Buffer.concat([Buffer.from([0x23]),n4(60),n4(0),n4(chars.length),Buffer.from([5]),...Array.from(chars,c=>n2(c.charCodeAt(0)))]);
+ const body=Buffer.concat([
+  classDump(10,0,[[5,2]]),classDump(11,10,[]),classDump(12,11,[[6,2]]),
+  classDump(20,0,[[7,2]]),classDump(21,0,[]),classDump(30,0,[[8,2],[9,10],[13,10]]),
+  instance(31,21),instance(32,21),instance(40,20,31),instance(41,12,50,31),instance(42,12,50,32),instance(43,12,50,0),instance(50,30,60,0,chars.length),charArray,
+  Buffer.from([0xff]),n4(40)
+ ]);
+ const file=Buffer.concat([header,string(1,'java/lang/ref/Reference'),string(2,'java/lang/ref/WeakReference'),string(3,'leakcanary/KeyedWeakReference'),string(4,'example/Holder'),string(10,'example/Target'),string(11,'java/lang/String'),string(5,'referent'),string(6,'key'),string(7,'child'),string(8,'value'),string(9,'offset'),string(13,'count'),load(10,1),load(11,2),load(12,3),load(20,4),load(21,10),load(30,11),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(file,{indexed:true}),result=heap.leakCanaryRetainedObjects();
+ assert.deepEqual(result.markerClasses,['leakcanary.KeyedWeakReference']);assert.equal(result.liveReferences,2);assert.equal(result.cleared,1);assert.equal(result.unavailable,0);assert.equal(result.items[0].targetId,'0000001f');assert.equal(result.items[0].key.text,chars);assert.equal(result.items[0].path.found,true);assert.deepEqual(result.items[0].path.path.map(x=>x.id),['00000028','0000001f']);assert.equal(result.items[1].path.found,false);assert.match(result.note,/不包含 Shark/);
+ const shared=heap.rootPaths(['0000001f','00000020'],{excludeNonStrong:true});assert.equal(shared.items[0].found,true);assert.equal(shared.items[1].found,false);assert.equal(shared.excludeNonStrong,true);assert.throws(()=>heap.rootPaths(['bad']),/列表无效/);
+});
 test('dominator view reports graph-dependent objects and recorded payload, including incomplete layouts',()=>{
  const body=Buffer.concat([classDump(10,0,[[5,2]]),Buffer.from([0x21]),n4(20),n4(0),n4(10),n4(4),n4(30),Buffer.from([0x23]),n4(30),n4(0),n4(3),Buffer.from([8,1,2,3]),Buffer.from([0xff]),n4(20)]);
  const file=Buffer.concat([header,string(1,'RootClass'),string(5,'child'),load(10,1),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);

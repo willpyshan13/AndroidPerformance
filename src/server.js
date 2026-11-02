@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createReadStream } from 'node:fs';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,14 @@ import { parseFrames } from './parsers.js';
 import { validateRecord } from './records.js';
 import { locateAapt2 } from './apk.js';
 import { analyzeApkUpload } from './apk-upload.js';
+import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
+import { analyzePerfUpload } from './perf-upload.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments } from './trace-analysis.js';
+import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
+import { parseBatteryStats, compareBatteryStats } from './battery.js';
+import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
+import {createRemoteSourceSnapshot} from './source-git.js';
+import {buildAgentPackage} from './agent-package.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export const VERSION = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
@@ -24,7 +33,13 @@ async function readBody(req) {
 }
 
 export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer }) {
-  let apkBusy = false;
+  const gpuDir=join(dataDir,'gpu-artifacts');
+  const traceDir=join(dataDir,'trace-archives');
+  const perfDir=join(dataDir,'cpu-archives');
+  const sourceDir=join(dataDir,'source-workspaces');
+  let sourceBusy=false;
+  let gpuBusy=false;
+  let apkBusy = false, heapBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -52,16 +67,24 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const serial = url.searchParams.get('serial');
       const pkg = url.searchParams.get('package');
       if (req.method === 'GET') {
-        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), platform: process.platform, desktop, dataDir });
+        if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
+        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), platform: process.platform, desktop, dataDir });
         if (path === '/api/devices') return json({ devices: await adb.devices() });
         if (path === '/api/device') return json(await adb.info(serial));
         if (path === '/api/packages') return json({ packages: await adb.packages(serial) });
         if (path === '/api/metrics') return json(await adb.metrics(serial, pkg));
+        if (path === '/api/compilation') return json(await adb.compilationSnapshot(serial,pkg));
         if (path === '/api/frames') {
           const budget = Number(url.searchParams.get('budget') || 16.667);
           if (![16.667, 11.111, 8.333].includes(budget)) throw new Error('帧预算无效');
           return json(await adb.frames(serial, pkg, budget));
         }
+        if (path === '/api/gpu/artifacts') return json({artifacts:await listGpuArtifacts(gpuDir)});
+        if (path === '/api/trace/archives') return json({archives:await listGpuArtifacts(traceDir)});
+        if (path === '/api/cpu-profile/archives') return json({archives:await listGpuArtifacts(perfDir)});
+        if (path === '/api/source/snapshots') return json({snapshots:await listSourceSnapshots(sourceDir)});
+        const gpuFile=path.match(/^\/api\/gpu\/artifacts\/([a-f0-9-]+)\/file$/);
+        if(gpuFile){const checked=await verifyGpuArtifact(gpuDir,gpuFile[1]);if(!checked.ok)throw new Error(`产物校验失败：${checked.reason}`);const {path:file}=await getGpuArtifact(gpuDir,gpuFile[1]);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':checked.actualSize});const stream=createReadStream(file);stream.on('error',()=>res.destroy());return stream.pipe(res);}
         if (path === '/api/sessions') {
           await mkdir(dataDir, { recursive: true });
           const files = (await readdir(dataDir)).filter(f => /^[\da-f-]{36}\.json$/.test(f));
@@ -81,12 +104,174 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
       }
       if (req.method === 'POST') {
+        if(path==='/api/cpu-profile/archive'){
+          if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在处理'},409);}
+          const declared=req.headers['content-length'];if(declared!==undefined&&(!/^\d+$/.test(declared)||Number(declared)>256*1024*1024)){req.resume();return json({error:'perf.data 不能超过 256 MiB'},413);}
+          perfBusy=true;try{
+            // Reuse the private, checksummed artifact store under a separate root.
+            const archive=await importGpuArtifact(req,perfDir,{maxBytes:256*1024*1024,magic:Buffer.from('PERFILE2')});return json(archive,201);
+          }finally{perfBusy=false;}
+        }
+        if(path==='/api/gpu/import'){
+          if(gpuBusy){req.resume();return json({error:'已有 GPU 产物正在导入'},409);}gpuBusy=true;try{return json(await importGpuArtifact(req,gpuDir),201);}finally{gpuBusy=false;}
+        }
+        if (path === '/api/trace/analyze') {
+          if(traceBusy){req.resume();return json({error:'已有追踪文件正在分析，请等待完成'},409);}
+          traceBusy=true;try{
+            const {result,session}=await analyzeTraceUpload(req,{retain:true});
+            if(closed){await session.cleanup();throw new Error('服务已关闭');}
+            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:result.bounds,fileBytes:result.fileBytes};
+            if(previous)await previous.cleanup();return json({...result,sessionId,viewBounds:result.bounds});
+          }finally{traceBusy=false;}
+        }
+        if (path === '/api/cpu-profile/analyze') {
+          if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在分析，请等待完成'},409);}
+          perfBusy=true;try{return json(await analyzePerfUpload(req));}finally{perfBusy=false;}
+        }
+        if (path === '/api/heap/analyze') {
+          if(heapBusy){req.resume();return json({error:'已有堆文件正在分析，请等待完成'},409);}
+          const role=req.headers['x-heap-role']||'current';
+          if(!['current','baseline'].includes(role)){req.resume();throw new Error('堆快照用途无效');}
+          heapBusy=true;try{
+            const {result,worker}=await analyzeHprofUpload(req,{summaryOnly:role==='baseline'});if(closed){worker.terminate();throw new Error('服务已关闭');}
+            if(role==='baseline'){await worker.terminate();return json(result);}
+            const previous=heapSession;
+            const sessionId=randomUUID();heapSession={worker,sessionId};
+            worker.on('error',()=>{if(heapSession?.worker===worker)heapSession=null;});
+            worker.on('exit',()=>{if(heapSession?.worker===worker)heapSession=null;});
+            if(previous)previous.worker.terminate();
+            return json({...result,sessionId});
+          }finally{heapBusy=false;}
+        }
         if (path === '/api/apk/analyze') {
           if(apkBusy){req.resume();return json({error:'已有 APK 正在分析，请等待完成'},409);}
           apkBusy=true;
           try { return json(await analyzeApkUpload(req,apkAnalyzer)); } finally { apkBusy=false; }
         }
         const body = await readBody(req);
+        if(path==='/api/cpu-profile/archive/load'){
+          if(perfBusy)return json({error:'已有 CPU 文件正在处理'},409);
+          perfBusy=true;let handedOff=false;try{
+            const checked=await verifyGpuArtifact(perfDir,body.id);if(!checked.ok)throw new Error(`采样档案完整性校验失败：${checked.reason}`);
+            if(checked.meta.size>256*1024*1024)throw new Error('perf.data 不能超过 256 MiB');
+            const {path:file}=await getGpuArtifact(perfDir,body.id),stream=createReadStream(file);
+            stream.once('error',()=>{perfBusy=false;res.destroy();});res.once('close',()=>{perfBusy=false;stream.destroy();});
+            res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':checked.meta.size});handedOff=true;return stream.pipe(res);
+          }finally{if(!handedOff)perfBusy=false;}
+        }
+        if(path==='/api/trace/archive'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          if(typeof body.name!=='string'||body.name.length>240||/[\x00-\x1f\x7f]/.test(body.name))throw new Error('追踪名称无效');
+          const base=body.name.replaceAll('\\','/').split('/').at(-1)||'capture';
+          const name=/\.(?:trace|pftrace|perfetto-trace)$/i.test(base)?base:`${base}.trace`;
+          traceBusy=true;try{const stream=createReadStream(traceSession.path);stream.headers={'content-length':String(traceSession.fileBytes),'x-file-name':encodeURIComponent(name)};return json(await importGpuArtifact(stream,traceDir),201);}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/archive/load'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          traceBusy=true;try{
+            const checked=await verifyGpuArtifact(traceDir,body.id);if(!checked.ok)throw new Error(`追踪完整性校验失败：${checked.reason}`);
+            if(checked.meta.size>256*1024*1024)throw new Error('追踪分析上限为 256 MiB');
+            const {path:file}=await getGpuArtifact(traceDir,body.id);const stream=createReadStream(file);stream.headers={'content-length':String(checked.meta.size)};
+            const {result,session}=await analyzeTraceUpload(stream,{retain:true});if(closed){await session.cleanup();throw new Error('服务已关闭');}
+            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:result.bounds,fileBytes:result.fileBytes};if(previous)await previous.cleanup();
+            return json({...result,sessionId,viewBounds:result.bounds,fileName:checked.meta.name});
+          }finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/export'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;
+          const stream=createReadStream(traceSession.path);
+          stream.once('error',()=>{traceBusy=false;res.destroy();});
+          res.once('close',()=>{traceBusy=false;stream.destroy();});
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':traceSession.fileBytes,'Content-Disposition':'attachment; filename="capture.trace"'});
+          return stream.pipe(res);
+        }
+        if(path==='/api/source/snapshot'){
+          if(sourceBusy)return json({error:'已有源码快照任务正在进行'},409);
+          sourceBusy=true;try{return json(await createSourceSnapshot(body.path,sourceDir),201);}finally{sourceBusy=false;}
+        }
+        if(path==='/api/source/remote'){
+          if(sourceBusy)return json({error:'已有源码快照任务正在进行'},409);
+          sourceBusy=true;try{return json(await createRemoteSourceSnapshot({url:body.url,ref:body.ref??''},sourceDir),201);}finally{sourceBusy=false;}
+        }
+        if(path==='/api/source/files')return json(await getSourceSnapshot(sourceDir,body.id));
+        if(path==='/api/source/file')return json(await readSourceFile(sourceDir,body.id,body.path));
+        if(path==='/api/source/search')return json(await searchSource(sourceDir,body.id,body.query));
+        if(path==='/api/source/resolve')return json(await resolveSourceSymbol(sourceDir,body.id,body.symbol));
+        if(path==='/api/trace/slice-arguments'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await querySliceArguments(traceSession.path,{sliceId:body.sliceId}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/binder-breakdown'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryBinderBreakdown(traceSession.path,{id:body.id}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/binder'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryBinderTransactions(traceSession.path,{packageName:body.packageName??null,direction:body.direction??'both'}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/thread-states'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          const {startNs,endNs}=body;if(typeof startNs!=='string'||typeof endNs!=='string'||! /^-?\d{1,19}$/.test(startNs)||! /^-?\d{1,19}$/.test(endNs)||BigInt(startNs)<BigInt(traceSession.bounds.startNs)||BigInt(endNs)>BigInt(traceSession.bounds.endNs)||BigInt(endNs)<=BigInt(startNs))throw new Error('追踪时间窗口超出范围');
+          traceBusy=true;try{return json(await queryThreadStates(traceSession.path,{tid:body.tid,pid:body.pid??null,startNs,endNs}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/frame-thread-states'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          const {startNs,endNs}=body;if(typeof startNs!=='string'||typeof endNs!=='string'||! /^-?\d{1,19}$/.test(startNs)||! /^-?\d{1,19}$/.test(endNs)||BigInt(startNs)<BigInt(traceSession.bounds.startNs)||BigInt(endNs)>BigInt(traceSession.bounds.endNs)||BigInt(endNs)<=BigInt(startNs))throw new Error('追踪时间窗口超出范围');
+          traceBusy=true;try{return json(await queryThreadStates(traceSession.path,{upid:body.upid,utid:body.utid??null,state:body.state??null,startNs,endNs}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/startup-breakdown'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryStartupBreakdown(traceSession.path,{startupId:body.startupId}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/startups'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryStartupTrace(traceSession.path,{packageName:body.packageName??null}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/frame-timeline'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryFrameTimeline(traceSession.path,{packageName:body.packageName??null}));}finally{traceBusy=false;}
+        }
+        if (path === '/api/trace/window') {
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          const {startNs,endNs}=body;if(typeof startNs!=='string'||typeof endNs!=='string'||! /^-?\d{1,19}$/.test(startNs)||! /^-?\d{1,19}$/.test(endNs))throw new Error('追踪时间窗口无效');
+          if(BigInt(startNs)<BigInt(traceSession.bounds.startNs)||BigInt(endNs)>BigInt(traceSession.bounds.endNs)||BigInt(endNs)<=BigInt(startNs))throw new Error('追踪时间窗口超出范围');
+          const trackFilter=body.trackFilter??'',sliceFilter=body.sliceFilter??'';
+          traceBusy=true;try{const result=await queryTraceFile(traceSession.path,{startNs,endNs,trackFilter,sliceFilter});return json({...result,fileBytes:traceSession.fileBytes,sessionId:traceSession.sessionId,viewBounds:{startNs,endNs},trackFilter,sliceFilter});}finally{traceBusy=false;}
+        }
+        if (path === '/api/heap/instances' || path === '/api/heap/bitmaps' || path === '/api/heap/bitmap-duplicates' || path === '/api/heap/string-duplicates' || path === '/api/heap/string-search' || path === '/api/heap/destroyed-activities' || path === '/api/heap/object' || path === '/api/heap/root-path' || path === '/api/heap/incoming' || path === '/api/heap/dominators') {
+          if(!heapSession || body.sessionId !== heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
+          return json(await queryHeapWorker(heapSession.worker,path.endsWith('instances')?'instances':path.endsWith('bitmap-duplicates')?'duplicateBitmaps':path.endsWith('string-duplicates')?'duplicateStrings':path.endsWith('string-search')?'searchStrings':path.endsWith('destroyed-activities')?'destroyedActivities':path.endsWith('bitmaps')?'bitmaps':path.endsWith('root-path')?'rootPath':path.endsWith('incoming')?'incoming':path.endsWith('dominators')?'dominators':'object',body));
+        }
+        if(path==='/api/gpu/verify') return json(await verifyGpuArtifact(gpuDir,body.id));
+        if(path==='/api/gpu/trace') {
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          traceBusy=true;try{
+            const checked=await verifyGpuArtifact(gpuDir,body.id);if(!checked.ok)throw new Error(`产物校验失败：${checked.reason}`);
+            if(checked.meta.type==='agi-frame')throw new Error('AGI 帧捕获不能作为 Perfetto 追踪解析');
+            if(checked.meta.size>256*1024*1024)throw new Error('追踪分析上限为 256 MiB');
+            const {path:file}=await getGpuArtifact(gpuDir,body.id);const stream=createReadStream(file);stream.headers={'content-length':String(checked.meta.size)};
+            const {result,session}=await analyzeTraceUpload(stream,{retain:true});if(closed){await session.cleanup();throw new Error('服务已关闭');}
+            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:result.bounds,fileBytes:result.fileBytes};if(previous)await previous.cleanup();
+            return json({...result,sessionId,viewBounds:result.bounds,fileName:checked.meta.name});
+          }finally{traceBusy=false;}
+        }
+        if(path==='/api/battery/snapshot')return json(await adb.batterySnapshot(body.serial,body.packageName));
+        if(path==='/api/battery/import')return json(parseBatteryStats(body.text,body.packageName));
+        if(path==='/api/battery/compare')return json(compareBatteryStats(body.before,body.after));
+        if(path==='/api/network/agent')return json(await adb.networkAgentSnapshot(body.serial,body.packageName));
+        if(path==='/api/gpu/capabilities')return json(await adb.gpuCapabilities(body.serial));
         if (path === '/api/frames/import') {
           if (typeof body.text !== 'string' || ![16.667, 11.111, 8.333].includes(body.budget)) throw new Error('gfxinfo 导入参数无效');
           const parsed = parseFrames(body.text, body.budget);
@@ -95,9 +280,21 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
         if (path === '/api/frames/reset') return json({ message: await adb.resetFrames(body.serial, body.packageName) });
         if (path === '/api/startup') return json(await adb.startup(body.serial, body.packageName, body));
+        if (path === '/api/benchmark/run') return json(await adb.runBenchmark(body.serial,body.component,body.testClass??''));
+        if (path === '/api/benchmark/report') return json(await adb.readBenchmarkReport(body.serial,body.path));
         if (path === '/api/layout') return json(await adb.layout(body.serial));
+        if (path === '/api/cpu-profile') {
+          const data=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds);
+          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' });
+          return res.end(data);
+        }
+        if (path === '/api/heap') {
+          const data = await adb.heapDump(body.serial, body.packageName);
+          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="heap.hprof"' });
+          return res.end(data);
+        }
         if (path === '/api/trace') {
-          const data = await adb.trace(body.serial, body.seconds ?? 10);
+          const data = await adb.trace(body.serial, body.seconds ?? 10, body.mode ?? 'standard',body.packageName??null);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="capture.perfetto-trace"' });
           return res.end(data);
         }
@@ -113,6 +310,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       json({ error: '接口不存在' }, 404);
     } catch (error) { json({ error: error.message || '请求失败' }, error.status || 400); }
   });
+  server.on('close',()=>{closed=true;if(heapSession){heapSession.worker.terminate();heapSession=null;}if(traceSession){try{traceSession.cleanupSync();}catch{}traceSession=null;}});
   server.requestTimeout = 180000;
   return server;
 }

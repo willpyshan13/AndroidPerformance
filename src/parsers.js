@@ -66,27 +66,38 @@ export function percentile(values, q) {
 
 export function parseFrames(raw, budgetMs = 16.667) {
   const frames = [];
-  let columns = null;
-  let active = false;
+  let columns = null, active = false, section = 0, rawIndex = 0;
+  const timestampFields = ['IntendedVsync','Vsync','HandleInputStart','AnimationStart','PerformTraversalsStart','DrawStart','SyncQueued','SyncStart','IssueDrawCommandsStart','SwapBuffers','FrameCompleted'];
   for (const line of raw.split(/\r?\n/)) {
-    if (line.includes('---PROFILEDATA---')) { active = !active; columns = null; continue; }
+    if (line.includes('---PROFILEDATA---')) { active = !active; columns = null; if(active){section++;rawIndex=0;} continue; }
     if (!active) continue;
     const cells = line.trim().split(',').map(s => s.trim());
     if (cells[0] === 'Flags') { columns = cells; continue; }
-    if (!columns || cells.length < columns.length) continue;
-    const get = name => Number(cells[columns.indexOf(name)]);
-    const start = get('IntendedVsync'), end = get('FrameCompleted');
-    // Zero timestamps, incomplete frames and flagged outliers are excluded by gfxinfo convention.
-    if (get('Flags') !== 0 || !Number.isFinite(start) || start <= 0 || !Number.isFinite(end) || end <= start || end >= 9e18) continue;
-    const durationMs = (end - start) / 1e6;
-    frames.push({ index: frames.length + 1, startNs: start, durationMs, overBudget: durationMs > budgetMs });
+    if (!columns || !line.trim()) continue;
+    rawIndex++;
+    if(cells.length < columns.length)continue;
+    const get = name => {const i=columns.indexOf(name);return i<0?undefined:cells[i];};
+    const startText=get('IntendedVsync'),endText=get('FrameCompleted');
+    if(get('Flags')!=='0'||!/^\d{1,19}$/.test(startText||'')||!/^\d{1,19}$/.test(endText||''))continue;
+    const start=BigInt(startText),end=BigInt(endText);
+    if(start<=0n||end<=start||end>=9000000000000000000n)continue;
+    const durationMs=Number(end-start)/1e6;
+    const timestamps=Object.fromEntries(timestampFields.flatMap(name=>{const v=get(name);return /^\d{1,19}$/.test(v||'')&&BigInt(v)>0n&&BigInt(v)<9000000000000000000n?[[name,v]]:[];}));
+    frames.push({index:frames.length+1,startNs:Number(start),startNsExact:startText,durationMs,overBudget:durationMs>budgetMs,section,rawIndex,timestamps});
   }
-  const durations = frames.map(f => f.durationMs);
-  const slow = frames.filter(f => f.overBudget).length;
-  return { frames, count: frames.length, budgetMs, slow, slowPercent: frames.length ? slow / frames.length * 100 : null,
-    p50: percentile(durations, .5), p90: percentile(durations, .9), p95: percentile(durations, .95), p99: percentile(durations, .99),
-    max: durations.length ? durations.reduce((a, b) => Math.max(a, b), 0) : null,
-    platformJank: raw.match(/^\s*Janky frames:\s*(\d+)/m)?.[1] ?? null };
+  const durations=frames.map(f=>f.durationMs),slow=frames.filter(f=>f.overBudget).length;
+  if(!frames.length){
+    const histogram=raw.match(/^\s*HISTOGRAM:\s*(.+)$/m)?.[1],buckets=[];
+    for(const match of histogram?.matchAll(/(?:^|\s)(\d+(?:\.\d+)?)ms=(\d+)(?=\s|$)/g)||[]){const upperMs=Number(match[1]),count=Number(match[2]);if(Number.isFinite(upperMs)&&Number.isSafeInteger(count)&&count>0)buckets.push({upperMs,count});}
+    const count=buckets.reduce((sum,b)=>sum+b.count,0);
+    if(count){const quantile=q=>{let cumulative=0;for(const bucket of buckets){cumulative+=bucket.count;if(cumulative>=Math.ceil(count*q))return bucket.upperMs;}return buckets.at(-1).upperMs;};const reported=q=>{const value=raw.match(new RegExp(`^\\s*${q}th percentile:\\s*([\\d.]+)ms`,'m'))?.[1];return value===undefined?null:Number(value);};const values=[50,90,95,99].map(reported),max=buckets.at(-1).upperMs;
+      return {frames,count,budgetMs,slow:null,slowPercent:null,p50:values[0]??quantile(.5),p90:values[1]??quantile(.9),p95:values[2]??quantile(.95),p99:values[3]??quantile(.99),percentileSource:values.every(value=>value!==null)?'platform':'mixed',max,platformJank:raw.match(/^\s*Janky frames:\s*(\d+)/m)?.[1]??null,sourceFormat:'histogram',histogramBuckets:buckets,note:`${values.every(value=>value!==null)?'分位数采用设备 gfxinfo 报告值':'设备未报告的分位数采用直方图桶上界估算'}；设备未提供逐帧时间戳，不能计算精确超预算比例或时间线。`};
+    }
+  }
+  return {frames,count:frames.length,budgetMs,slow,slowPercent:frames.length?slow/frames.length*100:null,
+    p50:percentile(durations,.5),p90:percentile(durations,.9),p95:percentile(durations,.95),p99:percentile(durations,.99),
+    max:durations.length?durations.reduce((a,b)=>Math.max(a,b),0):null,
+    platformJank:raw.match(/^\s*Janky frames:\s*(\d+)/m)?.[1]??null,sourceFormat:'framestats'};
 }
 
 export function parseBattery(raw) {
@@ -103,4 +114,26 @@ export function parseStartup(raw) {
   return { status: status || 'unknown', thisTimeMs: value('ThisTime'), totalTimeMs: value('TotalTime'), waitTimeMs: value('WaitTime'),
     observedMode: raw.match(/^LaunchState:\s*(.+)/m)?.[1]?.trim()?.toLowerCase() || null,
     activity: raw.match(/^Activity:\s*(.+)/m)?.[1]?.trim() || null, raw };
+}
+
+// Only accept the exact package subtree under Dexopt state. Dumpsys output is
+// human-readable and differs by platform version; unknown formats stay empty.
+export function parseCompilationState(raw, packageName) {
+  const lines=String(raw).split(/\r?\n/),indent=line=>line.match(/^\s*/)[0].length;
+  const heading=lines.findIndex(line=>/^\s*Dexopt\s+state\s*:?\s*$/i.test(line));
+  if(heading<0)return {available:false,entries:[],reason:'设备未提供可识别的 Dexopt state'};
+  const base=indent(lines[heading]);let selected=false,packageIndent=-1,path=null,entries=[];
+  for(let i=heading+1;i<lines.length;i++){
+    const line=lines[i];if(!line.trim())continue;const level=indent(line),text=line.trim();
+    if(level<=base)break;
+    const packageLine=text.match(/^\[([^\]]+)\]\s*$/);
+    if(packageLine){selected=packageLine[1]===packageName;packageIndent=level;path=null;continue;}
+    if(!selected)continue;
+    if(level<=packageIndent){selected=false;path=null;continue;}
+    const pathMatch=text.match(/^(?:path:\s*)?(\/\S+\.(?:apk|jar|dex))\s*$/i);
+    if(pathMatch){path=pathMatch[1];continue;}
+    const row=text.match(/^([\w.-]+):\s*\[status=([^\]]+)\](?:\s*\[reason=([^\]]+)\])?/i);
+    if(row&&path){entries.push({path,isa:row[1],status:row[2],reason:row[3]||null});if(entries.length>=1000)break;}
+  }
+  return {available:entries.length>0,entries,reason:entries.length?null:'未找到该应用可识别的编译状态'};
 }

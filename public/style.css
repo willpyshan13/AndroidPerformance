@@ -9,3 +9,11 @@
 @media(max-width:1150px){.apk-key-values{grid-template-columns:115px minmax(0,1fr)}.apk-size-row{grid-template-columns:94px minmax(0,1fr) 72px 38px;gap:5px}.apk-tabs{gap:18px}.apk-app-title{min-width:130px}.apk-file-meta{max-width:45%}.apk-feature-list{gap:20px}}
 @media(max-width:900px){.apk-file-meta{display:none}.apk-key-values{grid-template-columns:150px minmax(0,1fr)}.apk-feature-list{flex-wrap:wrap}.apk-size-row{grid-template-columns:105px minmax(0,1fr) 85px 42px}.apk-path{max-width:340px}}
 @media(max-width:600px){.apk-empty{padding:35px 18px}.apk-identity{gap:12px;padding:15px}.apk-app-title .tag{margin-bottom:5px}.apk-tabs{gap:19px}.apk-feature-list{gap:18px}.apk-size-row{grid-template-columns:95px minmax(0,1fr) 75px 35px;gap:4px}.apk-key-values{grid-template-columns:115px minmax(0,1fr)}#apk-content .panel-head{align-items:flex-start;flex-direction:column}#apk-content .import-actions{flex-wrap:wrap}.apk-app-title h2{font-size:18px}}
+
+.flame-scroll{overflow:auto;max-height:600px;margin-top:16px;border:1px solid var(--line);border-radius:6px}.flame-graph{display:block;width:100%;min-width:700px}.flame-frame{cursor:pointer}.flame-frame rect{stroke:#fff;stroke-width:.3}.flame-frame:hover rect,.flame-frame:focus rect{stroke:#67412a;stroke-width:2}.flame-frame text{font:11px sans-serif;fill:#50352b;pointer-events:none}.flame-frame:focus{outline:none}
+
+.timeline-list{margin:16px 0;max-height:420px;overflow:auto}.timeline-row{display:grid;grid-template-columns:210px 1fr;gap:12px;align-items:center;min-height:25px;font-size:10px}.timeline-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.timeline-track{position:relative;height:18px;background:#f1f4f5;border-radius:3px}.timeline-bin{position:absolute;top:2px;height:14px;background:#79aa9c;border:1px solid #fff;border-radius:1px;padding:0;min-width:2px}.timeline-bin:hover,.timeline-bin.active{background:#d17c4d}
+
+.trace-track{overflow:hidden}.trace-event{position:absolute;top:2px;height:14px;background:#70a997;min-width:2px;border-radius:2px;border:1px solid #fff;padding:0}.trace-event.sched{background:#d68e61}.trace-event:hover,.trace-event:focus{outline:2px solid #395c53;z-index:2}
+
+.trace-event.sched.idle{background:#a6b1b5}

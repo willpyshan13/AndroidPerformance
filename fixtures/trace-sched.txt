@@ -1,0 +1,8 @@
+# tracer: nop
+#
+#           TASK-PID    TGID   CPU#  ||||    TIMESTAMP  FUNCTION
+#              | |        |     |   ||||       |         |
+      idle-0     (-----) [000] d..2  1.000000: sched_switch: prev_comm=idle prev_pid=0 prev_prio=120 prev_state=R ==> next_comm=worker next_pid=123 next_prio=120
+    worker-123   (-----) [000] d..2  1.010000: sched_switch: prev_comm=worker prev_pid=123 prev_prio=120 prev_state=S ==> next_comm=idle next_pid=0 next_prio=120
+      idle-0     (-----) [000] d..2  1.020000: sched_switch: prev_comm=idle prev_pid=0 prev_prio=120 prev_state=R ==> next_comm=worker next_pid=123 next_prio=120
+    worker-123   (-----) [000] d..2  1.030000: sched_switch: prev_comm=worker prev_pid=123 prev_prio=120 prev_state=S ==> next_comm=idle next_pid=0 next_prio=120

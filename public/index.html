@@ -34,6 +34,10 @@
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <input id="file-input" type="file" accept=".json,.har,.txt,.xml" hidden>
+  <input id="trace-input" type="file" accept=".perfetto-trace,.pftrace,.trace,.json,.txt" hidden>
+  <input id="perf-input" type="file" accept=".data,.perf" hidden>
+  <input id="heap-input" type="file" accept=".hprof" hidden>
+  <input id="gpu-input" type="file" accept=".gfxtrace,.perfetto-trace,.pftrace,.trace" hidden>
   <input id="apk-input" type="file" accept=".apk,application/vnd.android.package-archive" hidden>
   <dialog id="detail-dialog"><div class="dialog-head"><h3 id="dialog-title">详情</h3><button id="dialog-close" class="icon-button" aria-label="关闭">×</button></div><div id="dialog-content"></div></dialog>
 </body>

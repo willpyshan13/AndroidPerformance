@@ -3,7 +3,7 @@ const validNumber = (value, min = 0) => typeof value === 'number' && Number.isFi
 const optionalNumber = (value, min = 0) => value === null || value === undefined || validNumber(value, min);
 const fail = message => { throw new Error(`记录数据无效：${message}`); };
 export function validateRecord(body) {
-  if (!['monitor', 'frames', 'startup', 'layout', 'network', 'apk'].includes(body.kind)) fail('不支持的分析类型');
+  if (!['monitor', 'frames', 'startup', 'layout', 'network', 'apk', 'battery', 'benchmark'].includes(body.kind)) fail('不支持的分析类型');
   if (!['adb', 'demo', 'import'].includes(body.source)) fail('来源必须为 adb / demo / import');
   const p = body.payload;
   if (!p || typeof p !== 'object' || Array.isArray(p)) fail('缺少 payload');
@@ -25,6 +25,10 @@ export function validateRecord(body) {
     if (!['cold', 'warm', 'hot'].includes(p.requestedMode) || !Array.isArray(p.results) || !p.results.length || p.results.length > 10) fail('启动实验格式错误');
     if (!p.results.every(row => row && validNumber(row.totalTimeMs) && validNumber(row.run))) fail('启动实验缺少 TotalTime');
     if (!validNumber(p.meanMs)) fail('缺少平均启动耗时');
+    for(const snapshot of [p.compilationBefore,p.compilationAfter])if(snapshot!==undefined&&snapshot!==null){
+      if(!snapshot||typeof snapshot.available!=='boolean'||!validNumber(snapshot.timestamp)||!Array.isArray(snapshot.entries)||snapshot.entries.length>1000||!snapshot.entries.every(e=>e&&typeof e.path==='string'&&typeof e.isa==='string'&&typeof e.status==='string'&&(e.reason===null||typeof e.reason==='string')))fail('编译状态格式错误');
+      if(snapshot.source!==body.source||snapshot.packageName!==p.packageName||snapshot.serial!==p.serial)fail('编译状态来源不一致');
+    }
   }
   if (body.kind === 'layout') {
     if (typeof p.xml !== 'string' || p.xml.length > 2 * 1024 * 1024 || !p.xml.includes('<hierarchy') || /<!DOCTYPE|<!ENTITY/i.test(p.xml)) fail('层级 XML 格式不支持');
@@ -38,6 +42,31 @@ export function validateRecord(body) {
   if (body.kind === 'network') {
     if (!Array.isArray(p.rows) || p.rows.length > 50000) fail('网络请求数量错误');
     if (!p.rows.every(r => r && validNumber(r.id) && typeof r.path === 'string' && typeof r.host === 'string' && typeof r.method === 'string' && validNumber(r.status) && optionalNumber(r.timeMs) && optionalNumber(r.bytes))) fail('网络请求字段错误');
+  }
+  if (body.kind === 'benchmark') {
+    if(body.source!=='import'||typeof p.fileName!=='string'||p.fileName.length>255||!p.context||typeof p.context!=='object'||!Array.isArray(p.results)||!p.results.length||p.results.length>50000)fail('Benchmark 运行格式错误');
+    if(p.origin!==undefined&&(!p.origin||p.origin.kind!=='device'||typeof p.origin.serial!=='string'||p.origin.serial.length>200||typeof p.origin.path!=='string'||p.origin.path.length>500||!Number.isFinite(p.origin.readAt)))fail('Benchmark 设备来源格式错误');
+    for(const row of p.results){
+      if(!row||typeof row.key!=='string'||typeof row.name!=='string'||typeof row.className!=='string'||typeof row.metric!=='string'||!['metrics','sampledMetrics'].includes(row.metricType)||typeof row.median!=='number'||!Number.isFinite(row.median)||!Number.isSafeInteger(row.runs)||row.runs<0||!Array.isArray(row.samples)||row.samples.length!==row.runs||row.samples.length>100000||!row.samples.every(n=>typeof n==='number'&&Number.isFinite(n)))fail('Benchmark 指标格式错误');
+      if(row.runInfo!==undefined&&(!row.runInfo||typeof row.runInfo!=='object'||Array.isArray(row.runInfo)||Object.entries(row.runInfo).some(([key,value])=>!['warmupIterations','repeatIterations','thermalThrottleSleepSeconds','totalRunTimeNs'].includes(key)||!Number.isSafeInteger(value)||value<0)))fail('Benchmark 运行信息格式错误');
+      if(row.sampleGroups!==undefined){
+        if(row.metricType!=='sampledMetrics'||!Array.isArray(row.sampleGroups)||row.sampleGroups.length>100000||row.sampleGroups.length!==row.iterations)fail('Benchmark 迭代分组格式错误');
+        let i=0;for(const group of row.sampleGroups){if(!Array.isArray(group))fail('Benchmark 迭代分组格式错误');for(const n of group){if(i>=row.samples.length||n!==row.samples[i++])fail('Benchmark 迭代分组与样本不一致');}}if(i!==row.samples.length)fail('Benchmark 迭代分组与样本不一致');
+      }
+      if(!row.params||typeof row.params!=='object'||Array.isArray(row.params)||Object.keys(row.params).length>100||Object.values(row.params).some(v=>v!==null&&(!['string','number','boolean'].includes(typeof v)||(typeof v==='number'&&!Number.isFinite(v)))))fail('Benchmark 参数格式错误');
+      const params=Object.fromEntries(Object.entries(row.params).sort(([a],[b])=>a.localeCompare(b)));
+      if(row.key!==JSON.stringify([row.className,row.name,params,row.metricType,row.metric]))fail('Benchmark 指标标识不一致');
+    }
+  }
+  if (body.kind === 'battery') {
+    const validateSnapshot = snapshot => {
+      if (!snapshot || snapshot.source !== body.source || !Number.isSafeInteger(snapshot.uid) || snapshot.uid < 0 || typeof snapshot.packageName !== 'string' || !Array.isArray(snapshot.packages) || !snapshot.packages.every(x => typeof x === 'string') || !validNumber(snapshot.timestamp) || typeof snapshot.version !== 'string') fail('电池快照标识错误');
+      if(snapshot.power!==undefined&&snapshot.power!==null&&(!snapshot.power||snapshot.power.source!=='batterystats-pwi'||!validNumber(snapshot.power.estimatedMah)||typeof snapshot.power.rawValue!=='string'||!/^\d+(?:\.\d+)?$/.test(snapshot.power.rawValue)||Number(snapshot.power.rawValue)!==snapshot.power.estimatedMah))fail('UID 耗电估计格式错误');
+      if (snapshot.network !== null && (!snapshot.network || typeof snapshot.network !== 'object' || !Object.values(snapshot.network).every(v => optionalNumber(v)))) fail('网络统计格式错误');
+      for (const key of ['wakelocks', 'jobs', 'syncs', 'sensors', ...(snapshot.alarms === undefined ? [] : ['alarms'])]) if (!Array.isArray(snapshot[key]) || snapshot[key].length > 200000 || !snapshot[key].every(r => r && typeof r.name === 'string' && (key === 'wakelocks' ? r.partial === null || (r.partial && optionalNumber(r.partial.timeMs) && optionalNumber(r.partial.count)) : optionalNumber(r.timeMs) && optionalNumber(r.count)))) fail('资源统计格式错误');
+    };
+    if (p.snapshot) { validateSnapshot(p.snapshot); if (p.before !== null && p.before !== undefined) validateSnapshot(p.before); if (p.packageName !== p.snapshot.packageName) fail('电池实验包名不一致'); }
+    else validateSnapshot(p); // Early single-snapshot records remain readable.
   }
   if(body.kind==='apk'){
     if(p.kind!=='apk'||typeof p.fileName!=='string'||!validNumber(p.sizeBytes,1)||typeof p.sha256!=='string'||!/^[\da-f]{64}$/.test(p.sha256))fail('APK 文件信息错误');

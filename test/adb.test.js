@@ -13,6 +13,27 @@ test('remote shell arguments are quoted, including nested Activity dollar signs'
   await adb.shell('ABC',['am','start','-n','com.app/.Main$Nested']);
   assert.deepEqual(received,['-s','ABC','shell',"'am'","'start'","'-n'","'com.app/.Main$Nested'"]);
 });
+test('benchmark instrumentation validates selection, locks device and preserves actual result',async()=>{
+ let call;const adb=new Adb('adb',async(_path,args,options)=>{call={args,options};return {stdout:'INSTRUMENTATION_STATUS_CODE: 0\nOK (2 tests)\nINSTRUMENTATION_CODE: -1\n'};});
+ const result=await adb.runBenchmark('ABC','com.example.benchmark/androidx.test.runner.AndroidJUnitRunner','com.example.Startup#cold');
+ assert.equal(result.status,'completed');assert.equal(result.testCount,2);assert.equal(call.options.timeout,600000);
+ assert.ok(call.args.includes("'com.example.Startup#cold'"));assert.ok(call.args.includes("'com.example.benchmark/androidx.test.runner.AndroidJUnitRunner'"));
+ for(const input of ['com.example.test/runner;reboot','com.example.test/--bad'])await assert.rejects(adb.runBenchmark('ABC',input),/格式无效/);
+ await assert.rejects(adb.runBenchmark('ABC','com.example.test/.Runner','com.Test#run;reboot'),/格式无效/);
+ const failed=new Adb('adb',async()=>({stdout:'FAILURES!!!\nTests run: 1, Failures: 1\n'}));assert.equal((await failed.runBenchmark('ABC','com.example.test/.Runner')).status,'failed');
+ const unknown=new Adb('adb',async()=>({stdout:'INSTRUMENTATION_CODE: -1\n'}));assert.equal((await unknown.runBenchmark('ABC','com.example.test/.Runner')).status,'unknown');
+ await assert.rejects(adb.exclusive('ABC',()=>adb.runBenchmark('ABC','com.example.test/.Runner')),/已有采集任务/);assert.equal(adb.busy.size,0);
+});
+test('benchmark report reads only explicit media JSON paths with a bounded device command',async()=>{
+ let calls=0,args;const adb=new Adb('adb',async(_path,command)=>{calls++;args=command;return {stdout:'{"benchmarks":[]}'};});
+ const path='/sdcard/Android/media/com.example.benchmark/com.example.benchmark-benchmarkData.json';
+ const result=await adb.readBenchmarkReport('ABC',path);assert.deepEqual(result.report,{benchmarks:[]});assert.equal(result.path,path);
+ assert.ok(args.includes("'head'"));assert.ok(args.includes("'12582913'"));assert.ok(args.includes(`'${path}'`));
+ for(const bad of ['/sdcard/Download/file.json','/sdcard/Android/media/com.example/../secret.json','/sdcard/Android/media/com.example/x.json;reboot'])await assert.rejects(adb.readBenchmarkReport('ABC',bad),/路径/);
+ assert.equal(calls,1);
+ const malformed=new Adb('adb',async()=>({stdout:'not json'}));await assert.rejects(malformed.readBenchmarkReport('ABC',path),/有效 JSON/);assert.equal(malformed.busy.size,0);
+ const huge=new Adb('adb',async()=>({stdout:'x'.repeat(12*1024*1024+1)}));await assert.rejects(huge.readBenchmarkReport('ABC',path),/超过 12 MiB/);
+});
 test('metrics preserves independently failing evidence without inventing values',async()=>{
   const adb=new Adb('/fake/adb',async(path,args)=>{
     const command=args.join(' ');
@@ -66,4 +87,56 @@ test('invalid screenshot does not discard usable XML or leak a capture lock',asy
 test('system-killed ADB gives an actionable signature error instead of an empty command failure',async()=>{
   const adb=new Adb('/sdk/adb',async()=>{throw Object.assign(new Error('Command failed'),{signal:'SIGKILL'});});
   await assert.rejects(adb.run(['version']),/SIGKILL.*签名/);
+});
+test('heap capture rejects device errors and always removes the remote file and lock',async()=>{
+  const calls=[];
+  const adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:args.join(' ').includes('dumpheap')?'Error: process not debuggable':''};});
+  await assert.rejects(adb.heapDump('ABC','com.example.app'),/堆转储失败/);
+  assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));
+  assert.equal(adb.busy.size,0);
+});
+test('heap capture returns valid HPROF and removes temporary files',async()=>{
+  const {writeFile,access}=await import('node:fs/promises');
+  const calls=[];let local;
+  const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.includes('pull')){local=args.at(-1);await writeFile(local,Buffer.from('JAVA PROFILE 1.0.3\0test'));}return {stdout:''};});
+  adb.waitHeapFile=async()=>Buffer.byteLength('JAVA PROFILE 1.0.3\0test');
+  const data=await adb.heapDump('ABC','com.example.app');
+  assert.match(data.toString(),/^JAVA PROFILE/);
+  await assert.rejects(access(local));
+  assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));
+  assert.equal(adb.busy.size,0);
+});
+
+test('heap capture waits for asynchronous device writes and enforces size limit',async()=>{
+  const sizes=[0,12,24,24,24];
+  const adb=new Adb('adb',async()=>({stdout:`${sizes.shift()} /tmp/heap`}));
+  assert.equal(await adb.waitHeapFile('ABC','/tmp/heap',{intervalMs:1,stableChecks:2,timeoutMs:1000}),24);
+  const large=new Adb('adb',async()=>({stdout:`${256*1024*1024+1} /tmp/heap`}));
+  await assert.rejects(large.waitHeapFile('ABC','/tmp/heap',{intervalMs:1}),/超过/);
+});
+
+test('FrameTimeline capture requests the explicit source, gates Android version and cleans both files',async()=>{
+  const {readFile,writeFile,access}=await import('node:fs/promises');let configLocal,traceLocal,config,remoteConfig;const calls=[];
+  const adb=new Adb('adb',async(_p,args)=>{calls.push(args);const command=args.join(' ');
+    if(command.includes("'which'"))return {stdout:'/system/bin/perfetto'};
+    if(command.includes("'ro.build.version.sdk'"))return {stdout:'31'};
+    if(args.includes('push')){configLocal=args.at(-2);remoteConfig=args.at(-1);config=await readFile(configLocal,'utf8');return {stdout:''};}
+    if(args.includes('pull')){traceLocal=args.at(-1);await writeFile(traceLocal,Buffer.from('trace data'));return {stdout:''};}
+    return {stdout:''};
+  });
+  assert.equal((await adb.trace('ABC',5,'frame-timeline','com.example.app')).toString(),'trace data');
+  assert.match(config,/name: "android\.surfaceflinger\.frametimeline"/);assert.match(config,/duration_ms: 5000/);
+  assert.match(config,/atrace_apps: "com\.example\.app"/);
+  assert.ok(calls.some(a=>a.join(' ').includes("'--txt' '-c'")));assert.ok(remoteConfig.startsWith('/data/misc/perfetto-configs/'));
+  assert.ok(calls.some(a=>a.join(' ').includes(remoteConfig)&&a.join(' ').includes("'rm'")));
+  await assert.rejects(access(configLocal));await assert.rejects(access(traceLocal));assert.equal(adb.busy.size,0);
+  const old=new Adb('adb',async(_p,args)=>({stdout:args.join(' ').includes('which')?'/system/bin/perfetto':'30'}));
+  await assert.rejects(old.trace('ABC',5,'frame-timeline'),/Android 12/);assert.equal(old.busy.size,0);
+  await assert.rejects(adb.trace('ABC',5,'bad'),/模式无效/);
+  await assert.rejects(adb.trace('ABC',5,'frame-timeline','com.example.app" bad'),/包名无效/);
+});
+test('standard Perfetto capture passes the optional validated target app to atrace',async()=>{
+ const {writeFile}=await import('node:fs/promises');const calls=[];
+ const adb=new Adb('adb',async(_p,args)=>{calls.push(args);if(args.join(' ').includes("'which'"))return {stdout:'/system/bin/perfetto'};if(args.includes('pull'))await writeFile(args.at(-1),'trace');return {stdout:''};});
+ await adb.trace('ABC',3,'standard','com.example.app');const perfetto=calls.find(a=>a.includes("'perfetto'")&&a.includes("'-o'"));assert.ok(perfetto.includes("'-a'"));assert.ok(perfetto.includes("'com.example.app'"));
 });

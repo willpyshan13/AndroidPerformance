@@ -1,7 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const routes = new Set(['overview', 'monitor', 'frames', 'startup', 'layout', 'trace', 'network', 'benchmark', 'apk', 'sessions', 'settings']);
+const routes = new Set(['overview', 'monitor', 'cpu-profile', 'heap', 'battery', 'gpu', 'frames', 'startup', 'layout', 'trace', 'network', 'benchmark', 'apk', 'source', 'sessions', 'settings']);
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
+  agiStatus: () => ipcRenderer.invoke('workbench:agi-status'),
+  selectAgi: () => ipcRenderer.invoke('workbench:agi-select'),
+  launchAgi: () => ipcRenderer.invoke('workbench:agi-launch'),
+  openAgiArtifact: id => ipcRenderer.invoke('workbench:agi-open-artifact', id),
+  selectSourceDir: () => ipcRenderer.invoke('workbench:source-select'),
   onAdbUpdated(callback) {
     if (typeof callback !== 'function') return;
     const handler = () => callback();

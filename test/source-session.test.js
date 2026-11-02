@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {once} from 'node:events';
+import {createApp} from '../src/server.js';
+test('source workspace HTTP flow creates, lists, searches and retrieves immutable snapshots',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'apw-source-api-')),src=join(base,'project');await mkdir(src);await writeFile(join(src,'Screen.kt'),'class Screen {\n fun render() = 1\n}\n');
+ const app=createApp({adb:{path:'adb'},dataDir:join(base,'data'),token:'test'});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(r=>app.close(r));await rm(base,{recursive:true,force:true});});
+ const url=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'test','Content-Type':'application/json'};
+ const post=(path,body)=>fetch(url+path,{method:'POST',headers,body:JSON.stringify(body)});
+ const created=await post('/source/snapshot',{path:src});assert.equal(created.status,201);const snap=await created.json();
+ const list=await (await fetch(url+'/source/snapshots',{headers})).json();assert.equal(list.snapshots[0].id,snap.id);
+ const search=await (await post('/source/search',{id:snap.id,query:'render'})).json();assert.equal(search.matches[0].line,2);
+ const resolved=await (await post('/source/resolve',{id:snap.id,symbol:'Screen.render()'})).json();assert.equal(resolved.matches[0].line,2);assert.equal(resolved.mode,'resolve');
+ assert.equal((await post('/source/resolve',{id:snap.id,symbol:'native::method'})).status,400);
+ await writeFile(join(src,'Screen.kt'),'mutated');const file=await (await post('/source/file',{id:snap.id,path:'Screen.kt'})).json();assert.match(file.text,/render/);
+ assert.equal((await post('/source/file',{id:snap.id,path:'../outside'})).status,400);assert.equal((await post('/source/search',{id:snap.id,query:''})).status,400);
+ assert.equal((await post('/source/remote',{url:'https://example.invalid/repo',ref:'main'})).status,400);
+});

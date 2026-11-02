@@ -15,4 +15,12 @@ npm run prepare:adb
 - 下载 ZIP SHA-256：`ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d`
 - 解压后 adb SHA-256：`1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b`
 
-该下载地址指向最新版本，未来下载后请重新验证来源、签名和设备兼容性。项目不修改用户原 SDK 中的任何文件。`platform-tools/` 是下载资源，不提交到源码库；分发时保留 Google 提供的 NOTICE。
+脚本固定校验上面的 ZIP SHA-256；官方更新 latest 后须先核对新包并更新脚本中的校验值，校验失败不会覆盖已有资源。本机曾出现同一 ADB 文件签名校验失败及被系统强制终止，随后又校验通过，原因尚未确定。在确认来源及 ZIP 校验值后，可以执行 `APW_ADHOC_ADB=1 npm run prepare:adb`，当原始签名校验失败时仅对下载副本做本机 ad-hoc 签名。该签名不证明 Google 原始签名有效，也不提供发布者身份认证。项目不修改用户原 SDK 中的任何文件。`platform-tools/` 是下载资源，不提交到源码库；分发时保留 Google 提供的 NOTICE。
+
+## simpleperf
+
+macOS 打包前执行 `npm run prepare:simpleperf`，从本机 Android NDK 复制 simpleperf、报告库和对应 NOTICE。需要稳定版 NDK 与 r26 或更早版本；后者用于 Android 7 设备。可通过 `SIMPLEPERF_NDK` 和 `SIMPLEPERF_LEGACY_NDK` 指定 NDK 目录。资源位于忽略提交的 `tools/simpleperf/`，打包时保留两份 NDK NOTICE。CPU 采样无需额外安装 NDK，但 perf.data 导入仍需本机 Python 3。
+
+## Perfetto Trace Processor
+
+macOS arm64 运行 `npm run prepare:trace-processor` 从 Perfetto 官方地址下载固定 v59.1 二进制并验证 SHA-256，同时保存 Apache 2.0 许可证。文件位于忽略提交的 `tools/trace-processor/`，打包时保留版本来源及许可证。其他平台可通过 `TRACE_PROCESSOR_PATH` 配置兼容的 Trace Processor，尚未验证。

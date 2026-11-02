@@ -46,6 +46,17 @@ test('gfxinfo excludes flagged/incomplete frames, supports multiple windows and 
   assert.deepEqual(frames.frames.map(f=>f.durationMs),[10,25,8,40]);assert.equal(frames.count,4);assert.equal(frames.slowPercent,50);assert.equal(frames.p95,40);assert.equal(frames.p50,10);
   assert.equal(parseFrames(raw,8.333).slow,3);assert.equal(parseFrames('').slowPercent,null);assert.equal(percentile([], .95),null);
 });
+test('gfxinfo histogram reports bucket estimates without inventing exact per-frame jank',()=>{
+  const parsed=parseFrames('Janky frames: 10 (100.00%)\nHISTOGRAM: 21ms=1 23ms=1 24ms=1 40ms=1 109ms=1 113ms=1 400ms=1 500ms=1 700ms=1 900ms=1');
+  assert.equal(parsed.sourceFormat,'histogram');assert.equal(parsed.count,10);assert.equal(parsed.platformJank,'10');
+  assert.equal(parsed.p50,109);assert.equal(parsed.p90,700);assert.equal(parsed.p95,900);assert.equal(parsed.max,900);
+  assert.equal(parsed.slow,null);assert.equal(parsed.slowPercent,null);assert.equal(parsed.frames.length,0);assert.match(parsed.note,/桶上界估算/);
+});
+test('gfxinfo histogram prefers percentiles reported by the device',()=>{
+  const parsed=parseFrames('Total frames rendered: 10\nJanky frames: 10 (100.00%)\n50th percentile: 113ms\n90th percentile: 900ms\n95th percentile: 900ms\n99th percentile: 900ms\nHISTOGRAM: 21ms=1 23ms=1 24ms=1 40ms=1 109ms=1 113ms=1 400ms=1 500ms=1 700ms=1 900ms=1');
+  assert.equal(parsed.percentileSource,'platform');assert.equal(parsed.p50,113);assert.equal(parsed.p90,900);assert.equal(parsed.p95,900);assert.equal(parsed.p99,900);
+  assert.equal(parsed.count,10);assert.match(parsed.note,/采用设备 gfxinfo 报告值/);
+});
 test('startup reports actual launch mode and missing TTID evidence as null',()=>{
   const launch=parseStartup('Status: ok\nLaunchState: COLD\nActivity: com.example.app/.Main\nThisTime: 310\nTotalTime: 330\nWaitTime: 350');
   assert.equal(launch.totalTimeMs,330);assert.equal(launch.observedMode,'cold');assert.equal(parseStartup('Status: ok\nWaitTime: 4').totalTimeMs,null);

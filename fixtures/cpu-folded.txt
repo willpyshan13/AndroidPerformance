@@ -1,0 +1,3 @@
+main;ActivityThread.main;performLaunchActivity;inflate 400
+main;ActivityThread.main;performLaunchActivity;onCreate 200
+worker;Thread.run;decodeImage 250

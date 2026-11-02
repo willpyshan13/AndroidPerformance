@@ -1,15 +1,18 @@
-import { app, BrowserWindow, Menu, dialog, shell, nativeImage, session } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell, nativeImage, session, ipcMain } from 'electron';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, access, rm } from 'node:fs/promises';
 import { once } from 'node:events';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Adb, locateAdb } from '../src/adb.js';
 import { createApp, VERSION } from '../src/server.js';
+import { prepareAgiArtifact } from '../src/gpu.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const allowedExternal = new Set(['https://ui.perfetto.dev/', 'https://github.com/yuchuangu85/AndroidPerformanceStudio']);
-let window, server, origin, runtimeAdb;
+let window, server, origin, runtimeAdb, agiPath=null;
 const profilePath = process.env.APW_PROFILE_DIR || (!app.isPackaged ? join(here, '..', 'data', 'desktop-profile') : null);
 if (profilePath) { mkdirSync(profilePath, { recursive: true }); app.setPath('userData', profilePath); }
 const singleInstance = app.requestSingleInstanceLock();
@@ -21,6 +24,15 @@ function navigate(route) {
 function openExternal(url) {
   if (allowedExternal.has(url)) shell.openExternal(url).catch(error => dialog.showErrorBox('无法打开链接', error.message));
 }
+async function saveSettings(update) {
+  const path=join(app.getPath('userData'),'settings.json');let current={};try{current=JSON.parse(await readFile(path,'utf8'));}catch{}
+  await writeFile(path,JSON.stringify({...current,...update}),{mode:0o600});
+}
+async function existingAgi(){
+  const candidates=[agiPath,process.platform==='darwin'?'/Applications/Android GPU Inspector.app':null,process.platform==='win32'?join(process.env.ProgramFiles||'C:\\Program Files','Android GPU Inspector','agi.exe'):null].filter(Boolean);
+  for(const path of candidates)try{await access(path);return path;}catch{}return null;
+}
+function authorizeGpuIpc(event){if(!window||event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame)throw new Error('无效的桌面请求');}
 async function chooseAdb() {
   if (runtimeAdb.busy.size) { dialog.showMessageBox(window, { message: '设备采集任务尚未结束，请等待完成后更换 ADB。' }); return; }
   const result = await dialog.showOpenDialog(window, { title: '选择 Android Platform Tools 中的 adb 程序', properties: ['openFile'], defaultPath: runtimeAdb.path === 'adb' ? app.getPath('home') : runtimeAdb.path });
@@ -30,7 +42,7 @@ async function chooseAdb() {
     if (!['adb', 'adb.exe'].includes(basename(path).toLowerCase())) throw new Error('请选择 Android Platform Tools 中名为 adb 或 adb.exe 的程序');
     const candidate = new Adb(path);
     if (!(await candidate.run(['version'])).startsWith('Android Debug Bridge version')) throw new Error('该程序未返回有效 ADB 版本');
-    await writeFile(join(app.getPath('userData'), 'settings.json'), JSON.stringify({ adbPath: path }), { mode: 0o600 });
+    await saveSettings({adbPath:path});
     runtimeAdb.path = path;
     runtimeAdb.cpuSnapshots.clear();
     window?.webContents.send('workbench:adb-updated');
@@ -49,8 +61,8 @@ function installMenu() {
     { label: '编辑', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: '分析', submenu: [
       ['overview', '概览', '1'], ['monitor', '实时监控', '2'], ['frames', '帧耗时分析', '3'], ['startup', '启动测试', '4'], ['layout', '布局检查', '5'], ['trace', '系统追踪', '6'], ['network', '网络分析', '7'], ['benchmark', '基准对比', '8'],
-      ['apk', 'APK 分析', '9'],
-    ].map(([route, label, key]) => ({ label, accelerator: `CmdOrCtrl+${key}`, click: () => navigate(route) })) },
+      ['apk', 'APK 分析', '9'], ['cpu-profile', 'CPU 采样'], ['heap', '内存堆分析'], ['battery', '电池与资源'], ['gpu', 'GPU 产物'], ['source', '源码工作区'],
+    ].map(([route, label, key]) => ({ label, ...(key ? { accelerator: `CmdOrCtrl+${key}` } : {}), click: () => navigate(route) })) },
     { label: '视图', submenu: [{ role: 'resetZoom', label: '实际大小' }, { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' }, { type: 'separator' }, { role: 'togglefullscreen', label: '全屏' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools', label: '开发者工具' }] : [])] },
     { label: '窗口', submenu: [{ role: 'minimize', label: '最小化' }, { role: 'zoom', label: '缩放' }, ...(isMac ? [{ role: 'front', label: '全部置前' }] : [])] },
     { label: '帮助', submenu: [ { label: '设置与帮助', accelerator: 'CmdOrCtrl+,', click: () => navigate('settings') }, { label: '打开 Perfetto UI', click: () => openExternal('https://ui.perfetto.dev/') }, ...(!isMac ? [{ label: '关于', click: () => app.showAboutPanel() }] : []) ] },
@@ -89,9 +101,22 @@ if (singleInstance) {
       item.setSaveDialogOptions({ title: '保存性能采集文件', defaultPath: join(app.getPath('downloads'), item.getFilename()) });
       item.on('done', (_event, status) => { if (status === 'interrupted') dialog.showErrorBox('下载失败', '文件保存被中断，请重试。'); });
     });
+    ipcMain.handle('workbench:agi-status',async event=>{authorizeGpuIpc(event);return await existingAgi();});
+    ipcMain.handle('workbench:source-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择本地源码目录',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
+    ipcMain.handle('workbench:agi-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择 Android GPU Inspector 应用程序',properties:['openFile'],...(process.platform==='darwin'?{defaultPath:'/Applications'}:{})});if(result.canceled)return null;const chosen=result.filePaths[0];await access(chosen);agiPath=chosen;await saveSettings({agiPath});return chosen;});
+    ipcMain.handle('workbench:agi-launch',async event=>{authorizeGpuIpc(event);const path=await existingAgi();if(!path)throw new Error('未找到 AGI，请先选择应用程序');const error=await shell.openPath(path);if(error)throw new Error(error);return true;});
+    ipcMain.handle('workbench:agi-open-artifact',async(event,id)=>{
+      authorizeGpuIpc(event);const agi=await existingAgi();if(!agi)throw new Error('未找到 AGI，请先选择应用程序');
+      const prepared=await prepareAgiArtifact(join(app.getPath('userData'),'records','gpu-artifacts'),join(app.getPath('userData'),'gpu-open'),id);
+      try{
+        if(process.platform==='darwin'&&agi.toLowerCase().endsWith('.app'))await promisify(execFile)('/usr/bin/open',['-n','-a',agi,'--args',prepared.path],{timeout:30000});
+        else {const child=spawn(agi,[prepared.path],{detached:true,stdio:'ignore'});await new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',resolve);});child.unref();}
+        return true;
+      }catch(error){await rm(dirname(prepared.path),{recursive:true,force:true});throw new Error(`无法启动 AGI：${error.message}`);}
+    });
     const recordsDir = join(app.getPath('userData'), 'records');
     let adbPath = await locateAdb();
-    try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; } catch {}
+    try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath; } catch {}
     runtimeAdb = new Adb(adbPath);
     server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -101,5 +126,11 @@ if (singleInstance) {
   }).catch(error => { dialog.showErrorBox('Android Performance 启动失败', error.stack || error.message); app.quit(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   // before-quit can be canceled by the unsaved-capture dialog. Keep the backend alive until quitting is final.
-  app.on('will-quit', () => { server?.close(); });
+  app.on('will-quit', event => {
+    if(!server?.listening)return;
+    event.preventDefault();
+    // Wait for local requests and trace temporary-file cleanup before Electron exits.
+    server.close(() => app.exit(0));
+    server.closeIdleConnections?.();
+  });
 }

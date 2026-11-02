@@ -4,9 +4,11 @@ import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash,X509Certificate} from 'node:crypto';
-import {analyzeApk,parseApkManifest,parseDexHeader,apkCategory} from '../src/apk.js';
+import {deflateSync} from 'node:zlib';
+import {analyzeApk,parseApkManifest,parseDexHeader,parseProfileHeader,parseProfileDexHeaders,apkCategory} from '../src/apk.js';
 import {readApkSigningBlock,certificatesFromSigningValue,certificatesFromPkcs7} from '../src/apk-signatures.js';
 import {validateRecord} from '../src/records.js';
+import {apkBaselineEvidence} from '../public/offline.js';
 import {zipFixture,dexFixture,BADGING,TREE,aaptRunner} from '../fixtures/apk/helpers.js';
 
 const cert=await readFile(new URL('../fixtures/apk/certificate.der',import.meta.url));
@@ -49,6 +51,46 @@ test('APK analysis reconciles every byte and round-trips as a saved report',asyn
   assert.equal(r.fileName,'测试.apk');assert.equal(r.fileCount,5);assert.equal(r.packageName,'com.test.apk');assert.equal(r.abis[0].name,'arm64-v8a');assert.equal(r.dex[0].methodIds,12);
   assert.equal(r.categories.reduce((s,c)=>s+c.compressedBytes,0),zip.length);assert.equal(r.sha256,createHash('sha256').update(zip).digest('hex'));assert.equal(r.signatures.certificates.length,1);
   assert.doesNotThrow(()=>validateRecord({kind:'apk',source:'import',payload:r}));
+});
+test('APK file inventory exposes packaged baseline profile evidence',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-apk-profile-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const path=join(dir,'sample.apk');await writeFile(path,zipFixture([['AndroidManifest.xml','binary'],['assets/dexopt/baseline.prof',Buffer.from('pro\0'+'010\0')],['assets/dexopt/baseline.profm',Buffer.from('prm\0'+'002\0')]]));
+ const apk=await analyzeApk(path,{aapt2Path:'fixture-aapt',runner:aaptRunner});const files=apkBaselineEvidence(apk).files;assert.deepEqual(files.map(f=>[f.status,f.bytes,f.header.status,f.header.version]),[['present',8,'recognized','010'],['present',8,'recognized','002']]);
+ assert.doesNotThrow(()=>validateRecord({kind:'apk',source:'import',payload:apk}));
+});
+test('profile headers distinguish truncated, invalid and unrecognized versions',()=>{
+ assert.equal(parseProfileHeader(Buffer.from('pro')).status,'truncated');assert.equal(parseProfileHeader(Buffer.from('bad\0'+'010\0')).status,'invalid-magic');
+ assert.equal(parseProfileHeader(Buffer.from('pro\0'+'999\0')).status,'unknown-version');assert.equal(parseProfileHeader(Buffer.from([112,114,111,0,0xb0,0x31,0x30,0])).status,'invalid-version');
+ assert.equal(parseProfileHeader(Buffer.from('pro\0'+'010\0'),true).status,'invalid-magic');
+});
+test('010 profile DEX header parsing checks compressed bounds and conservative checksum matching',async t=>{
+ const name=Buffer.from('classes.dex'),row=Buffer.alloc(16);row.writeUInt16LE(name.length,0);row.writeUInt16LE(2,2);row.writeUInt32LE(0x11223344,8);row.writeUInt32LE(12,12);
+ const body=Buffer.concat([row,name,Buffer.from([0,0,1,0,0,0,0])]),compressed=deflateSync(body),header=Buffer.alloc(17);header.write('pro\0'+'010\0',0,'binary');header[8]=1;header.writeUInt32LE(body.length,9);header.writeUInt32LE(compressed.length,13);const profile=Buffer.concat([header,compressed]);
+ const dex=dexFixture();dex.writeUInt32LE(0x11223344,8);
+ const match=parseProfileDexHeaders(profile,[{path:'classes.dex',checksum:0x11223344}]);assert.equal(match.entries[0].match,'checksum-equal');assert.equal(match.entries[0].classes,2);assert.equal(match.entries[0].methodIds,12);
+ assert.equal(parseProfileDexHeaders(profile,[{path:'classes.dex',checksum:1}]).entries[0].match,'checksum-different');assert.equal(parseProfileDexHeaders(profile,[]).entries[0].match,'unmatched');
+ assert.throws(()=>parseProfileDexHeaders(profile.subarray(0,-1)),/长度不一致/);const bad=Buffer.from(profile);bad.writeUInt32LE(0xffffffff,9);assert.throws(()=>parseProfileDexHeaders(bad),/上限/);
+ const dir=await mkdtemp(join(tmpdir(),'apw-profile-body-'));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,'test.apk');await writeFile(path,zipFixture([['AndroidManifest.xml','binary'],['classes.dex',dex],['assets/dexopt/baseline.prof',profile]]));const result=await analyzeApk(path,{aapt2Path:'fixture',runner:aaptRunner});assert.equal(result.profileHeaders[0].body.entries[0].match,'checksum-equal');
+});
+test('010 profile counts hot, startup, post-startup methods and validates inline-cache bounds',()=>{
+ const key=Buffer.from('classes.dex'),row=Buffer.alloc(16);row.writeUInt16LE(key.length,0);row.writeUInt16LE(2,2);row.writeUInt32LE(12,12);
+ const hot=Buffer.from([2,0,1,0,3,0,6,3,0,1,0,4,0,1,0,1,2,0]);row.writeUInt32LE(hot.length,4);
+ const make=(hotData=hot)=>{const body=Buffer.concat([row,key,hotData,Buffer.from([0,0,1,0,0x24,0,0x02])]),z=deflateSync(body),h=Buffer.alloc(17);h.write('pro\0'+'010\0');h[8]=1;h.writeUInt32LE(body.length,9);h.writeUInt32LE(z.length,13);return Buffer.concat([h,z]);};
+ const item=parseProfileDexHeaders(make()).entries[0];assert.equal(item.hotMethods,2);assert.equal(item.startupMethods,2);assert.equal(item.postStartupMethods,1);assert.equal(item.classes,2);
+ const bad=Buffer.from(hot);bad[0]=12;assert.throws(()=>parseProfileDexHeaders(make(bad)),/热方法索引/);
+ const badCache=Buffer.from(hot);badCache[14]=2;assert.throws(()=>parseProfileDexHeaders(make(badCache)),/缓存 DEX 索引/);
+});
+test('official AndroidX 010 baseline sample exposes expected DEX metadata',async t=>{
+ const path=process.env.APW_ANDROIDX_BASELINE;if(!path){t.skip('设置 APW_ANDROIDX_BASELINE 指向 AndroidX 官方样本');return;}
+ const bytes=await readFile(path);assert.equal(createHash('sha256').update(bytes).digest('hex'),'3d256891c99253c9600b9fd34ec3702c799b443dd6f6eee2ac1a7dd07968f3b1');
+ const r=parseProfileDexHeaders(bytes);assert.equal(r.entries.length,1);assert.equal(r.entries[0].checksum,147004379);assert.equal(r.entries[0].methodIds,18487);assert.equal(r.entries[0].hotBytes,140);assert.equal(r.entries[0].hotMethods,35);
+});
+test('official AndroidX multidex profile parses all five DEX records',async t=>{
+ const path=process.env.APW_ANDROIDX_MULTIDEX;if(!path){t.skip('设置 APW_ANDROIDX_MULTIDEX 指向 AndroidX 官方多 DEX 样本');return;}
+ const bytes=await readFile(path);assert.equal(createHash('sha256').update(bytes).digest('hex'),'fac62f8c666310dbee2053ff73faaf4d9363d8d823a22cab03f99892fe213fb6');
+ const r=parseProfileDexHeaders(bytes);assert.deepEqual(r.entries.map(x=>x.name),['classes.dex','classes2.dex','classes3.dex','classes4.dex','classes5.dex']);
+ assert.deepEqual(r.entries.map(x=>x.hotMethods),[9049,8810,6066,3893,846]);
+ assert.deepEqual(r.entries.map(x=>x.startupMethods),[8963,8734,6024,3883,846]);
 });
 test('invalid ZIP, absent/duplicate manifest and unsafe paths fail before running AAPT2',async t=>{
   const dir=await mkdtemp(join(tmpdir(),'apw-apk-invalid-'));t.after(()=>rm(dir,{recursive:true,force:true}));let calls=0;

@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, stat, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { inflateSync } from 'node:zlib';
 import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +105,7 @@ export function parseApkManifest(badging, treeText) {
 export function parseDexHeader(bytes) {
   if (bytes.length < 112 || !/^dex\n\d{3}\0$/.test(bytes.subarray(0,8).toString('ascii'))) throw new Error('无效或不支持的 DEX 文件头');
   if (bytes.readUInt32LE(40) !== 0x12345678) throw new Error('不支持此 DEX 字节序');
-  return { version: bytes.subarray(4,7).toString(), declaredBytes: bytes.readUInt32LE(32), stringIds: bytes.readUInt32LE(56), typeIds: bytes.readUInt32LE(64), methodIds: bytes.readUInt32LE(88), classDefs: bytes.readUInt32LE(96) };
+  return { version: bytes.subarray(4,7).toString(), checksum:bytes.readUInt32LE(8), declaredBytes: bytes.readUInt32LE(32), stringIds: bytes.readUInt32LE(56), typeIds: bytes.readUInt32LE(64), methodIds: bytes.readUInt32LE(88), classDefs: bytes.readUInt32LE(96) };
 }
 function openZip(path) { return new Promise((resolve,reject) => yauzl.open(path, { lazyEntries: true, autoClose: false, validateEntrySizes: true, strictFileNames: true }, (error,zip) => error ? reject(error) : resolve(zip))); }
 function entryStream(zip,entry) { return new Promise((resolve,reject) => zip.openReadStream(entry, (error,stream) => error ? reject(error) : resolve(stream))); }
@@ -114,6 +115,53 @@ async function entryBytes(zip, entry, limit, prefix = false) {
   try { for await (const chunk of stream) { const remaining = limit - size; if (!prefix && chunk.length > remaining) throw new Error('ZIP 实际展开数据超过限制'); chunks.push(chunk.subarray(0, remaining)); size += Math.min(chunk.length,remaining); if (prefix && size === limit) break; } }
   finally { stream.destroy(); }
   return Buffer.concat(chunks);
+}
+// Only the 8-byte magic/version prefix is inspected; this is not profile
+// body validation or proof that the profile matches any DEX file.
+export function parseProfileHeader(bytes,metadata=false){
+  if(!Buffer.isBuffer(bytes)||bytes.length<8)return {status:'truncated',version:null};
+  if(!bytes.subarray(0,4).equals(Buffer.from(metadata?'prm\0':'pro\0')))return {status:'invalid-magic',version:null};
+  const versionBytes=bytes.subarray(4,8),version=versionBytes.subarray(0,3).toString('ascii');
+  if(versionBytes[3]!==0||![...versionBytes.subarray(0,3)].every(b=>b>=0x30&&b<=0x39))return {status:'invalid-version',version:null};
+  const known=metadata?['001','002']:['001','005','009','010','015'];
+  return {status:known.includes(version)?'recognized':'unknown-version',version};
+}
+// AndroidX ProfileTranscoder's V010_P layout. Counts are derived from method
+// index records and bitmaps; method names and DEX body checks are not parsed.
+export function parseProfileDexHeaders(bytes,dexFiles=[]){
+  if(parseProfileHeader(bytes).version!=='010')throw new Error('仅支持 010 Profile 的 DEX 记录');
+  if(bytes.length<17)throw new Error('Profile 内容头已截断');
+  const count=bytes[8],uncompressed=bytes.readUInt32LE(9),compressed=bytes.readUInt32LE(13);
+  if(uncompressed>32*1024*1024||compressed>8*1024*1024)throw new Error('Profile 内容超过分析上限');
+  if(compressed!==bytes.length-17)throw new Error('Profile 压缩数据长度不一致');
+  let inflated;try{const out=inflateSync(bytes.subarray(17),{maxOutputLength:32*1024*1024,info:true});if(out.engine.bytesWritten!==compressed)throw new Error();inflated=out.buffer;}catch{throw new Error('Profile 压缩数据无效');}
+  if(inflated.length!==uncompressed)throw new Error('Profile 解压长度不一致');
+  let pos=0;const entries=[],decoder=new TextDecoder('utf-8',{fatal:true});
+  for(let i=0;i<count;i++){
+    if(pos+16>inflated.length)throw new Error('Profile DEX 记录头已截断');
+    const nameLength=inflated.readUInt16LE(pos),classes=inflated.readUInt16LE(pos+2),hotBytes=inflated.readUInt32LE(pos+4),checksum=inflated.readUInt32LE(pos+8),methodIds=inflated.readUInt32LE(pos+12);pos+=16;
+    if(!nameLength||pos+nameLength>inflated.length)throw new Error('Profile DEX 名称无效');
+    let name;try{name=decoder.decode(inflated.subarray(pos,pos+nameLength));}catch{throw new Error('Profile DEX 名称编码无效');}pos+=nameLength;
+    const matches=/^classes(?:\d+)?\.dex$/.test(name)?dexFiles.filter(d=>d.path===name&&!d.error&&Number.isInteger(d.checksum)):[];
+    entries.push({name,classes,hotBytes,checksum,methodIds,match:matches.length===1?(matches[0].checksum===checksum?'checksum-equal':'checksum-different'):'unmatched'});
+  }
+  let totalMethods=0;
+  for(const e of entries){
+    totalMethods+=e.methodIds;if(totalMethods>4000000)throw new Error('Profile 方法 ID 数超过分析上限');
+    const bitmapBytes=Math.ceil(e.methodIds*2/8),region=e.hotBytes+e.classes*2+bitmapBytes;if(pos+region>inflated.length)throw new Error('Profile DEX 数据区已截断');
+    const hotEnd=pos+e.hotBytes;let last=0,hotMethods=0;
+    const read8=()=>{if(pos>=hotEnd)throw new Error('Profile 热方法或缓存数据已截断');return inflated[pos++];};
+    const read16=()=>{if(pos+2>hotEnd)throw new Error('Profile 热方法或缓存数据已截断');const n=inflated.readUInt16LE(pos);pos+=2;return n;};
+    while(pos<hotEnd){const delta=read16();last+=delta;if((hotMethods&&delta===0)||last>=e.methodIds)throw new Error('Profile 热方法索引无效');hotMethods++;
+      let caches=read16();while(caches--){read16();let maps=read8();if(maps===6||maps===7)continue;while(maps--){const dexIndex=read8(),size=read8();if(dexIndex>=entries.length)throw new Error('Profile 缓存 DEX 索引无效');for(let i=0;i<size;i++)read16();}}
+    }
+    let previous=0;for(let i=0;i<e.classes;i++){const delta=inflated.readUInt16LE(pos);pos+=2;if(i&&delta===0)throw new Error('Profile 类索引无效');previous+=delta;if(previous>0xffffffff)throw new Error('Profile 类索引溢出');}
+    const bitmapStart=pos;let startupMethods=0,postStartupMethods=0;
+    for(let i=0;i<e.methodIds;i++){if(inflated[bitmapStart+(i>>3)]&(1<<(i&7)))startupMethods++;const bit=i+e.methodIds;if(inflated[bitmapStart+(bit>>3)]&(1<<(bit&7)))postStartupMethods++;}
+    pos+=bitmapBytes;e.hotMethods=hotMethods;e.startupMethods=startupMethods;e.postStartupMethods=postStartupMethods;
+  }
+  if(pos!==inflated.length)throw new Error('Profile 存在未识别的尾随数据');
+  return {status:'headers-parsed',entries};
 }
 async function zipEntries(zip) {
   return new Promise((resolve,reject) => {
@@ -163,6 +211,14 @@ export async function analyzeApk(path, { fileName = basename(path), aapt2Path, r
       catch(error) { dex.push({path:entry.fileName,error:error.message}); warnings.push(`${entry.fileName}：${error.message}`); }
     }
     dex.sort((a,b)=>a.path.localeCompare(b.path,undefined,{numeric:true}));
+    const profileHeaders=[];
+    for(const [name,metadata] of [['assets/dexopt/baseline.prof',false],['assets/dexopt/baseline.profm',true]]){
+      const entry=files.find(e=>e.fileName===name);if(!entry)continue;
+      try{const header=parseProfileHeader(await entryBytes(zip,entry,8,true),metadata);let body=null;if(!metadata&&header.status==='recognized'&&header.version==='010'){
+        try{body=parseProfileDexHeaders(await entryBytes(zip,entry,8*1024*1024),dex);}catch(error){body={status:'unavailable',reason:error.message};}
+      }profileHeaders.push({path:name,...header,body});}
+      catch{profileHeaders.push({path:name,status:'unreadable',version:null});}
+    }
     const abiMap = new Map();
     for (const entry of fileList) { const m=entry.path.match(/^lib\/([^/]+)\/.+\.so$/); if(m){const abi=abiMap.get(m[1])||{name:m[1],count:0,compressedBytes:0,uncompressedBytes:0};abi.count++;abi.compressedBytes+=entry.compressedBytes;abi.uncompressedBytes+=entry.uncompressedBytes;abiMap.set(m[1],abi);} }
     const signatures = await readApkSigningBlock(path,info.size);
@@ -177,7 +233,7 @@ export async function analyzeApk(path, { fileName = basename(path), aapt2Path, r
     const hash=createHash('sha256');for await(const chunk of createReadStream(path))hash.update(chunk);
     return { schemaVersion:1,source:'import',kind:'apk',timestamp:Date.now(),packageName:manifest.packageName,
       fileName:basename(fileName).slice(0,200),sizeBytes:info.size,sha256:hash.digest('hex'),fileCount:files.length,compressedBytes,uncompressedBytes,
-      categories:categories.filter(c=>c.count||c.key==='overhead'),files:fileList,manifest,dex,abis:[...abiMap.values()],signatures,icon,warnings,
+      categories:categories.filter(c=>c.count||c.key==='overhead'),files:fileList,manifest,dex,profileHeaders,abis:[...abiMap.values()],signatures,icon,warnings,
       notes:['体积按 ZIP 条目统计；容器开销包括 ZIP 结构、签名块与填充。展开体积不是安装占用。','DEX 方法数为各文件 method_ids 数量，跨 DEX 可重复，不等于应用自行定义的方法数。','证书与签名方案仅做提取和识别，未验证 APK 内容签名、信任链或安装兼容性。','仅分析单个 APK；split APK 只表示当前分片，不会自动合并其他分片。'] };
   } finally { zip.close(); }
 }

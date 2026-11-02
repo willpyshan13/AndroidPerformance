@@ -19,9 +19,11 @@
     "package:linux": "electron-builder --linux AppImage",
     "test": "node --test",
     "test:device": "node scripts/device-smoke.js",
-    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check scripts/prepare-apk-tools.js",
+    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/hprof-worker.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-trace-processor.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/agent-package.js",
     "prepare:adb": "bash scripts/prepare-adb.sh",
-    "prepare:apk-tools": "node scripts/prepare-apk-tools.js"
+    "prepare:apk-tools": "node scripts/prepare-apk-tools.js",
+    "prepare:simpleperf": "node scripts/prepare-simpleperf.js",
+    "prepare:trace-processor": "node scripts/prepare-trace-processor.js"
   },
   "build": {
     "appId": "dev.androidperformance.workbench",
@@ -37,7 +39,12 @@
       "desktop/resources/icon.png",
       "src/**",
       "public/**",
-      "package.json"
+      "package.json",
+      "scripts/simpleperf-timeline.py",
+      "scripts/simpleperf-collapse.py",
+      "scripts/simpleperf_format.py",
+      "android-agent/README.md",
+      "android-agent/src/**"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
@@ -61,6 +68,19 @@
             "NOTICE.txt",
             "source.properties"
           ]
+        },
+        {
+          "from": "tools/simpleperf",
+          "to": "simpleperf",
+          "filter": [
+            "**/*",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "tools/trace-processor",
+          "to": "trace-processor"
         }
       ]
     },
@@ -76,7 +96,14 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "asarUnpack": [
+      "scripts/simpleperf-timeline.py",
+      "scripts/simpleperf-collapse.py",
+      "scripts/simpleperf_format.py",
+      "android-agent/README.md",
+      "android-agent/src/**"
+    ]
   },
   "devDependencies": {
     "electron": "45.1.0",

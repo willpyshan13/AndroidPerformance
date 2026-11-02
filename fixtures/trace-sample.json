@@ -1,0 +1,1 @@
+{"traceEvents":[{"name":"DemoProcess","ph":"M","pid":101,"tid":101,"args":{"name":"DemoProcess"}},{"name":"startup","cat":"app","ph":"X","pid":101,"tid":101,"ts":1000,"dur":25000},{"name":"render","cat":"gfx","ph":"X","pid":101,"tid":101,"ts":30000,"dur":12000},{"name":"binder transaction","cat":"ipc","ph":"X","pid":101,"tid":101,"ts":44000,"dur":3000}]}

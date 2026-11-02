@@ -453,6 +453,31 @@ export function sampleStackChart(timeline, limit=8) {
  if(binTotals.some(total=>!Number.isSafeInteger(total)))throw new Error('函数时间图权重超出安全范围');
  return {bins:timeline.bins,series,totals:binTotals};
 }
+// Keep chronological sample stacks visible without creating one DOM/SVG node per frame.
+// The renderer consumes this bounded projection and draws it to a canvas.
+export function sampleStackTimeline(timeline,{thread=null,maxSamples=2000,maxDepth=32}={}) {
+ if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(maxSamples)||maxSamples<1||maxSamples>5000||!Number.isInteger(maxDepth)||maxDepth<1||maxDepth>64||thread!==null&&typeof thread!=='string')throw new Error('调用栈时间图数据无效');
+ const ordered=timeline.samplesByTime||[...timeline.samples].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0),candidates=thread===null?ordered:ordered.filter(sample=>sample.thread===thread);
+ if(!candidates.length)return {entries:[],functions:[],totalSamples:0,renderedSamples:0,truncated:false,maxDepth,startTime:null,endTime:null};
+ const count=Math.min(candidates.length,maxSamples),entries=[],weights=new Map();
+ for(let i=0;i<count;i++){
+  const index=count===candidates.length?i:count===1?Math.floor((candidates.length-1)/2):Math.round(i*(candidates.length-1)/(count-1)),sample=candidates[index],allFrames=sample.frames||[],frames=allFrames.length>maxDepth?allFrames.slice(-maxDepth):allFrames;
+  entries.push({sample,frames,omittedFrames:allFrames.length-frames.length});
+  for(const name of frames){const weight=(weights.get(name)||0)+sample.weight;if(!Number.isSafeInteger(weight))throw new Error('调用栈时间图权重超出安全范围');weights.set(name,weight);}
+ }
+ const functions=[...weights].map(([name,weight])=>({name,weight})).sort((a,b)=>b.weight-a.weight||a.name.localeCompare(b.name)).slice(0,8);
+ return {entries,functions,totalSamples:candidates.length,renderedSamples:entries.length,truncated:entries.length<candidates.length,maxDepth,startTime:candidates[0].time,endTime:candidates.at(-1).time};
+}
+export function drawSampleStackTimeline(canvas,projection,{devicePixelRatio=globalThis.devicePixelRatio||1}={}) {
+ if(!canvas||!Array.isArray(projection?.entries)||!projection.entries.length||!Number.isFinite(devicePixelRatio)||devicePixelRatio<=0)throw new Error('调用栈时间图画布无效');
+ const rowHeight=8,width=Math.max(1000,Math.min(10000,projection.entries.length*2)),height=Math.max(64,Math.max(1,...projection.entries.map(entry=>entry.frames.length))*rowHeight),dpr=Math.min(devicePixelRatio,2),span=projection.endTime-projection.startTime;
+ canvas.width=Math.ceil(width*dpr);canvas.height=Math.ceil(height*dpr);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;
+ const context=canvas.getContext('2d');if(!context)throw new Error('浏览器无法创建 CPU 时间图画布');context.setTransform(dpr,0,0,dpr,0,0);context.clearRect(0,0,width,height);
+ const functionColors=new Map(projection.functions.map((fn,index)=>[fn.name,`hsl(${(index*43+28)%360} 54% 58%)`]));context.globalAlpha=.72;
+ let drawnFrames=0;
+ for(let i=0;i<projection.entries.length;i++){const entry=projection.entries[i],position=span===0n?(projection.entries.length===1?.5:i/(projection.entries.length-1)):Number(entry.sample.time-projection.startTime)/Number(span),x=position*(width-1.5);for(let depth=0;depth<entry.frames.length;depth++){const name=entry.frames[depth],y=height-(depth+1)*rowHeight;context.fillStyle=functionColors.get(name)||'#9aa6aa';context.fillRect(x,y,1.5,rowHeight-1);drawnFrames++;}}
+ return {width,height,renderedSamples:projection.entries.length,drawnFrames};
+}
 export function profileForTimeBin(timeline,bin,thread=null) {
   if(!timeline?.available||!Number.isInteger(bin)||bin<0||bin>=timeline.bins)throw new Error('时间范围无效');
   if(thread!==null&&typeof thread!=='string')throw new Error('线程筛选无效');

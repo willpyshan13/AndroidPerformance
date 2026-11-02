@@ -24,6 +24,14 @@ export function demoStartup(mode = 'cold', runs = 3) {
   const results = Array.from({ length: runs }, (_, i) => ({ run: i + 1, status: 'ok', observedMode: mode, totalTimeMs: base + [18, -22, 7, -13, 24][i % 5], thisTimeMs: null, waitTimeMs: base + 40, activity: `${DEMO_PACKAGE}/.MainActivity` }));
   return { source: 'demo', timestamp: Date.now(), requestedMode: mode, results, meanMs: results.reduce((s, r) => s + r.totalTimeMs, 0) / runs };
 }
+export function demoCpuTimeline() {
+  const base=1_730_000_000_000_000_000n,threads=[
+    {thread:'main',tid:18472,stacks:[['com.example.reading.MainActivity','dispatchDraw','drawContent','drawRows'],['com.example.reading.MainActivity','onMeasure','measureChildren'],['android.view.Choreographer','doFrame','dispatchFrameCallbacks']]},
+    {thread:'RenderThread',tid:18489,stacks:[['libhwui.so','RenderThread::threadLoop','CanvasContext::draw'],['libhwui.so','RenderNode::prepareTree','RecordingCanvas::drawRenderNode']]},
+    {thread:'OkHttp',tid:18496,stacks:[['okhttp3.RealCall','getResponseWithInterceptorChain','ConnectInterceptor.intercept'],['okio.AsyncTimeout','exit','sink.write']]},
+  ];
+  return {event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:Array.from({length:240},(_,i)=>{const source=threads[i%threads.length],frames=source.stacks[Math.floor(i/3)%source.stacks.length];return {timeNs:String(base+BigInt(i)*20_000_000n+BigInt(i%3)*2_000_000n),pid:18472,tid:source.tid,thread:source.thread,period:String(800+((i*137)%1200)),frames};})};
+}
 export function demoLayout() {
   return { source: 'demo', timestamp: Date.now(), screenshot: null, note: '演示层级。真实采集使用 UIAutomator，可访问性层级不等同于完整 View/Compose 树。',
     xml: `<?xml version="1.0"?><hierarchy rotation="0"><node class="android.widget.FrameLayout" package="${DEMO_PACKAGE}" bounds="[0,0][1080,2400]" resource-id="android:id/content"><node class="android.widget.LinearLayout" bounds="[0,0][1080,2400]" resource-id="${DEMO_PACKAGE}:id/root"><node class="android.widget.TextView" text="阅读，让生活慢下来" bounds="[64,200][1016,340]" resource-id="${DEMO_PACKAGE}:id/title"/><node class="android.widget.TextView" text="为你精选" bounds="[64,420][700,500]"/><node class="android.widget.ImageView" content-desc="本周书单封面" bounds="[64,560][1016,1250]" resource-id="${DEMO_PACKAGE}:id/cover"/><node class="android.widget.TextView" text="在文字里，找到另一个世界。" bounds="[64,1320][1016,1450]"/><node class="android.widget.Button" text="开始阅读" clickable="true" bounds="[64,1570][1016,1720]" resource-id="${DEMO_PACKAGE}:id/read"/><node class="android.widget.TextView" text="首页　　书架　　我的" bounds="[0,2180][1080,2330]"/></node></node></hierarchy>` };

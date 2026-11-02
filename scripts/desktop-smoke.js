@@ -81,7 +81,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     if(missingQuickActions.length)throw new Error(`${label}: desktop home is missing quick actions: ${missingQuickActions.join(', ')}`);
     const routeChecks=rendererState.routeChecks;
     const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
-    if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo))throw new Error(`${label}: desktop route smoke failed: ${JSON.stringify(routeChecks)}`);
+    if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo)||!routeChecks.demo.find(result=>result.route==='#cpu-profile')?.stackTimeline)throw new Error(`${label}: desktop route/CPU stack chart smoke failed: ${JSON.stringify(routeChecks)}`);
     if(!rendererState.homeArtifactChecks?.section||!rendererState.homeArtifactChecks?.emptyState)throw new Error(`${label}: home artifact section/empty state failed: ${JSON.stringify(rendererState.homeArtifactChecks)}`);
     if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);

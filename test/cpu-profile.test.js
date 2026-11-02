@@ -101,6 +101,30 @@ test('sample stack chart aggregates leaf weights by time and keeps remaining fun
  assert.deepEqual(chart.series.map(x=>x.total),[10,5,2]);assert.deepEqual(chart.series.map(x=>x.values),[[10,0],[0,5],[0,2]]);assert.deepEqual(chart.totals,[10,7]);
  assert.throws(()=>sampleStackChart(timeline,0),/无效/);assert.throws(()=>sampleStackChart({available:false},8),/无效/);
 });
+test('sample stack timeline preserves chronology, thread identity, top function colors and bounded depth/sample counts',async()=>{
+ const {buildSampleTimeline,sampleStackTimeline,drawSampleStackTimeline}=await import('../public/offline.js');
+ const timeline=buildSampleTimeline({samples:[
+  {timeNs:'4000000',period:'4',thread:'worker',pid:1,tid:2,frames:['root','worker','hot']},
+  {timeNs:'1000000',period:'1',thread:'main',pid:1,tid:1,frames:['root','main','hot']},
+  {timeNs:'3000000',period:'3',thread:'main',pid:1,tid:1,frames:['root','main','cold']},
+  {timeNs:'2000000',period:'2',thread:'worker',pid:1,tid:2,frames:['root','worker','hot']},
+ ]});
+ const chart=sampleStackTimeline(timeline,{maxSamples:2,maxDepth:2});
+ assert.equal(chart.totalSamples,4);assert.equal(chart.renderedSamples,2);assert.equal(chart.truncated,true);
+ assert.deepEqual(chart.entries.map(x=>x.sample.timeNs),['1000000','4000000']);
+ assert.deepEqual(chart.entries[0].frames,['main','hot']);assert.equal(chart.entries[0].omittedFrames,1);
+ assert.deepEqual(chart.functions.map(x=>x.name),['hot','worker','main']);
+ const single=sampleStackTimeline(timeline,{maxSamples:1});assert.equal(single.entries[0].sample.timeNs,'2000000');
+ const thread=sampleStackTimeline(timeline,{thread:'worker-1/2'});assert.deepEqual(thread.entries.map(x=>x.sample.thread),['worker-1/2','worker-1/2']);assert.equal(thread.truncated,false);
+ assert.throws(()=>sampleStackTimeline(timeline,{maxDepth:65}),/无效/);assert.throws(()=>sampleStackTimeline(timeline,{thread:2}),/无效/);
+ let rectangles=0;const canvasContext={setTransform(){},clearRect(){},fillRect(){rectangles++;},set globalAlpha(_value){},set fillStyle(_value){}};
+ const canvas={width:0,height:0,style:{},getContext:()=>canvasContext},drawn=drawSampleStackTimeline(canvas,chart,{devicePixelRatio:2});
+ assert.deepEqual(drawn,{width:1000,height:64,renderedSamples:2,drawnFrames:4});assert.equal(canvas.width,2000);assert.equal(canvas.height,128);assert.equal(rectangles,4);assert.equal(canvas.style.width,'1000px');
+ assert.throws(()=>drawSampleStackTimeline(canvas,{entries:[]}),/无效/);
+ const many=buildSampleTimeline({samples:Array.from({length:50000},(_,i)=>({timeNs:String(1000000+i*1000000),period:String(i%7+1),thread:`worker-${i%4}`,pid:1,tid:i%4+1,frames:['root',`fn-${i%31}`]}))});
+ const bounded=sampleStackTimeline(many);assert.equal(bounded.totalSamples,50000);assert.equal(bounded.renderedSamples,2000);assert.equal(bounded.truncated,true);
+ assert.equal(bounded.entries[0].sample.timeNs,'1000000');assert.equal(bounded.entries.at(-1).sample.timeNs,'50000000000');assert.ok(bounded.functions.length<=8);
+});
 test('reverse callers aggregate inclusive weights, respect scope and count recursion explicitly',async()=>{
  const {reverseCallTree}=await import('../public/offline.js');
  const p=parseFoldedStacks('main;A;target;leaf 4\nmain;B;target 3\nworker;A;target 2\nmain;target;target 1\n');

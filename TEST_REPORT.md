@@ -503,4 +503,4 @@ npm run test:device -- \
 ## CPU 采集器样本质量诊断（2026-11-03）
 
 - 设备采集现在保留 simpleperf record 输出中的显式记录样本、切除样本、丢失样本、内核 / 用户态丢失及截断调用栈计数，并在 CPU 页显示。未在原始输出中提供的值显示为“未提供”，不会当成 0，也不从解析后的时间线推算；独立导入 perf.data 时这些采集诊断不可恢复。
-- ADB 捕获、计数解析、下载响应 metadata 和 UI 展示有回归覆盖；全量套件：304 项，288 通过、0 失败、16 项可选官方样本跳过。`npm run check`、`git diff --check` 通过。当前没有可用的 ADB 设备，故真实设备输出格式尚待核对。
+- ADB 捕获、计数解析、下载响应 metadata 和 UI 展示有回归覆盖；全量套件：304 项，288 通过、0 失败、16 项可选官方样本跳过。`npm run check`、`git diff --check` 通过。macOS arm64 `.app` 打包成功，但本轮 packaged smoke 在 Electron 初始化期间被 Cocoa LaunchServices SIGABRT 终止，未能验证页面。当前没有可用的 ADB 设备，故真实设备输出格式尚待核对。

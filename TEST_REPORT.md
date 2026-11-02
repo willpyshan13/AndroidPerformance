@@ -504,3 +504,8 @@ npm run test:device -- \
 
 - 设备采集现在保留 simpleperf record 输出中的显式记录样本、切除样本、丢失样本、内核 / 用户态丢失及截断调用栈计数，并在 CPU 页显示。未在原始输出中提供的值显示为“未提供”，不会当成 0，也不从解析后的时间线推算；独立导入 perf.data 时这些采集诊断不可恢复。
 - ADB 捕获、计数解析、下载响应 metadata 和 UI 展示有回归覆盖；全量套件：304 项，288 通过、0 失败、16 项可选官方样本跳过。`npm run check`、`git diff --check` 通过。macOS arm64 `.app` 打包成功，但本轮 packaged smoke 在 Electron 初始化期间被 Cocoa LaunchServices SIGABRT 终止，未能验证页面。当前没有可用的 ADB 设备，故真实设备输出格式尚待核对。
+
+## CPU on/off-CPU 调度采样（2026-11-03）
+
+- 新增设备 simpleperf `trace-offcpu` 能力探测和可选采集。该模式只允许一个 `cpu-clock` 或 `task-clock` 事件；不支持时服务端拒绝启动。转换器在有 trace-offcpu 元数据的文件中使用 `on-off-cpu` 报告模式，将 `cpu-clock` 与 `sched:sched_switch` 样本拆开，原有事件选择、调用树和时间线可分析 off-CPU 等待栈。界面说明等待区间由相邻调度记录估算，可能受丢失记录影响。
+- 用假 ReportLib 生成器验证两类样本独立、off-CPU 7,000,000 ns 权重在 timeline 和 folded 输出中保留；覆盖 ADB feature 检查、无支持拒绝、单事件约束及 API 参数传递。全量套件：306 项，290 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。重建的 macOS arm64 包含更新的两份 simpleperf 转换器；packaged smoke 仍在 Electron 启动早期被 Cocoa LaunchServices SIGABRT 终止。ADB 设备列表为空，尚未核对设备内核权限和实际调度轨道。

@@ -22,6 +22,9 @@ try:
     if symfs:
         lib.SetSymfs(symfs)
     lib.SetRecordFile(record)
+    trace_offcpu = bool(getattr(lib, 'GetSupportedTraceOffCpuModes', lambda: [])())
+    if trace_offcpu:
+        lib.SetTraceOffCpuMode('on-off-cpu')
     meta_info = getattr(lib, 'MetaInfo', lambda: {})()
     clock_id = meta_info.get('clockid') or None
     while True:
@@ -52,4 +55,4 @@ try:
                         'thread': encode_frame(sample.thread_comm), 'period': str(sample.period), 'frames': frames})
 finally:
     lib.Close()
-print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))
+print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'traceOffCpu': trace_offcpu, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))

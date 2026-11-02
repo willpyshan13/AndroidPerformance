@@ -19,6 +19,8 @@ try:
     if symfs:
         lib.SetSymfs(symfs)
     lib.SetRecordFile(record)
+    if getattr(lib, 'GetSupportedTraceOffCpuModes', lambda: [])():
+        lib.SetTraceOffCpuMode('on-off-cpu')
     while True:
         sample = lib.GetNextSample()
         if sample is None:

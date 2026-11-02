@@ -55,16 +55,16 @@ test('CPU profile API forwards validated sampling configuration and multi-event 
  const adb={captureCpuProfile:async(serial,packageName,seconds,locator,selected,options)=>{received={serial,packageName,seconds,locator,selected,options};return {data:Buffer.from('PERFILE2test'),diagnostics:{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true}};}};
  const dir=await mkdtemp(join(tmpdir(),'apw-cpu-profile-api-'));const app=createApp({adb,dataDir:dir,token:'cpu-profile-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
  t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
- const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile`,{method:'POST',headers:{'X-Workbench-Token':'cpu-profile-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:5,events,frequencyHz:499,callGraph:'dwarf'})});
- assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.deepEqual(JSON.parse(Buffer.from(response.headers.get('x-cpu-capture-diagnostics'),'base64url').toString()),{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true});assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events,options:{frequencyHz:499,callGraph:'dwarf'}});
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile`,{method:'POST',headers:{'X-Workbench-Token':'cpu-profile-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:5,events,frequencyHz:499,callGraph:'dwarf',traceOffCpu:true})});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.deepEqual(JSON.parse(Buffer.from(response.headers.get('x-cpu-capture-diagnostics'),'base64url').toString()),{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true});assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events,options:{frequencyHz:499,callGraph:'dwarf',traceOffCpu:true}});
 });
 
 test('CPU events API queries the requested device and returns supported events',async t=>{
- const adb={listCpuEvents:async serial=>{assert.equal(serial,'ABC');return {events:['cpu-clock','cpu-cycles'],source:'simpleperf list'};}};
+ const adb={listCpuEvents:async serial=>{assert.equal(serial,'ABC');return {events:['cpu-clock','cpu-cycles'],source:'simpleperf list',traceOffCpuAvailable:true};}};
  const dir=await mkdtemp(join(tmpdir(),'apw-cpu-events-api-'));const app=createApp({adb,dataDir:dir,token:'cpu-events-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
  t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
  const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-events`,{method:'POST',headers:{'X-Workbench-Token':'cpu-events-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC'})});
- assert.equal(response.status,200);assert.deepEqual(await response.json(),{events:['cpu-clock','cpu-cycles'],source:'simpleperf list'});
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{events:['cpu-clock','cpu-cycles'],source:'simpleperf list',traceOffCpuAvailable:true});
 });
 
 test('benchmark API runs instrumentation, auto-loads only a freshly updated report and rejects invalid arguments',async t=>{

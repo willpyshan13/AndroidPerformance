@@ -300,19 +300,25 @@ export class Adb {
     validateTarget(serial,packageName);
     return this.exclusive(serial,()=>captureLayoutFromAgent(this,serial,packageName,sharedToken));
   }
-  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u'], {frequencyHz=99,callGraph='fp'}={}) {
+  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u'], {frequencyHz=99,callGraph='fp',traceOffCpu=false}={}) {
     validateTarget(serial,packageName);
     if(!Number.isInteger(seconds)||seconds<3||seconds>30)throw new Error('采样时长须为 3–30 秒');
     if(!Array.isArray(events)||events.length<1||events.length>8||events.some(event=>typeof event!=='string'||event.length>160||!/^[A-Za-z0-9_./:-]+$/.test(event))||new Set(events).size!==events.length)throw new Error('采样事件须为 1–8 个有效且不重复的 simpleperf 事件名');
     if(!Number.isInteger(frequencyHz)||frequencyHz<1||frequencyHz>4000)throw new Error('采样频率须为 1–4,000 Hz');
     if(!['fp','dwarf'].includes(callGraph))throw new Error('调用栈展开方式无效');
+    if(typeof traceOffCpu!=='boolean')throw new Error('CPU 状态跟踪选项无效');
+    if(traceOffCpu&&(events.length!==1||!/^(?:cpu|task)-clock(?::u)?$/.test(events[0])))throw new Error('on/off-CPU 跟踪只支持单个 cpu-clock 或 task-clock 事件');
     return this.exclusive(serial,async()=>{
       const abi=(await this.shell(serial,['getprop','ro.product.cpu.abi'])).trim(),api=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim(),binary=await locator(abi,api),id=randomUUID();
       const remoteBinary=`/data/local/tmp/apw-simpleperf-${id}`,remoteData=`/data/local/tmp/apw-profile-${id}.data`,local=join(tmpdir(),`apw-profile-${id}.data`);
       try {
         await this.run(['-s',serial,'push',binary,remoteBinary],{timeout:30000});
         await this.shell(serial,['chmod','755',remoteBinary]);
-        const recordArgs=[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f',String(frequencyHz),'--duration',String(seconds),'--call-graph',callGraph,'-o',remoteData];
+        if(traceOffCpu){
+          const features=await this.shell(serial,[remoteBinary,'list','--show-features'],{timeout:60000,maxBuffer:1024*1024});
+          if(!/^\s*trace-offcpu\s*$/im.test(features))throw new Error('设备 simpleperf 或内核未报告 trace-offcpu 支持');
+        }
+        const recordArgs=[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f',String(frequencyHz),'--duration',String(seconds),'--call-graph',callGraph,...(traceOffCpu?['--trace-offcpu']:[]),'-o',remoteData];
         const quoted=recordArgs.map(arg=>`'${String(arg).replaceAll("'", "'\\''")}'`);
         let recordOutput='';
         try {
@@ -328,7 +334,7 @@ export class Adb {
         if(!Number.isSafeInteger(size)||size<8||size>256*1024*1024)throw new Error('采样文件为空或超过 256 MiB 上限');
         await this.run(['-s',serial,'pull',remoteData,local],{timeout:120000});
         const data=await readFile(local);if(data.length!==size||data.subarray(0,8).toString('ascii')!=='PERFILE2')throw new Error('设备未返回有效的 perf.data');
-        return {data,diagnostics:parseSimpleperfDiagnostics(recordOutput)};
+        return {data,diagnostics:{...parseSimpleperfDiagnostics(recordOutput),traceOffCpu}};
       } catch(error) { throw new Error(`CPU 采样失败：${error.message}；目标通常需要可调试或可 profile，设备及内核也必须允许采样。`); }
       finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData]),unlink(local)]);}
     });
@@ -343,7 +349,8 @@ export class Adb {
         const output=await this.shell(serial,[remote,'list'],{timeout:60000,maxBuffer:4*1024*1024});
         const events=[...new Set(output.split(/\r?\n/).map(line=>line.replace(/\s+#.*$/,'').replace(/\s+\(may not supported\)\s*$/,'').trim()).filter(name=>/^[A-Za-z0-9_./:-]{1,160}$/.test(name)))].slice(0,2000);
         if(!events.length)throw new Error('simpleperf 未返回可识别的设备事件');
-        return {events,source:'simpleperf list'};
+        let traceOffCpuAvailable=false;try{const features=await this.shell(serial,[remote,'list','--show-features'],{timeout:30000,maxBuffer:1024*1024});traceOffCpuAvailable=/^\s*trace-offcpu\s*$/im.test(features);}catch{}
+        return {events,source:'simpleperf list',traceOffCpuAvailable};
       } finally {await this.shell(serial,['rm','-f',remote]).catch(()=>{});}
     });
   }

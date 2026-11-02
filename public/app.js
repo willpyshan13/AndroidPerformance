@@ -1,10 +1,11 @@
 import { DEMO_DEVICE, DEMO_PACKAGE, demoSample, demoHistory, demoFrames, demoStartup, demoLayout, DEMO_HAR } from './demo.js';
+import {translate as translateText, supportedLanguages} from './i18n.js';
 import { parseHar, filterNetworkRequests, networkRequestsCsv, parseComposeCompilerReport, apkBaselineEvidence, mergeNetworkAgentSnapshot, summarizeHarHosts, summarizeNetworkEndpoints, buildNetworkTimeline, parseBenchmark, compareBenchmarks, benchmarkSampleSummary, benchmarkContextWarnings, compareHeaps, parseFoldedStacks, reverseCallTree, layoutFlame, buildSampleTimeline, sampleQuality, sampleStackChart, profileForTimeBin, profileForTimeRange, layoutScope, extractLayoutNodes, matchComposeRuntimeGroups, compareLayouts, layoutDiffOverlays, summarizeLayoutChanges, layoutComparisonReport, inspectLayout, clusterFrames, clusterFrameTimeline, traceEventWindow, createLayoutCaptureArchive, parseLayoutCaptureArchive, correlateComposeEventsToFrames } from './offline.js';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n, decimals = 1) => n === null || n === undefined || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-const date = timestamp => new Date(timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const date = timestamp => new Date(timestamp).toLocaleString(state.language==='en-US'?'en-US':'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 const token = $('meta[name=api-token]').content;
 const paths = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -36,25 +37,28 @@ const routes = [
   ['apk', 'APK 分析', 'package', 'APK'], ['source', '源码工作区', 'folder'],
   ['sessions', '采集记录', 'folder'], ['settings', '设置与帮助', 'settings'],
 ];
-const state = { route: 'overview', demo: false, theme: ['system','light','dark'].includes(localStorage.getItem('apw-theme'))?localStorage.getItem('apw-theme'):'system', uiScale: ['0.9','1','1.1','1.2'].includes(localStorage.getItem('apw-scale'))?localStorage.getItem('apw-scale'):'1', devices: [], serial: '', packageName: localStorage.getItem('apw-package') || '', info: null, status: null,
+const state = { route: 'overview', demo: false, language: supportedLanguages.includes(localStorage.getItem('apw-language'))?localStorage.getItem('apw-language'):'zh-CN', theme: ['system','light','dark'].includes(localStorage.getItem('apw-theme'))?localStorage.getItem('apw-theme'):'system', uiScale: ['0.9','1','1.1','1.2'].includes(localStorage.getItem('apw-scale'))?localStorage.getItem('apw-scale'):'1', devices: [], serial: '', packageName: localStorage.getItem('apw-package') || '', info: null, status: null,
   sourceSnapshots:[], sourceSnapshot:null, sourceQuery:'', sourceMatches:null, sourceFile:null, sourceLine:null, gpuArtifacts:[], gpuChecks:{}, gpuCapabilities:null, agiPath:null, battery:null, batteryBefore:null, batteryDelta:null, batteryEndCaptured:false, batteryCheckin:null, batterySeries:[],batterySeriesRunning:false,batterySeriesGeneration:0,batterySeriesCancel:null,traceResult:null,traceSql:"SELECT name, COUNT(*) AS occurrences, ROUND(SUM(dur) / 1e6, 3) AS total_ms FROM slice WHERE dur >= 0 GROUP BY name ORDER BY SUM(dur) DESC LIMIT 30",traceSqlResult:null, traceArchives:[], traceIncludeApp:false, frameTimeline:null, composeTraceCorrelation:null, frameTimelineScope:'all', binderScope:'all', binderDirection:'both', cpuProfile:null, cpuOriginal:null, cpuTimeline:null, cpuPerfFile:null,cpuCaptureEvents:'cpu-clock:u',cpuAvailableEvents:[],cpuAvailableEvent:'', cpuArchives:[], cpuSymfs:'', cpuEvents:[], cpuEvent:null, cpuEventsTruncated:false, cpuBin:null, cpuRange:null, cpuThreadFilter:null, cpuFilter:'', cpuFocus:[], composeReport:null,composeFilter:'',composeRuntime:null,composeInspector:null,composeInspectorResolutionStack:false,composeInspectorSelectedPath:null,composeInspectorRects:[],layout: null, layoutReferenceUrl:null, layoutReferenceName:'', layoutReferenceOpacity:0.35, layoutReferenceScale:1, layoutReferenceX:0, layoutReferenceY:0, layoutSemanticsHighlight:false, layoutDiffHighlight:true, nodes: [], selectedNode: null, layoutFilter: '', layoutRoot: null, layoutBaseline: null, layoutTimelineDiffs:null, heap: null, heapBaseline: null, heapMapping:null, heapRole: 'current', heapView: 'classes', heapFilter: '', heapCompareFilter:'all', heapBrowse: null, heapProfileMode:'native',heapProfile:null, network: null, networkAgentActive:false,networkFilters:{method:'all',status:'all',connection:'all',minDuration:'',maxDuration:'',from:'',to:''},networkAgentTimer:null,networkAgentGeneration:0, baseline: null, current: null, apk:null, apkTab:'overview',apkFilter:'',apkCategory:'all',apkComponent:'all', sessions: [], busy: new Set(), replay: false, networkFilter: '', deviceGeneration: 0 };
 let toastTimer, importHandler, importFileLimit=12*1024*1024;
+const tr=value=>translateText(value,state.language);
 function applyAppearance(){
   const dark=state.theme==='dark'||(state.theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme=dark?'dark':'light';
+  document.documentElement.lang=state.language;
   document.documentElement.style.zoom=state.uiScale;
 }
 function persistAppearance(){
-  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);
-  return window.desktop?.saveAppearance?window.desktop.saveAppearance({theme:state.theme,scale:state.uiScale}):Promise.resolve();
+  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);localStorage.setItem('apw-language',state.language);
+  return window.desktop?.saveAppearance?window.desktop.saveAppearance({theme:state.theme,scale:state.uiScale,language:state.language}):Promise.resolve();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(state.theme==='system')applyAppearance();});
 applyAppearance();
 window.desktop?.getAppearance().then(preferences=>{
   if(['system','light','dark'].includes(preferences.theme))state.theme=preferences.theme;
   if(['0.9','1','1.1','1.2'].includes(preferences.scale))state.uiScale=preferences.scale;
-  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);applyAppearance();
-  if(state.route==='settings')render();
+  if(supportedLanguages.includes(preferences.language))state.language=preferences.language;
+  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);localStorage.setItem('apw-language',state.language);applyAppearance();
+  render();
 }).catch(error=>toast(`无法读取桌面外观设置：${error.message}`,true));
 
 async function api(path, body, binary = false) {
@@ -68,16 +72,16 @@ function toast(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').className = '', error ? 6500 : 3500);
 }
 function sourceTag(source = state.demo ? 'demo' : 'adb') {
-  return `<span class="tag source-chip ${source === 'demo' ? 'orange' : ['adb','agent'].includes(source) ? 'green' : ''}">${{ demo: '演示数据', adb: 'UIAutomator 回退', agent:'应用内 Debug Agent', import: '离线导入' }[source] || '离线记录'}</span>`;
+  return `<span class="tag source-chip ${source === 'demo' ? 'orange' : ['adb','agent'].includes(source) ? 'green' : ''}">${tr({ demo: '演示数据', adb: 'UIAutomator 回退', agent:'应用内 Debug Agent', import: '离线导入' }[source] || '离线记录')}</span>`;
 }
-const button = (action, label, symbol, primary = false, disabled = false) => `<button class="button${primary ? ' primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}>${symbol ? icon(symbol, 14) : ''}${label}</button>`;
+const button = (action, label, symbol, primary = false, disabled = false) => `<button class="button${primary ? ' primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}>${symbol ? icon(symbol, 14) : ''}${tr(label)}</button>`;
 function pageHeader(title, subtitle, actions = '', eyebrow = 'ANDROID PERFORMANCE WORKBENCH') {
-  return `<div class="page-header"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${subtitle}</p></div><div class="header-actions">${actions}</div></div>`;
+  return `<div class="page-header"><div><div class="eyebrow">${eyebrow}</div><h1>${tr(title)}</h1><p>${tr(subtitle)}</p></div><div class="header-actions">${actions}</div></div>`;
 }
 function statCard(label, value, unit, note, symbol, color = '', key = '') {
-  return `<div class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon ${color}">${icon(symbol, 15)}</span></div><div class="stat-value"><span ${key ? `data-live="${key}"` : ''}>${value}</span><small>${unit}</small></div><div class="stat-foot"><span ${key==='cpu'?'data-cpu-label':''}>${note}</span></div></div>`;
+  return `<div class="stat-card"><div class="stat-top"><span>${tr(label)}</span><span class="stat-icon ${color}">${icon(symbol, 15)}</span></div><div class="stat-value"><span ${key ? `data-live="${key}"` : ''}>${value}</span><small>${unit}</small></div><div class="stat-foot"><span ${key==='cpu'?'data-cpu-label':''}>${tr(note)}</span></div></div>`;
 }
-function empty(title, text, symbol = 'activity', action = '') { return `<div class="empty">${icon(symbol, 28)}<strong>${title}</strong>${text}${action ? `<div>${action}</div>` : ''}</div>`; }
+function empty(title, text, symbol = 'activity', action = '') { return `<div class="empty">${icon(symbol, 28)}<strong>${tr(title)}</strong>${tr(text)}${action ? `<div>${action}</div>` : ''}</div>`; }
 const note = text => `<div class="metric-note">${icon('info', 15)}<span>${text}</span></div>`;
 const loading = label => `<span class="busy"><i class="spinner"></i>${label}</span>`;
 const last = () => state.samples.at(-1);
@@ -85,20 +89,29 @@ const cpuLabel = () => last()?.source==='demo'?'演示 CPU':last()?.cpu?.method=
 const liveValue = key => ({ cpu: fmt(last()?.cpu?.percent), memory: fmt(last()?.memory?.pssMb), battery: fmt(last()?.battery?.level, 0), temperature: fmt(last()?.battery?.temperatureC) }[key]);
 
 function renderNav() {
-  $('#nav').innerHTML = routes.map(([route, label, symbol, badge]) => `${route==='sessions' ? '<div class="nav-separator"></div>' : ''}<a href="#${route}" aria-label="${label}" title="${label}" class="nav-item${state.route === route ? ' active' : ''}" ${state.route === route ? 'aria-current="page"' : ''}>${icon(symbol, 17)}<span>${label}</span>${badge ? `<small class="nav-count">${badge}</small>` : ''}</a>`).join('');
-  $('#breadcrumb').textContent = routes.find(r => r[0] === state.route)?.[1] || '概览';
+  $('#nav').innerHTML = routes.map(([route, label, symbol, badge]) => `${route==='sessions' ? '<div class="nav-separator"></div>' : ''}<a href="#${route}" aria-label="${tr(label)}" title="${tr(label)}" class="nav-item${state.route === route ? ' active' : ''}" ${state.route === route ? 'aria-current="page"' : ''}>${icon(symbol, 17)}<span>${tr(label)}</span>${badge ? `<small class="nav-count">${badge}</small>` : ''}</a>`).join('');
+  $('#breadcrumb').textContent = tr(routes.find(r => r[0] === state.route)?.[1] || '概览');
 }
 function updateChrome() {
+  document.title=state.language==='en-US'?'Android Performance · Workbench':'Android Performance · 性能工作台';
+  document.querySelector('.workspace-label').firstChild.textContent=`${tr('工作空间')} `;
+  document.querySelector('.local-indicator').lastChild.textContent=` ${tr('本地运行 · 数据保存在本机')}`;
+  $('.breadcrumb').firstChild.textContent=`${tr('工作空间')} `;
+  $('.devicebar').setAttribute('aria-label',tr('采集目标'));
+  $$('.devicebar .select-wrap>span').forEach((node,index)=>{node.textContent=tr(index===0?'设备':'目标应用');});
+  $('#package-input').placeholder=tr('选择或输入应用包名');$('#package-input').setAttribute('aria-label',tr('目标应用'));
+  $('#device-select').setAttribute('aria-label',tr('设备'));
+  $('#refresh-devices').title=tr('刷新设备');$('#refresh-devices').setAttribute('aria-label',tr('刷新设备'));
   $$('[data-version]').forEach(node=>node.textContent=state.status?.version?`v${state.status.version}`:'');
-  $('#mode-btn').textContent = state.demo ? '退出演示' : '进入演示';
-  $('#connection-status').textContent = state.demo ? '演示模式' : state.serial ? 'ADB 已连接' : '未连接设备';
+  $('#mode-btn').textContent = tr(state.demo ? '退出演示' : '进入演示');
+  $('#connection-status').textContent = tr(state.demo ? '演示模式' : state.serial ? 'ADB 已连接' : '未连接设备');
   $('#connection-status').className = `connection-status ${state.demo ? 'demo' : state.serial ? 'connected' : ''}`;
   const message = state.demo ? '当前为演示模式：图表和设备信息来自内置示例。退出演示并连接 Android 设备，即可采集真实数据。' : state.error;
   $('#notice').textContent = message; $('#notice').hidden = !message;
-  $('#footer-status').textContent = state.monitoring ? `正在采集 · 每 ${state.interval / 1000} 秒 · ${state.samples.length} 个样本` : state.replay ? '正在查看已保存的采集记录' : state.demo ? '演示模式 · 示例数据' : state.serial ? '设备已连接 · 准备就绪' : '等待设备连接';
+  $('#footer-status').textContent = tr(state.monitoring ? `正在采集 · 每 ${state.interval / 1000} 秒 · ${state.samples.length} 个样本` : state.replay ? '正在查看已保存的采集记录' : state.demo ? '演示模式 · 示例数据' : state.serial ? '设备已连接 · 准备就绪' : '等待设备连接');
 }
 function renderDeviceOptions() {
-  $('#device-select').innerHTML = state.demo ? `<option value="${DEMO_DEVICE.serial}">Pixel 8 · 演示设备</option>` : `<option value="">${state.devices.length ? '选择连接的设备' : '未发现 Android 设备'}</option>` + state.devices.map(d => `<option value="${esc(d.serial)}" ${d.state !== 'device' ? 'disabled' : ''}>${esc(d.model)}${d.state !== 'device' ? ` · ${esc(d.state)}` : ''}</option>`).join('');
+  $('#device-select').innerHTML = state.demo ? `<option value="${DEMO_DEVICE.serial}">Pixel 8 · ${tr('演示设备')}</option>` : `<option value="">${tr(state.devices.length ? '选择连接的设备' : '未发现 Android 设备')}</option>` + state.devices.map(d => `<option value="${esc(d.serial)}" ${d.state !== 'device' ? 'disabled' : ''}>${esc(d.model)}${d.state !== 'device' ? ` · ${esc(d.state)}` : ''}</option>`).join('');
   $('#device-select').value = state.serial;
   $('#package-input').value = state.packageName;
   $('#package-input').disabled = state.demo;
@@ -800,12 +813,12 @@ function renderSessions() {
 }
 function renderSettings() {
   return pageHeader('设置与帮助','准备好设备，让采集从一次连接开始。')+
-    `<div class="settings-grid"><div class="panel"><div class="panel-head"><h2>主题与显示</h2>${icon('settings',16)}</div><div class="panel-body appearance-controls"><label for="appearance-theme">颜色主题<select id="appearance-theme"><option value="system" ${state.theme==='system'?'selected':''}>跟随系统</option><option value="light" ${state.theme==='light'?'selected':''}>浅色</option><option value="dark" ${state.theme==='dark'?'selected':''}>深色</option></select></label><label for="appearance-scale">界面缩放<select id="appearance-scale">${[['0.9','90%'],['1','100%'],['1.1','110%'],['1.2','120%']].map(([value,label])=>`<option value="${value}" ${state.uiScale===value?'selected':''}>${label}</option>`).join('')}</select></label><p class="hint">设置保存在本机，并应用于桌面端和本地工作台。</p></div></div><div class="panel"><div class="panel-head"><h2>本机运行环境</h2>${icon('settings',16)}</div><div class="panel-body"><div class="evidence-row"><span>版本</span><strong>${esc(state.status?.version||'检测中')}</strong></div><div class="evidence-row"><span>运行模式</span><strong>${state.status?.desktop?'原生桌面应用 · Electron':'本地 HTTP · 127.0.0.1'}</strong></div><p class="hint">ADB 路径</p><code>${esc(state.status?.adbPath||'检测中')}</code><p>自动检测 PATH、ANDROID_HOME、ANDROID_SDK_ROOT 和常见 SDK 安装目录。${state.status?.desktop?'可通过原生菜单「文件 → 选择 ADB 程序…」修改路径。':'指定其他 ADB 后重启服务：'}</p><code>${state.status?.desktop?'文件 → 选择 ADB 程序…':'ADB_PATH=/your/sdk/platform-tools/adb npm start'}</code><p class="hint">记录目录</p><code>${esc(state.status?.dataDir||'检测中')}</code></div></div><div class="panel"><div class="panel-head"><h2>设备连接</h2>${icon('phone',16)}</div><div class="panel-body"><p>1. 在 Android 设备上打开开发者选项和 USB 调试。<br>2. 使用数据线连接电脑，并在设备上允许 USB 调试。<br>3. 点击右上角刷新，选择设备和目标应用。<br>4. 启动目标应用，再开始采集。</p><code>adb devices -l</code><p>unauthorized：在手机确认调试授权。<br>offline：检查连接或重新插拔。<br>无线设备：先在系统终端完成 adb pair / connect。</p></div></div><div class="panel"><div class="panel-head"><h2>功能与限制</h2>${icon('info',16)}</div><div class="panel-body"><p>已实现：设备指标、帧与启动分析、CPU 采样、堆分析、布局检查、系统追踪、资源统计、HAR 与 Benchmark 分析、APK 分析和源码快照。</p><p class="hint">功能受设备权限、系统版本及工具安装情况限制；完整 Compose 检查、应用级能耗归因和网络实时采集仍在开发。</p></div></div><div class="panel"><div class="panel-head"><h2>证据与数据</h2>${icon('folder',16)}</div><div class="panel-body"><p>数据仅保存在当前电脑，不调用 AI 或上传服务。实时数据最多保留 1,800 个样本；图表展示最近 120 个。停止采集后请手动保存记录。</p><p class="hint">启动实验会操作前台应用；帧重置仅清除系统 gfxinfo 统计。UIAutomator 采集的是当前窗口，可能包含敏感内容，请按需保存。演示样例可随时清除并切换到真实设备。</p></div></div></div>`;
+    `<div class="settings-grid"><div class="panel"><div class="panel-head"><h2>${tr('主题与显示')}</h2>${icon('settings',16)}</div><div class="panel-body appearance-controls"><label for="appearance-language">${tr('语言')}<select id="appearance-language"><option value="zh-CN" ${state.language==='zh-CN'?'selected':''}>中文</option><option value="en-US" ${state.language==='en-US'?'selected':''}>English</option></select></label><label for="appearance-theme">${tr('颜色主题')}<select id="appearance-theme"><option value="system" ${state.theme==='system'?'selected':''}>${tr('跟随系统')}</option><option value="light" ${state.theme==='light'?'selected':''}>${tr('浅色')}</option><option value="dark" ${state.theme==='dark'?'selected':''}>${tr('深色')}</option></select></label><label for="appearance-scale">${tr('界面缩放')}<select id="appearance-scale">${[['0.9','90%'],['1','100%'],['1.1','110%'],['1.2','120%']].map(([value,label])=>`<option value="${value}" ${state.uiScale===value?'selected':''}>${label}</option>`).join('')}</select></label><p class="hint">${tr('设置保存在本机，并应用于桌面端和本地工作台。')}</p></div></div><div class="panel"><div class="panel-head"><h2>${tr('本机运行环境')}</h2>${icon('settings',16)}</div><div class="panel-body"><div class="evidence-row"><span>${tr('版本')}</span><strong>${esc(state.status?.version||tr('检测中'))}</strong></div><div class="evidence-row"><span>${tr('运行模式')}</span><strong>${tr(state.status?.desktop?'原生桌面应用 · Electron':'本地 HTTP · 127.0.0.1')}</strong></div><p class="hint">${tr('ADB 路径')}</p><code>${esc(state.status?.adbPath||tr('检测中'))}</code><p>${tr('自动检测 PATH、ANDROID_HOME、ANDROID_SDK_ROOT 和常见 SDK 安装目录。')}${state.status?.desktop?tr('可通过原生菜单「文件 → 选择 ADB 程序…」修改路径。'):tr('指定其他 ADB 后重启服务：')}</p><code>${state.status?.desktop?tr('文件 → 选择 ADB 程序…'):'ADB_PATH=/your/sdk/platform-tools/adb npm start'}</code><p class="hint">${tr('记录目录')}</p><code>${esc(state.status?.dataDir||tr('检测中'))}</code></div></div><div class="panel"><div class="panel-head"><h2>${tr('设备连接')}</h2>${icon('phone',16)}</div><div class="panel-body"><p>${tr('1. 在 Android 设备上打开开发者选项和 USB 调试。')}<br>${tr('2. 使用数据线连接电脑，并在设备上允许 USB 调试。')}<br>${tr('3. 点击右上角刷新，选择设备和目标应用。')}<br>${tr('4. 启动目标应用，再开始采集。')}</p><code>adb devices -l</code><p>${tr('unauthorized：在手机确认调试授权。')}<br>${tr('offline：检查连接或重新插拔。')}<br>${tr('无线设备：先在系统终端完成 adb pair / connect。')}</p></div></div><div class="panel"><div class="panel-head"><h2>${tr('功能与限制')}</h2>${icon('info',16)}</div><div class="panel-body"><p>${tr('已实现：设备指标、帧与启动分析、CPU 采样、堆分析、布局检查、系统追踪、资源统计、HAR 与 Benchmark 分析、APK 分析和源码快照。')}</p><p class="hint">${tr('功能受设备权限、系统版本及工具安装情况限制；完整 Compose 检查、应用级能耗归因和网络实时采集仍在开发。')}</p></div></div><div class="panel"><div class="panel-head"><h2>${tr('证据与数据')}</h2>${icon('folder',16)}</div><div class="panel-body"><p>${tr('数据仅保存在当前电脑，不调用 AI 或上传服务。实时数据最多保留 1,800 个样本；图表展示最近 120 个。停止采集后请手动保存记录。')}</p><p class="hint">${tr('启动实验会操作前台应用；帧重置仅清除系统 gfxinfo 统计。UIAutomator 采集的是当前窗口，可能包含敏感内容，请按需保存。演示样例可随时清除并切换到真实设备。')}</p></div></div></div>`;
 }
 
 const $$ = selector => [...document.querySelectorAll(selector)];
 function render() {
-  renderNav(); updateChrome();
+  renderNav(); renderDeviceOptions(); updateChrome();
   const views={ overview:renderOverview, monitor:renderMonitor, 'cpu-profile':renderCpuProfile, frames:renderFrames, startup:renderStartup, layout:renderLayout, heap:renderHeap, battery:renderBattery, gpu:renderGpu, trace:renderTrace, network:renderNetwork, benchmark:renderBenchmark, apk:renderApk, source:renderSource, sessions:renderSessions, settings:renderSettings };
   $('#main').innerHTML=(views[state.route]||renderOverview)();
   requestAnimationFrame(()=>{ drawCharts(); if(state.route==='layout'&&state.selectedNode!==null) selectNode(state.selectedNode); const flame=$('.flame-scroll');if(state.route==='cpu-profile'&&flame)flame.scrollTop=flame.scrollHeight; });
@@ -1177,6 +1190,7 @@ document.addEventListener('click',async event=>{
 document.addEventListener('change',event=>{
   if(event.target.id?.startsWith('network-')){updateNetworkFilters();return;}
   if(event.target.id==='cpu-available-event')state.cpuAvailableEvent=event.target.value;
+  if(event.target.id==='appearance-language'){if(!supportedLanguages.includes(event.target.value))return;state.language=event.target.value;applyAppearance();persistAppearance().catch(error=>toast(`无法保存语言设置：${error.message}`,true));render();return;}
   if(event.target.id==='appearance-theme'){state.theme=event.target.value;applyAppearance();persistAppearance().catch(error=>toast(`无法保存外观设置：${error.message}`,true));}
   if(event.target.id==='appearance-scale'){state.uiScale=event.target.value;applyAppearance();persistAppearance().catch(error=>toast(`无法保存外观设置：${error.message}`,true));}
   if(event.target.id==='source-snapshot')openSourceSnapshot(event.target.value).catch(error=>toast(error.message,true));

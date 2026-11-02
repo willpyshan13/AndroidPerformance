@@ -33,3 +33,7 @@
 
 
 CPU Stack Chart 本轮增加了最多 2,000 个等距样本、每样本最多 32 层的真实单调时间画布视图。`npm run benchmark:cpu-visualization` 在 50,000 个合成样本上记录索引 / 投影 / 调用树 / Canvas 命令耗时；这不是浏览器栅格或真实设备 perf.data 基准。
+
+## ART 方法跟踪
+
+CPU 页面支持单独导入 Android ART `.trace/.dmtrace`，在 Worker 内解析 v1/v2/v3 与支持的 streaming trace，展示每线程方法区间和 inclusive/self 汇总。文件大小、事件、方法、线程与保留区间均有上限；插桩耗时只适合相对参考。解析用例覆盖标准和 streaming 格式、thread-cpu 尾部时钟声明、嵌套调用、v1 unroll、损坏输入与安全上限。待用真实设备导出的 ART trace 样本核对版本兼容性；设备端 `am profile` 自动采集尚未接入。

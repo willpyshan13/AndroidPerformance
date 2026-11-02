@@ -509,3 +509,8 @@ npm run test:device -- \
 
 - 新增设备 simpleperf `trace-offcpu` 能力探测和可选采集。该模式只允许一个 `cpu-clock` 或 `task-clock` 事件；不支持时服务端拒绝启动。转换器在有 trace-offcpu 元数据的文件中使用 `on-off-cpu` 报告模式，将 `cpu-clock` 与 `sched:sched_switch` 样本拆开，原有事件选择、调用树和时间线可分析 off-CPU 等待栈。界面说明等待区间由相邻调度记录估算，可能受丢失记录影响。
 - 用假 ReportLib 生成器验证两类样本独立、off-CPU 7,000,000 ns 权重在 timeline 和 folded 输出中保留；覆盖 ADB feature 检查、无支持拒绝、单事件约束及 API 参数传递。全量套件：306 项，290 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。重建的 macOS arm64 包含更新的两份 simpleperf 转换器；packaged smoke 仍在 Electron 启动早期被 Cocoa LaunchServices SIGABRT 终止。ADB 设备列表为空，尚未核对设备内核权限和实际调度轨道。
+
+## ART method trace 导入（2026-11-03）
+
+- CPU 页面新增独立 ART `.trace/.dmtrace` 导入入口；解析放在 module Worker 中运行，最多接受 256 MiB 文件，并限制事件、方法、线程及保留时间区间数量。支持标准 v1/v2/v3 与解析器覆盖的 v2/v3 streaming 格式，呈现线程调用时间线、调用次数、inclusive/self 时间及不完整调用提示；与 simpleperf 的 perf.data 采样证据分开展示。
+- 回归覆盖嵌套调用、自身时间、v1/v2 记录宽度、unroll、streaming 内联元数据、尾部 clock summary（含 thread-cpu）、损坏头部和事件上限。全量套件：311 项，295 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接的 ADB 设备，尚未用真机导出文件核对格式兼容性；`am profile` 设备端采集尚未接入。历史 macOS packaged smoke 的 Electron 启动 SIGABRT 未在本功能中复测。

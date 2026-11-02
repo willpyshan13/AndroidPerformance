@@ -575,7 +575,19 @@ const stateEn={
  '对象已清除':'Object cleared',
  '正在等待可识别的 LeakCanary 日志…':'Waiting for recognized LeakCanary logs…',
  '尚未读取事件。':'No events read yet.',
- '读取失败':'read failed'
+ '读取失败':'read failed',
+ '导入 ART trace':'Import ART trace','导入或采集 ART method trace，查看 ART 方法调用时间线和方法耗时。':'Import an ART method trace to inspect method call timing and method costs.',
+ 'ART 方法调用轨迹':'ART method call trace','个方法事件':'method events','ART trace':'ART trace','方法调用':'Method calls','时间跨度':'Time span',
+ 'ART 方法跟踪记录方法进入与退出，包含时间线及调用次数；逐方法计时有明显运行时开销，绝对耗时只作相对参考。':'ART method tracing records method entry and exit with a timeline and call counts. Instrumentation adds substantial runtime overhead, so treat durations as relative.',
+ '该文件使用每线程 CPU 时钟，不同线程的横向时间位置不能直接比较。':'This file uses per-thread CPU clocks; horizontal positions cannot be compared across threads.',
+ '不完整调用：':'Incomplete calls: ','未匹配退出：':'Unmatched exits: ','全部线程':'All threads','搜索方法':'Search methods','线程':'Thread',
+ 'ART trace 没有完整方法区间':'ART trace has no complete method intervals','检查 trace 文件是否已正确停止并写入。':'Check that tracing was stopped correctly and the trace was written.',
+ '横向为 ART trace 时间；嵌套高度表示调用深度。显示最多 2,000 个均匀抽取的已完成调用。':'Horizontal position represents ART trace time; vertical nesting represents call depth. Up to 2,000 completed calls are evenly sampled.',
+ '横向为 ART trace 时间；嵌套高度表示调用深度。最多显示 2,000 个抽样完成调用。':'Horizontal position represents ART trace time; vertical nesting represents call depth. Up to 2,000 sampled completed calls are shown.',
+ '完整调用区间超过保留上限；顶部汇总仍统计全部已解析调用。':'The interval retention limit was reached; method totals still include all parsed calls.',
+ '方法汇总':'Method summary','调用次数':'Calls','包含时间 ms':'Inclusive ms','自身时间 ms':'Self ms',
+ 'ART trace 文件不能超过 256 MiB':'ART trace files must not exceed 256 MiB','ART trace 解析超时':'ART trace parsing timed out','ART trace worker 启动失败':'Could not start the ART trace worker','ART trace 解析失败':'ART trace parsing failed','ART trace 不是受支持的 ART method trace（缺少 SLOW magic 或 *version 区）':'File is not a supported ART method trace (missing SLOW magic or *version section)',
+ 'ART 方法轨迹已载入（':'ART method trace loaded (',' 次完整调用）': ' completed calls)'
 };
 
 export const supportedLanguages=['zh-CN','en-US'];

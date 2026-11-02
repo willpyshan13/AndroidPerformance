@@ -345,6 +345,94 @@ export function compareHeaps(baseline, current) {
 }
 
 // Folded stacks carry event-period weights, not necessarily sample counts or time.
+const ART_TRACE_LIMITS={events:5_000_000,methods:2_000_000,spans:100_000,threads:10_000};
+function traceText(bytes,start,end,encoding='utf-8'){return new TextDecoder(encoding).decode(bytes.subarray(start,end));}
+function traceLine(bytes,start){const end=bytes.indexOf(10,start);if(end<0)throw new Error('ART trace key 区缺少换行');return {text:traceText(bytes,start,end).replace(/\r$/,''),next:end+1};}
+function traceNumber(value){const parsed=/^0x[\da-f]+$/i.test(value)?Number.parseInt(value.slice(2),16):Number(value);return Number.isSafeInteger(parsed)&&parsed>=0?parsed:null;}
+function parseArtKey(header){
+  const methods=new Map(),threads=new Map(),options={};let offset=0,section='';
+  while(offset<header.length){if(offset>32*1024*1024)throw new Error('ART trace key 区超过 32 MiB 上限');const line=traceLine(header,offset);offset=line.next;const value=line.text;if(value==='*end')return {methods,threads,options,headerBytes:offset};if(value.startsWith('*')){section=value;continue;}
+    if(section==='*version'){if(/^\d+$/.test(value))options.version=Number(value);else if(value.includes('=')){const at=value.indexOf('=');options[value.slice(0,at)]=value.slice(at+1);}continue;}
+    if(section==='*threads'){const match=value.match(/^(\d+)\t(.*)$/);if(match){if(threads.size>=ART_TRACE_LIMITS.threads)throw new Error('ART trace 线程数超过上限');threads.set(Number(match[1]),match[2]);}continue;}
+    if(section==='*methods'){const fields=value.split('\t'),id=traceNumber(fields[0]||'');if(id===null)continue;if(methods.size>=ART_TRACE_LIMITS.methods)throw new Error('ART trace 方法数超过上限');const className=fields[1]||'unknown',methodName=fields[2]||'unknown',signature=fields[3]||'';methods.set(id,`${className}.${methodName}${signature}`);continue;}
+    if(value.includes('=')){const at=value.indexOf('=');options[value.slice(0,at)]=value.slice(at+1);}
+  }
+  throw new Error('ART trace key 区缺少 *end 标记');
+}
+function parseArtMethodLine(line,methods,threads){if(line.length>4096)throw new Error('ART trace 元数据行超过 4 KiB 上限');const fields=line.split('\t'),id=traceNumber(fields[0]||'');if(id===null)return;if(fields.length===2&&/^\d+$/.test(fields[0])){if(threads.size>=ART_TRACE_LIMITS.threads&&!threads.has(id))throw new Error('ART trace 线程数超过上限');threads.set(id,fields[1]);}else if(fields.length>=2){if(methods.size>=ART_TRACE_LIMITS.methods&&!methods.has(id))throw new Error('ART trace 方法数超过上限');methods.set(id,`${fields[1]||'unknown'}.${fields[2]||'unknown'}${fields[3]||''}`);}}
+export function parseArtMethodTrace(buffer,{maxEvents=ART_TRACE_LIMITS.events,maxSpans=ART_TRACE_LIMITS.spans}={}){
+  if(!(buffer instanceof Uint8Array))buffer=new Uint8Array(buffer);
+  const view=new DataView(buffer.buffer,buffer.byteOffset,buffer.byteLength),u16=offset=>view.getUint16(offset,true),u32=offset=>view.getUint32(offset,true),u64=offset=>view.getBigUint64(offset,true);
+  if(buffer.length<4||buffer.length>256*1024*1024)throw new Error('ART method trace 文件为空或超过 256 MiB');
+  const magic=0x574f4c53;let cursor=0,version,recordSize,baseTimeUs=0n,clock='wall',methods=new Map(),threads=new Map(),streaming=false,recordsStart;
+  if(traceText(buffer,0,Math.min(8,buffer.length),'ascii').startsWith('*version')){
+    const key=parseArtKey(buffer);methods=key.methods;threads=key.threads;version=key.options.version;clock=key.options.clock||'wall';cursor=key.headerBytes;
+    if(![1,2,3].includes(version))throw new Error(`不支持 ART trace 版本：${version??'未提供'}`);
+    if(cursor+16>buffer.length||u32(cursor)!==magic)throw new Error('ART trace 数据区 magic 无效');
+  }else if(u32(0)===magic){
+    streaming=true;cursor=0;
+  }else throw new Error('文件不是受支持的 ART method trace（缺少 SLOW magic 或 *version 区）');
+  const fileVersion=u16(cursor+4);version=streaming?(fileVersion^0xf0):fileVersion;
+  if(![1,2,3].includes(version))throw new Error(`不支持 ART trace 版本：${version}`);
+  if(streaming&&version===1)throw new Error('不支持 ART v1 streaming trace 格式');
+  const dataOffset=u16(cursor+6),headerStart=cursor;
+  if(cursor+16>buffer.length)throw new Error('ART trace 数据头不完整');
+  baseTimeUs=u64(cursor+8);cursor+=16;
+  recordSize=version===1?9:version===2?10:buffer.length>=cursor+2?u16(cursor):0;
+  if(version===3)cursor+=2;
+  if(recordSize<(version===1?9:version===2?10:14)||recordSize>64)throw new Error('ART trace record size 无效');
+  recordsStart=headerStart+dataOffset;
+  if(recordsStart<cursor||recordsStart>buffer.length)throw new Error('ART trace 数据偏移无效');
+  cursor=recordsStart;
+  const stacks=new Map(),stats=new Map(),spans=[];let events=0,unmatchedExits=0,minTimestamp=null,maxTimestamp=0n,threadCpuLast=new Map(),threadCpuEpoch=new Map(),globalLast=0n,globalEpoch=0n,spanSeen=0,reservoirState=0x6d2b79f5;
+  const methodName=id=>methods.get(id)||`unknown method 0x${id.toString(16)}`;
+  const methodStats=id=>{let row=stats.get(id);if(!row){row={id,name:methodName(id),calls:0,inclusiveUs:0n,exclusiveUs:0n,completedCalls:0};stats.set(id,row);}return row;};
+  const getTime=(tid,threadTime,wallTime)=>{
+    const perThread=clock==='thread-cpu';let raw=BigInt(perThread?threadTime:wallTime??threadTime),previous=perThread?threadCpuLast.get(tid):globalLast,epoch=perThread?threadCpuEpoch.get(tid)||0n:globalEpoch;
+    if(previous!==undefined&&raw<previous&&previous-raw>0x80000000n)epoch+=0x100000000n;
+    const value=epoch+raw;if(perThread){threadCpuLast.set(tid,raw);threadCpuEpoch.set(tid,epoch);}else{globalLast=raw;globalEpoch=epoch;}if(minTimestamp===null||value<minTimestamp)minTimestamp=value;if(value>maxTimestamp)maxTimestamp=value;return value;
+  };
+  const pushEvent=(tid,methodWord,threadTime,wallTime)=>{
+    if(++events>maxEvents)throw new Error(`ART trace 事件数超过 ${maxEvents.toLocaleString()} 上限`);
+    const action=methodWord&3,id=methodWord&0xfffffffc,time=getTime(tid,threadTime,wallTime);let stack=stacks.get(tid);if(!stack){stack=[];stacks.set(tid,stack);}
+    if(action===0){methodStats(id).calls++;stack.push({id,startUs:time,childUs:0n,depth:stack.length});return;}
+    if(action===3)throw new Error('ART trace 包含保留的 method action 3');
+    let target=-1;for(let i=stack.length-1;i>=0;i--)if(stack[i].id===id){target=i;break;}
+    if(target<0){unmatchedExits++;return;}
+    if(action===1&&target!==stack.length-1){unmatchedExits++;while(stack.length-1>target)closeFrame(tid,stack.pop(),time,true);}
+    while(stack.length>target){const frame=stack.pop();closeFrame(tid,frame,time,action===2);}
+  };
+  const closeFrame=(tid,frame,endUs,unrolled)=>{
+    const inclusive=endUs>frame.startUs?endUs-frame.startUs:0n,exclusive=inclusive>frame.childUs?inclusive-frame.childUs:0n,row=methodStats(frame.id);row.inclusiveUs+=inclusive;row.exclusiveUs+=exclusive;row.completedCalls++;
+    if(stackParent(tid))stackParent(tid).childUs+=inclusive;
+    const span={tid,methodId:frame.id,name:row.name,startUs:frame.startUs.toString(),endUs:endUs.toString(),inclusiveUs:inclusive.toString(),exclusiveUs:exclusive.toString(),depth:frame.depth,unrolled};spanSeen++;
+    if(spans.length<maxSpans)spans.push(span);else if(maxSpans>0){reservoirState=(Math.imul(reservoirState,1664525)+1013904223)>>>0;const slot=reservoirState%spanSeen;if(slot<maxSpans)spans[slot]=span;}
+  };
+  const stackParent=tid=>stacks.get(tid)?.at(-1);
+  const parseTimeFields=(pos,tid)=>({threadTime:u32(pos),wallTime:version===3&&recordSize>=14?u32(pos+4):undefined});
+  if(streaming){
+    const streamDataStart=cursor;
+    while(cursor+2<=buffer.length){const tid=u16(cursor);cursor+=2;if(tid===0){if(cursor>=buffer.length)throw new Error('ART streaming trace special record 不完整');const code=buffer[cursor++];if(code===1){if(cursor+2>buffer.length)throw new Error('ART streaming method record 不完整');const len=u16(cursor);cursor+=2;if(cursor+len>buffer.length)throw new Error('ART streaming method 名称超出文件范围');parseArtMethodLine(traceText(buffer,cursor,cursor+len),methods,threads);cursor+=len;}
+      else if(code===2){if(cursor+4>buffer.length)throw new Error('ART streaming thread record 不完整');const threadId=u16(cursor),len=u16(cursor+2);cursor+=4;if(cursor+len>buffer.length)throw new Error('ART streaming thread 名称超出文件范围');threads.set(threadId,traceText(buffer,cursor,cursor+len));cursor+=len;}
+      else if(code===3){if(cursor+4>buffer.length)throw new Error('ART streaming summary 头不完整');const len=u32(cursor);cursor+=4;if(len>buffer.length-cursor)throw new Error('ART streaming summary 超出文件范围');const summary=traceText(buffer,cursor,cursor+len);cursor+=len;for(const line of summary.split(/\r?\n/)){const eq=line.indexOf('=');if(eq>0){const key=line.slice(0,eq);if(key==='clock')clock=line.slice(eq+1);}}break;}
+      else throw new Error(`ART streaming trace 特殊记录类型无效：${code}`);continue;}
+      if(cursor+recordSize-2>buffer.length)throw new Error('ART streaming trace 记录不完整');cursor+=recordSize-2;
+    }
+    cursor=streamDataStart;
+    while(cursor+2<=buffer.length){const tid=u16(cursor);cursor+=2;if(tid===0){if(cursor>=buffer.length)throw new Error('ART streaming trace special record 不完整');const code=buffer[cursor++];if(code===1){if(cursor+2>buffer.length)throw new Error('ART streaming method record 不完整');const len=u16(cursor);cursor+=2;if(len>buffer.length-cursor)throw new Error('ART streaming method 名称超出文件范围');cursor+=len;}else if(code===2){if(cursor+4>buffer.length)throw new Error('ART streaming thread record 不完整');const len=u16(cursor+2);cursor+=4;if(len>buffer.length-cursor)throw new Error('ART streaming thread 名称超出文件范围');cursor+=len;}else if(code===3){if(cursor+4>buffer.length)throw new Error('ART streaming summary 头不完整');const len=u32(cursor);cursor+=4;if(len>buffer.length-cursor)throw new Error('ART streaming summary 超出文件范围');break;}else throw new Error(`ART streaming trace 特殊记录类型无效：${code}`);continue;}
+      if(cursor+recordSize-2>buffer.length)throw new Error('ART streaming trace 记录不完整');const methodWord=u32(cursor);cursor+=4;const threadTime=u32(cursor);cursor+=4;let wallTime;if(version===3&&recordSize>=14){wallTime=u32(cursor);cursor+=4;}cursor+=recordSize-(version===1?10:recordSize);pushEvent(tid,methodWord,threadTime,wallTime);
+    }
+  }else{
+    const remaining=buffer.length-cursor;if(remaining%recordSize!==0)throw new Error('ART method trace 数据区包含不完整记录');const total=remaining/recordSize;if(total>maxEvents)throw new Error(`ART trace 事件数超过 ${maxEvents.toLocaleString()} 上限`);
+    while(cursor<buffer.length){const tid=version===1?buffer[cursor]:u16(cursor);const field=version===1?cursor+1:cursor+2,methodWord=u32(field),timeFields=parseTimeFields(field+4,tid);pushEvent(tid,methodWord,timeFields.threadTime,timeFields.wallTime);cursor+=recordSize;}
+  }
+  let incompleteCalls=0;for(const stack of stacks.values())incompleteCalls+=stack.length;
+  const methodStatsList=[...stats.values()].map(row=>({...row,inclusiveUs:row.inclusiveUs.toString(),exclusiveUs:row.exclusiveUs.toString()})).sort((a,b)=>BigInt(b.inclusiveUs)>BigInt(a.inclusiveUs)?1:BigInt(b.inclusiveUs)<BigInt(a.inclusiveUs)?-1:a.name.localeCompare(b.name));
+  const completedCalls=methodStatsList.reduce((sum,row)=>sum+row.completedCalls,0);
+  const origin=minTimestamp??0n,duration=maxTimestamp-origin;
+  return {format:'ART method trace',version,streaming,clock,startTimeUs:baseTimeUs.toString(),durationUs:duration.toString(),eventCount:events,threadCount:new Set([...threads.keys(),...stacks.keys()]).size,methodCount:methods.size,completedCalls,incompleteCalls,unmatchedExits,intervalsTruncated:spanSeen>spans.length,methods:methodStatsList,threads:[...new Set([...threads.keys(),...stacks.keys()])].map(tid=>({tid,name:threads.get(tid)||`Thread ${tid}`})).sort((a,b)=>a.tid-b.tid),intervals:spans.map(span=>({...span,startUs:(BigInt(span.startUs)-origin).toString(),endUs:(BigInt(span.endUs)-origin).toString()}))};
+}
+
 export function parseFoldedStacks(text) {
   if(typeof text!=='string'||!text.trim())throw new Error('调用栈文件为空');
   const lines=text.split(/\r?\n/);if(lines.length>100000)throw new Error('调用栈超过 100,000 行限制');

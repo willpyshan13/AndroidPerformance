@@ -446,6 +446,11 @@ npm run test:device -- \
 - 加入提取 DEB 后的包内 smoke：检查 ADB/AAPT2 与许可证文件，从提取路径启动 ADB，并用包内 AAPT2 重新执行 APK 分析。该脚本须由原生 Linux arm64 CI 运行；当前执行环境无法访问 GitHub Actions 日志，故不能声称 arm64 安装包已验证。
 - 本轮 `npm test`：328 项，312 通过、0 失败、16 个可选官方样本测试跳过；`npm run check` 和 `git diff --check` 通过。当前 ADB 主机权限下 `adb devices -l` 可运行，但没有列出设备，因此真机专属检查待设备重新连接。
 
+## 跨平台安装 smoke 复核（2026-11-03）
+
+- GitHub Actions [运行 41541268775](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41541268775) 的 tests、macOS arm64/x64、Linux x64 jobs 成功；Linux arm64 在“Analyze a generated APK with the staged AAPT2”失败，DEB 构建和包内验证未执行。
+- 同次运行 Windows job 在“Install Windows MSI and NSIS packages and verify desktop startup”失败。REST job 状态可读取失败步骤名称，但下载 Actions 日志的公开接口返回 `Must have admin rights to Repository`；失败原因尚未确认。需要从有权限的 GitHub 会话取得该步骤日志后修复，不能将两项失败归因于具体代码问题。
+
 ## CPU sample interaction indexing（2026-11-03）
 
 - CPU timeline now builds per-bin and chronological sample indexes when loading up to 50,000 samples. Bin selection uses only that bin's candidates; arbitrary time-range selection uses binary search over timestamps and processes only samples inside the selected range.

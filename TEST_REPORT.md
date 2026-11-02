@@ -433,6 +433,6 @@ npm run test:device -- \
 
 ## Electron renderer startup smoke（2026-11-03）
 
-- 原生 Windows x64 runner 构建 NSIS/MSI 后启动打包目录中的应用；Java runtime 首次解包、本机 HTTP 服务、主页面与 JavaScript 模块加载、渲染器导航和主视图均通过。GitHub Actions run [41513852231](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41513852231) 的 Windows package job 和 smoke step 成功。该 smoke 启动的是安装包生成的应用目录，尚未执行安装器后的安装路径验证。
+- 原生 Windows x64 runner 构建 NSIS/MSI 后，静默安装 MSI 到临时目录，再从安装路径启动应用。Java runtime 首次解包、本机 HTTP 服务、主页面、四个 JavaScript 模块、渲染器导航与主视图均通过；完成后 MSI 卸载成功。GitHub Actions run [41517484533](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41517484533) 的 Windows package、MSI install smoke 和 artifact upload steps 全部成功。NSIS 安装器尚未执行安装路径 smoke。
 - smoke 暴露本机服务未开放 `/i18n.js`：入口脚本因此没有渲染导航。已补静态资源路由，并新增 HTTP 回归测试检查入口的模块依赖；当前全量测试 293 项，277 通过、0 失败、16 个可选官方样本测试跳过，`npm run check` 通过。
 - 获批 host 桌面上的开发模式 Electron smoke 返回 16 个导航项，且主视图已渲染。沙盒内 Electron 的 SIGABRT 仍说明该受限运行环境不适用于可见桌面启动测试。

@@ -20,6 +20,29 @@ export function correlateComposeEventsToFrames(events, frames) {
   return {available:true,frames:timedFrames.filter(item=>item.events.length).map(({frame,events:matched})=>({index:frame.index,durationMs:frame.durationMs,overBudget:frame.overBudget,events:matched})),matchedEventCount,uniqueMatchedEventCount:matchedEventIndices.size,clockMismatchCount,invalidCount,frameCount:timedFrames.length};
 }
 
+export function correlateGpuStagesToFrames(stages, frames) {
+  if (!Array.isArray(stages) || !Array.isArray(frames)) return {available:false,reason:'请先载入同一追踪的 GPU RenderStage 和 FrameTimeline 数据。',frames:[],matchedFrameCount:0,stageFramePairs:0};
+  if (stages.length > 1000 || frames.length > 2000) throw new Error('GPU 与帧区间关联数据超出限制');
+  if (!frames.length) return {available:false,reason:'请先载入同一追踪的 GPU RenderStage 和 FrameTimeline 数据。',frames:[],matchedFrameCount:0,stageFramePairs:0};
+  const validFrames=frames.flatMap(frame=>{
+    if(typeof frame?.tsNs!=='string'||! /^-?\d{1,19}$/.test(frame.tsNs)||typeof frame?.durationNs!=='string'||! /^\d{1,19}$/.test(frame.durationNs)||BigInt(frame.durationNs)<=0n)return [];
+    return [{frame,start:BigInt(frame.tsNs),end:BigInt(frame.tsNs)+BigInt(frame.durationNs),stages:[]}];
+  });
+  if(!validFrames.length)return {available:false,reason:'当前 FrameTimeline 没有可用的帧起止时间。',frames:[],matchedFrameCount:0,stageFramePairs:0};
+  let stageFramePairs=0;
+  for(const stage of stages){
+    if(typeof stage?.upid!=='string'||!/^\d+$/.test(stage.upid)||typeof stage.tsNs!=='string'||! /^-?\d{1,19}$/.test(stage.tsNs)||typeof stage.durationNs!=='string'||! /^\d{1,19}$/.test(stage.durationNs)||typeof stage.name!=='string')continue;
+    const start=BigInt(stage.tsNs),end=start+BigInt(stage.durationNs);if(end<=start)continue;
+    for(const item of validFrames){
+      if(item.frame.processId!==stage.upid)continue;
+      const overlapStart=start>item.start?start:item.start,overlapEnd=end<item.end?end:item.end;if(overlapEnd<=overlapStart)continue;
+      item.stages.push({name:stage.name,queue:stage.queue||'',submissionId:stage.submissionId||null,tsNs:stage.tsNs,durationNs:stage.durationNs,overlapNs:(overlapEnd-overlapStart).toString()});stageFramePairs++;
+    }
+  }
+  const matched=validFrames.filter(item=>item.stages.length).map(({frame,stages:matches})=>({process:frame.process||'',layer:frame.layer||'',tsNs:frame.tsNs,durationNs:frame.durationNs,jankType:frame.jankType||'',stages:matches}));
+  return {available:true,frames:matched,matchedFrameCount:matched.length,stageFramePairs,frameCount:validFrames.length,note:'按进程 UPID 和纳秒区间重叠匹配。此关联不包含帧令牌到 GPU submission 的直接因果链；队列可并行，重叠本身不能证明 GPU 工作导致该帧卡顿。'};
+}
+
 export function createLayoutCaptureArchive(layout) {
   if (!layout || typeof layout.xml !== 'string' || new TextEncoder().encode(layout.xml).length > MAX_LAYOUT_ARCHIVE_XML_BYTES || !layout.xml.includes('<hierarchy')) {
     throw new Error('当前布局 XML 无效或超过 8 MiB');

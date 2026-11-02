@@ -201,7 +201,7 @@ export async function queryFrameTimeline(path,{packageName=null,locator=locateTr
 const GPU_RENDER_STAGE_QUERY=`SELECT CAST(s.ts AS TEXT) AS ts_ns,CAST(s.dur AS TEXT) AS dur_ns,
  hex(CAST(COALESCE(s.name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(t.name,'') AS BLOB)) AS queue_hex,
  CAST(COALESCE(s.render_stage_category,-1) AS TEXT) AS category,CAST(COALESCE(s.submission_id,-1) AS TEXT) AS submission_id,
- hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,COALESCE(CAST(p.pid AS TEXT),'') AS pid
+ hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,COALESCE(CAST(p.pid AS TEXT),'') AS pid,COALESCE(CAST(p.upid AS TEXT),'') AS upid
  FROM gpu_slice s JOIN track t ON t.id=s.track_id LEFT JOIN process p ON p.upid=s.upid
  WHERE t.type='gpu_render_stage' AND s.dur>=0 ORDER BY s.ts LIMIT 1001`;
 const GPU_FREQUENCY_QUERY=`INCLUDE PERFETTO MODULE android.gpu.frequency;
@@ -212,14 +212,14 @@ const GPU_MEMORY_QUERY=`INCLUDE PERFETTO MODULE android.gpu.memory;
  hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,CAST(m.gpu_memory AS TEXT) AS bytes
  FROM android_gpu_memory_per_process m LEFT JOIN process p USING(upid) WHERE m.dur>=0 ORDER BY m.ts LIMIT 2001`;
 function parseGpuTraceRows(csv,kind){
- const rows=parseCsv(csv),headers={stage:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid',frequency:'ts_ns,dur_ns,gpu_id,frequency',memory:'ts_ns,dur_ns,upid,process_hex,bytes'};
+ const rows=parseCsv(csv),headers={stage:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid',frequency:'ts_ns,dur_ns,gpu_id,frequency',memory:'ts_ns,dur_ns,upid,process_hex,bytes'};
  if(!rows[0]||rows.shift().join(',')!==headers[kind])throw new Error('GPU 追踪返回列无效');
  const decode=value=>{if(!/^(?:[0-9a-f]{2})*$/i.test(value))throw new Error('GPU 追踪文本编码无效');return Buffer.from(value,'hex').toString('utf8');};
  const out=[];let truncated=false;
  for(const row of rows){if(row.length!==headers[kind].split(',').length)throw new Error('GPU 追踪数据不完整');
   if(kind==='stage'){
-   if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||! /^-?\d+$/.test(row[4])||![-1,0,1,2].includes(Number(row[4]))||! /^-?\d+$/.test(row[5])||!(row[7]===''||/^\d+$/.test(row[7])&&Number.isSafeInteger(Number(row[7]))))throw new Error('GPU RenderStage 数值无效');
-   out.push({tsNs:row[0],durationNs:row[1],name:decode(row[2]),queue:decode(row[3]),category:Number(row[4]),submissionId:row[5],process:decode(row[6]),pid:row[7]?Number(row[7]):null});
+   if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||! /^-?\d+$/.test(row[4])||![-1,0,1,2].includes(Number(row[4]))||! /^-?\d+$/.test(row[5])||!(row[7]===''||/^\d+$/.test(row[7])&&Number.isSafeInteger(Number(row[7])))||!(row[8]===''||/^\d+$/.test(row[8])))throw new Error('GPU RenderStage 数值无效');
+   out.push({tsNs:row[0],durationNs:row[1],name:decode(row[2]),queue:decode(row[3]),category:Number(row[4]),submissionId:row[5],process:decode(row[6]),pid:row[7]?Number(row[7]):null,upid:row[8]||null});
   }else if(kind==='frequency'){
    if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||! /^\d+$/.test(row[2])||! /^\d+$/.test(row[3]))throw new Error('GPU 频率数据无效');
    out.push({tsNs:row[0],durationNs:row[1],gpuId:row[2],frequency:row[3]});

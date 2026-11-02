@@ -25,12 +25,12 @@ test('trace summary keeps timestamps as exact strings and missing evidence empty
 test('GPU trace diagnostics parse render stages, frequency and per-process memory without assuming absent sources',async()=>{
  const result=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async(_bin,args)=>{
   const sql=args[4];
-  if(sql.includes('gpu_slice'))return {stdout:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid\n100,2500000,64726177,4d616c69207130,1,42,636f6d2e6578616d706c65,123\n'};
+  if(sql.includes('gpu_slice'))return {stdout:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid\n100,2500000,64726177,4d616c69207130,1,42,636f6d2e6578616d706c65,123,7\n'};
   if(sql.includes('android_gpu_frequency'))return {stdout:'ts_ns,dur_ns,gpu_id,frequency\n200,500000,0,600000\n'};
   if(sql.includes('android_gpu_memory_per_process'))return {stdout:'ts_ns,dur_ns,upid,process_hex,bytes\n300,1000000,7,636f6d2e6578616d706c65,1048576\n'};
   throw new Error('unexpected query');
  }});
- assert.deepEqual(result.renderStages.rows,[{tsNs:'100',durationNs:'2500000',name:'draw',queue:'Mali q0',category:1,submissionId:'42',process:'com.example',pid:123}]);
+ assert.deepEqual(result.renderStages.rows,[{tsNs:'100',durationNs:'2500000',name:'draw',queue:'Mali q0',category:1,submissionId:'42',process:'com.example',pid:123,upid:'7'}]);
  assert.deepEqual(result.frequencies.rows,[{tsNs:'200',durationNs:'500000',gpuId:'0',frequency:'600000'}]);
  assert.deepEqual(result.memory.rows,[{tsNs:'300',durationNs:'1000000',upid:'7',process:'com.example',bytes:'1048576'}]);
  const missing=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async()=>{throw Object.assign(new Error('no data'),{stderr:'table unavailable'});}});

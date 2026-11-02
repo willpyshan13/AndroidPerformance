@@ -354,7 +354,7 @@ npm run test:device -- \
 
 ## GPU 追踪诊断（2026-11-03）
 
-- 新增本机 Trace Processor 查询：GPU RenderStage、GPU 频率原始值、按进程 GPU 内存；每类数据独立报告是否可用与结果截断状态，不从空轨道推断为零。
-- 以 Trace Processor v59.1 在无 GPU 数据的合成追踪中执行三类查询，确认标准查询表存在并返回空结果；另以合成 CSV 验证文本解码、进程信息、时间精度和缺失轨道处理。
-- 完整测试：273 项，257 通过、0 失败、16 个可选外部样本测试因未配置而跳过；`npm run check` 通过。
+- 新增本机 Trace Processor 查询：GPU RenderStage、GPU 频率原始值、按进程 GPU 内存；每类数据独立报告是否可用与结果截断状态，不从空轨道推断为零。GPU RenderStage 可与同一追踪的 FrameTimeline 按 UPID 和精确纳秒区间展示重叠项。
+- 以 Trace Processor v59.1 在无 GPU 数据的合成追踪中执行三类查询，确认标准查询表存在并返回空结果；另以合成 CSV 验证文本解码、进程信息、时间精度和缺失轨道处理；时间关联单测覆盖进程隔离、大纳秒时间戳和区间边界。
+- 完整测试：275 项，259 通过、0 失败、16 个可选外部样本测试因未配置而跳过；`npm run check` 通过。
 - 未验证真实设备驱动轨道、GPU RenderStage 与 FrameTimeline 的跨轨道关联；队列事件可能并行，累计持续时间不等于墙钟耗时。

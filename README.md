@@ -46,7 +46,7 @@ Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装�
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
-| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据 | Perfetto，32 MB 缓冲区 |
+| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；可运行已安装的 instrumentation，或选择带 Gradle Wrapper 的 Macrobenchmark 工程执行 connected Android Test，并载入本次生成的 JSON、直接将本次 trace 导入分析 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
@@ -125,7 +125,7 @@ GitHub Actions 原生 runner 已验证 macOS arm64/x64 DMG、Windows x64 NSIS EX
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 273 项，257 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
+| 自动测试 | 275 项，259 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 
@@ -170,7 +170,7 @@ Perfetto 启动记录可查看基于主线程状态和切片的阶段分解；�
 
 启动与 FrameTimeline 记录可跳转至事件附近的系统追踪窗口，按原始纳秒时间裁剪；同一窗口内的事件仅表示时间重叠，不自动证明因果关系。
 
-系统追踪可按 TID 查看当前时间窗口内的线程状态区间和累计时长；同一 TID 的不同生命周期按 UTID 区分。GPU 诊断按需读取 RenderStage、频率和进程 GPU 内存轨道；设备未采集或驱动未提供时会显示无数据，频率保留追踪原始值。RenderStage 可能跨队列并行，持续时间求和不是墙钟耗时；时间重合也不证明 GPU 负载导致某帧卡顿。状态只反映追踪中记录的数据。
+系统追踪可按 TID 查看当前时间窗口内的线程状态区间和累计时长；同一 TID 的不同生命周期按 UTID 区分。GPU 诊断按需读取 RenderStage、频率和进程 GPU 内存轨道，并可将 RenderStage 按进程 UPID 和纳秒区间与 FrameTimeline 比较；设备未采集或驱动未提供时会显示无数据，频率保留追踪原始值。RenderStage 可能跨队列并行，持续时间求和不是墙钟耗时；时间重合也不证明 GPU 负载导致某帧卡顿。状态只反映追踪中记录的数据。
 
 CPU 采样提供按叶函数汇总的时间分布图，点击时间段可查看该段全部线程的调用树；图中是事件周期采样权重，不是 CPU 时间或函数包含成本。线程时间线可按 PID/TID 查询当前系统追踪窗口的线程状态；不同记录可能来自不同设备或时间，PID/TID 也可能复用，请自行核对，功能不会自动对齐时钟。
 

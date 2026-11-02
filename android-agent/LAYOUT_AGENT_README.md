@@ -43,7 +43,7 @@ import dev.androidperformance.agent.LayoutAgent;
 - 这是 debug-only 诊断源码。不要将令牌或 Agent 放进 release 构建。令牌以明文存在 debug APK 中，不构成对有设备调试权限者的安全边界。
 - 遇到 Compose `AndroidComposeView` 时，Agent 通过可选反射读取 merged 与 unmerged Semantics 节点，转换为 `ComposeSemanticsRoot` / `ComposeSemanticsNode` 并保留 bounds、文本、角色、TestTag、点击和选中等状态；Compose 依赖不是本 Agent 的编译依赖。不同 Compose 版本的运行时接口可能变化，读取失败会返回兼容性警告，Android View 树仍保留。
 - Compose `Password` 节点会隐藏文本和内容描述；`EditableText` 仅标记为可编辑，不输出其内容。该 Semantics 树不是 Composable 调用树，不提供 State Reads 或运行时重组次数。官方重组计数还受 Compose 版本与 Android API 版本限制。
-- 若要统计选定 Composable 的实际执行次数，可将 ZIP 中的 `ApwComposeRecompositionProbe.kt` 放入目标模块 `src/debug/kotlin/dev/androidperformance/agent/`，并在目标函数体内调用：
+- 若要统计选定 Composable 的实际执行次数，可将 ZIP 中的 `ApwComposeRecompositionProbe.kt` 放入目标模块 `src/debug/kotlin/dev/androidperformance/agent/`，并在目标函数体内调用。probe 标记为不可跳过，以便父 Composable 每次重新执行时都能记录：
 
 ```kotlin
 import dev.androidperformance.agent.ApwComposeRecompositionProbe

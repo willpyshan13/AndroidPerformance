@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.NonSkippableComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import java.nio.charset.StandardCharsets
@@ -17,6 +18,7 @@ private val processSessionId = UUID.randomUUID().toString().replace("-", "")
  * The desktop app reads APWCompose records from the target app UID's main log buffer.
  */
 @Composable
+@NonSkippableComposable
 fun ApwComposeRecompositionProbe(name: String) {
     require(name.isNotBlank() && name.length <= 300) { "Probe name must contain 1–300 characters" }
     val instanceId = remember(name) { UUID.randomUUID().toString().replace("-", "") }

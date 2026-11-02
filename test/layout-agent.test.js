@@ -48,6 +48,7 @@ test('downloadable View Agent ZIP contains the Java source and lifecycle guide',
  const entries=await new Promise((resolve,reject)=>yauzl.fromBuffer(archive,{lazyEntries:true},(err,zip)=>{if(err)return reject(err);const files={};zip.on('error',reject);zip.on('end',()=>resolve(files));zip.on('entry',entry=>zip.openReadStream(entry,(error,stream)=>{if(error)return reject(error);const chunks=[];stream.on('data',chunk=>chunks.push(chunk));stream.on('error',reject);stream.on('end',()=>{files[entry.fileName]=Buffer.concat(chunks);zip.readEntry();});}));zip.readEntry();}));
  const paths=['LAYOUT_AGENT_README.md','src/main/java/dev/androidperformance/agent/LayoutAgent.java','src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt'];assert.deepEqual(Object.keys(entries).sort(),paths.slice().sort());
  for(const path of paths)assert.deepEqual(entries[path],await readFile(new URL('../android-agent/'+path,import.meta.url)));
+ assert.match(entries['src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt'].toString(),/@NonSkippableComposable/);
 });
 
 test('protected layout Agent API forwards the shared token and returns an app snapshot',async t=>{

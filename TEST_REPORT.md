@@ -536,15 +536,20 @@ npm run test:device -- \
 ## HPROF 类统计与快照对比 CSV（2026-11-03）
 
 - 堆分析页新增 CSV 导出，当前视图中的搜索词和对象数变化筛选会作用于完整匹配结果，不受表格每页最多显示 1,000 行的限制。当前类统计和基线对比使用各自列；不兼容类匹配会标记为不可比。导出含 UTF-8 BOM、CSV 双引号转义和表格公式前缀防护，并明确字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小。
-- 两项 `heap-export` 单元回归覆盖 CSV 头、字节解释、逗号 / 引号转义、公式注入防护和不可比行。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
+- 两项 `heap-export` 单元回归覆盖 CSV 头、字节解释、逗号 / 引号转义、公式注入防护和不可比行。全量套件最近结果：327 项，311 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
 - 重建 macOS arm64 `.app` 并运行打包 smoke。首次 smoke 暴露新 ES module 未加入静态资源路由；加入路由后重建，renderer、16 个页面状态、Java、Trace Processor、Perfetto UI 及 CPU PNG 导出 smoke 均通过。CSV 序列化通过定向测试；打包 smoke 使用 145 字节合成 HPROF 走完文件输入、HTTP 分析、类名筛选和 CSV 下载，检查 MIME、UTF-8 BOM、命中类保留和未命中类排除。另从布局页导入合成 XML，验证规则 ID、严重级别、置信度和证据显示。以上 smoke 不替代真实设备 HPROF 或 UIAutomator 验证。
 
 ## 布局检查线索的结构化证据（2026-11-03）
 
 - UIAutomator 可交互节点线索新增稳定规则 ID、warning/info 严重级别、high/medium 置信度、节点 ID 和证据字段。无标签仅在当前读取子树字段完整且确实为空时提示；小触控区域记录原始边界、密度、dp 尺寸和 48 dp 阈值，并标为中置信度；页面直接展示规则、严重级别、置信度和证据，中英文标签已接入。
-- `test/layout-scope.test.js` 覆盖原有识别边界及结构化字段、rule ID、证据和置信度；定向测试 12 项通过。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。重建 macOS arm64 `.app` 后打包 smoke 通过，renderer、16 个页面状态及桌面资源检查正常。当前 ADB 设备列表为空，无法用真机布局采集确认不同 Android / UIAutomator 实现的字段差异。
+- `test/layout-scope.test.js` 覆盖原有识别边界及结构化字段、rule ID、证据和置信度；定向测试 12 项通过。全量套件最近结果：327 项，311 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。重建 macOS arm64 `.app` 后打包 smoke 通过，renderer、16 个页面状态及桌面资源检查正常。当前 ADB 设备列表为空，无法用真机布局采集确认不同 Android / UIAutomator 实现的字段差异。
 
 ## CPU 时间图打包 renderer 大样本验证（2026-11-03）
 
-- macOS arm64 打包 Electron renderer 载入 50,000 个合成样本，建立时间索引，等距投影 2,000 个样本，绘制 48,000 个栈帧并通过 `getImageData` 读取实际 Canvas 像素缓冲区。smoke 实测最终打包 smoke 实测约 46 ms：索引 29 ms、投影 1.4 ms、Canvas 命令 13.1 ms、像素读取 2.8 ms。前几轮测量约 46–50 ms；此为单机合成基准，不代表其他设备性能。
+- macOS arm64 打包 Electron renderer 载入 50,000 个合成样本，建立时间索引，等距投影 2,000 个样本，绘制 48,000 个栈帧并通过 `getImageData` 读取实际 Canvas 像素缓冲区。最终打包 smoke 实测约 46 ms：索引 29 ms、投影 1.4 ms、Canvas 命令 13.1 ms、像素读取 2.8 ms。前几轮测量约 46–50 ms；此为单机合成基准，不代表其他设备性能。
 - 打包 smoke 同时保留 PNG 导出、空 / 演示状态导航、菜单和资源检查；当前真实设备大型 perf.data 端到端数据仍待验证。
+
+## 英文界面字面文案覆盖（2026-11-03）
+
+- 新增回归自动提取 `public/app.js` 中全部字面 `tr(...)` 键并检查英文译文无残留中文。本次覆盖 242 个含中文的字面键，0 个缺失；保留了代码、导入数据及其他用户内容不翻译的边界。
+- `test/i18n.test.js` 33 项通过；全量套件最近结果：327 项，311 通过、0 失败、16 项可选官方样本跳过。动态设备字段、原始工具输出及用户导入内容不属于这项字面键检查。

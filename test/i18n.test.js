@@ -14,6 +14,13 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });
 
+test('all literal tr strings in the application have English translations',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+ const keys=[...new Set([...app.matchAll(/\btr\(\s*(['"])(.*?)\1\s*\)/gs)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)))];
+ const missing=keys.filter(text=>/[\u3400-\u9fff]/.test(translate(text,'en-US')));
+ assert.deepEqual(missing,[]);assert.ok(keys.length>0);
+});
+
 test('home quick actions cover every analysis module and localize the newly exposed tools',async()=>{
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderOverview()'),end=app.indexOf('function renderMonitor()',start),source=app.slice(start,end);
  assert.match(app,/info: null, status: null, samples: \[\]/,'a clean desktop profile must have an empty sample collection before the first render');

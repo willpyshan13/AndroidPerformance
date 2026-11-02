@@ -1,4 +1,6 @@
 import {spawnSync} from 'node:child_process';
+import {readFile,rm} from 'node:fs/promises';
+import {join} from 'node:path';
 
 const task=process.argv[2];
 if(!task||!/^[-:a-z0-9]+$/.test(task))throw new Error('npm task is required');
@@ -7,6 +9,8 @@ const run=()=>spawnSync(command,['run',task],{encoding:'utf8',shell:process.plat
 let result=run(),attempt=1;
 while(task.startsWith('package:')&&result.status!==0&&/EBUSY.*copyfile/i.test(`${result.stdout||''}\n${result.stderr||''}`)&&attempt<3){
  console.log(`::warning title=Transient file lock::Retrying ${task} after EBUSY copyfile (attempt ${attempt+1}/3).`);
+ const {version}=JSON.parse(await readFile('package.json','utf8'));
+ await rm(join('dist',`v${version}`),{recursive:true,force:true,maxRetries:10,retryDelay:300});
  await new Promise(resolve=>setTimeout(resolve,1500));result=run();attempt++;
 }
 if(result.stdout)process.stdout.write(result.stdout);

@@ -76,6 +76,7 @@ try {
   if(!ready.rendererState.cpuPngExport?.ok||ready.rendererState.cpuPngExport.type!=='image/png')throw new Error(`Packaged macOS CPU PNG export smoke failed: ${JSON.stringify(ready.rendererState.cpuPngExport)}`);
   if(!ready.rendererState.cpuLargeTimeline?.ok||ready.rendererState.cpuLargeTimeline.totalMs>30_000)throw new Error(`Packaged macOS 50k CPU timeline raster smoke failed: ${JSON.stringify(ready.rendererState.cpuLargeTimeline)}`);
   if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
+  if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
   if(childOutput.includes('Renderer console error:'))throw new Error(`Packaged macOS renderer logged an error:\n${childOutput}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
@@ -87,7 +88,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, and 50k CPU timeline raster ready (${JSON.stringify(ready.rendererState.cpuLargeTimeline)})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, and 50k CPU timeline raster ready (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createSourceSnapshot,listSourceSnapshots,readSourceFile,searchSource} from '../src/source-workspace.js';
+import {createSourceSnapshot,listSourceSnapshots,readSourceFile,searchSource,resolveSourceSymbol} from '../src/source-workspace.js';
 test('local source snapshots are immutable, searchable and never follow symlinks or build output',async t=>{
  const base=await mkdtemp(join(tmpdir(),'apw-source-test-')),source=join(base,'project'),store=join(source,'data','snapshots');t.after(()=>rm(base,{recursive:true,force:true}));
  await mkdir(join(source,'src'),{recursive:true});await mkdir(join(source,'build'),{recursive:true});await writeFile(join(source,'src','Screen.kt'),'class Screen {\n  fun render() {}\n}\n');await writeFile(join(source,'build','Generated.kt'),'class Generated');await writeFile(join(base,'secret.kt'),'secret outside');await symlink(join(base,'secret.kt'),join(source,'src','escape.kt'));
@@ -16,4 +16,16 @@ test('local source snapshots are immutable, searchable and never follow symlinks
 test('snapshot creation rejects empty sources and cleans incomplete artifacts',async t=>{
  const base=await mkdtemp(join(tmpdir(),'apw-source-empty-'));t.after(()=>rm(base,{recursive:true,force:true}));const root=join(base,'source'),store=join(base,'store');await mkdir(root);await writeFile(join(root,'readme.md'),'nothing');
  await assert.rejects(createSourceSnapshot(root,store),/没有可读取/);assert.deepEqual(await listSourceSnapshots(store),[]);await assert.rejects(createSourceSnapshot('relative',store),/绝对目录/);
+});
+test('source snapshots include only R8 mapping files from build outputs and resolve obfuscated frames',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'apw-source-mapping-')),source=join(base,'project'),store=join(base,'store');t.after(()=>rm(base,{recursive:true,force:true}));
+ await mkdir(join(source,'src/main/java/com/example'),{recursive:true});await mkdir(join(source,'app/build/outputs/mapping/release'),{recursive:true});await mkdir(join(source,'app/build/intermediates'),{recursive:true});
+ await writeFile(join(source,'src/main/java/com/example/Screen.java'),'package com.example;\npublic class Screen {\n  public void render() {}\n}\n');
+ await writeFile(join(source,'app/build/outputs/mapping/release/mapping.txt'),'com.example.Screen -> a.b:\n    1:1:void render():3:3 -> a\n');
+ await writeFile(join(source,'app/build/intermediates/large.txt'),'generated output that should not be captured');
+ const snapshot=await createSourceSnapshot(source,store);
+ assert.deepEqual(snapshot.files.map(file=>file.path),['app/build/outputs/mapping/release/mapping.txt','src/main/java/com/example/Screen.java']);
+ const result=await resolveSourceSymbol(store,snapshot.id,'a.b.a(SourceFile:1)');
+ assert.equal(result.deobfuscated.length,1);assert.equal(result.deobfuscated[0].originalMethod,'render');
+ assert.equal(result.matches[0].path,'src/main/java/com/example/Screen.java');assert.equal(result.matches[0].line,3);assert.equal(result.matches[0].mapping.path,'app/build/outputs/mapping/release/mapping.txt');
 });

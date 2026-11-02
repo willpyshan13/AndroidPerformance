@@ -2,7 +2,7 @@ import {constants} from 'node:fs';
 import {lstat, mkdir, open, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {basename, extname, isAbsolute, join, relative, sep} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
-import {parseSourceSymbol,findSourceDeclarations} from './source-symbols.js';
+import {parseSourceSymbol,findSourceDeclarations,deobfuscateJavaMethod} from './source-symbols.js';
 
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const digestPattern=/^[a-f0-9]{64}$/;
@@ -29,8 +29,8 @@ export async function createSourceSnapshot(source,root,{origin=null,commit=null,
    entries.sort((a,b)=>a.name.localeCompare(b.name));
    for(const entry of entries){if(++visited>maxEntries){truncated=true;reasons.add('扫描项数上限');break;}
     if(entry.isSymbolicLink()){skipped++;continue;}const path=join(directory,entry.name);
-    if(entry.isDirectory()){if(!excluded.has(entry.name))pending.push(path);continue;}
-    if(!entry.isFile()||!extensions.has(extname(entry.name).toLowerCase()))continue;
+    if(entry.isDirectory()){if(entry.name==='build'){try{const mappingDir=await realpath(join(path,'outputs','mapping'));if(inside(sourceRoot,mappingDir))pending.push(mappingDir);}catch{}}else if(!excluded.has(entry.name))pending.push(path);continue;}
+    if(!entry.isFile()||(!extensions.has(extname(entry.name).toLowerCase())&&entry.name.toLowerCase()!=='mapping.txt'))continue;
     if(files.length>=maxFiles){truncated=true;reasons.add('文件数量上限');break;}
     let handle,writing=false;try{
       const real=await realpath(path);if(!inside(sourceRoot,real)||inside(storage,real)){skipped++;continue;}
@@ -63,13 +63,20 @@ export async function searchSource(root,id,query){
  return {matches,truncated};
 }
 export async function resolveSourceSymbol(root,id,symbol){
- const parsed=parseSourceSymbol(symbol),meta=await getSourceSnapshot(root,id),matches=[];let total=0;
+ const parsed=parseSourceSymbol(symbol),meta=await getSourceSnapshot(root,id),matches=[];let total=0;const mappingFiles=meta.files.filter(file=>file.path.split('/').at(-1).toLowerCase()==='mapping.txt'),deobfuscated=[];let mappingTruncated=false;
+ for(const mappingFile of mappingFiles){const mapping=await readIndexedFile(root,id,mappingFile);for(const entry of deobfuscateJavaMethod(mapping.text,parsed)){if(deobfuscated.length===200){mappingTruncated=true;break;}deobfuscated.push({...entry,path:mappingFile.path});}if(mappingTruncated)break;}
+ const targets=deobfuscated.length?deobfuscated.map(mapping=>({parsed:parseSourceSymbol(`${mapping.originalClass}${mapping.originalMethod?`.${mapping.originalMethod}()` : ''}`),mapping})): [{parsed,mapping:null}];
+ const uniqueMatches=new Map();
  for(const file of meta.files){
   if(!['.java','.kt','.kts'].includes(extname(file.path).toLowerCase()))continue;
   const content=await readIndexedFile(root,id,file);
-  const found=findSourceDeclarations(content.text,file.path,parsed);total+=found.length;
-  matches.push(...found);matches.sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)||a.line-b.line);matches.length=Math.min(matches.length,200);
+  for(const target of targets){
+   const found=findSourceDeclarations(content.text,file.path,target.parsed);total+=found.length;
+   for(const candidate of found){const mapping=target.mapping,result={...candidate,score:candidate.score+(mapping?60:0),mapping:mapping?{obfuscatedClass:mapping.obfuscatedClass,obfuscatedMethod:mapping.obfuscatedMethod,originalClass:mapping.originalClass,originalMethod:mapping.originalMethod,path:mapping.path,line:mapping.line}:null};uniqueMatches.set(`${candidate.path}\0${candidate.line}\0${mapping?.path||''}\0${mapping?.line||''}`,result);}
+  }
  }
+ matches.push(...uniqueMatches.values());total=Math.max(total,matches.length);
  matches.sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)||a.line-b.line);
- return {matches,truncated:total>200,snapshotTruncated:meta.truncated,mode:'resolve'};
+ const truncated=total>200||mappingTruncated;matches.length=Math.min(matches.length,200);
+ return {matches,deobfuscated:deobfuscated.map(({originalClass,originalMethod,obfuscatedClass,obfuscatedMethod,line,path})=>({originalClass,originalMethod,obfuscatedClass,obfuscatedMethod,line,path})),truncated,snapshotTruncated:meta.truncated,mode:'resolve'};
 }

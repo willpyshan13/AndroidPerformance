@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {maskSource,parseSourceSymbol,findSourceDeclarations} from '../src/source-symbols.js';
+import {maskSource,parseSourceSymbol,findSourceDeclarations,deobfuscateJavaMethod} from '../src/source-symbols.js';
 
 test('symbol declarations ignore comments, strings and ordinary call sites',()=>{
  const text=`package com.example;
@@ -23,4 +23,18 @@ test('Kotlin overloads and class names yield candidates without pretending to id
  assert.equal(cls[0].line,2);assert.equal(cls[0].score,100);
  assert.throws(()=>parseSourceSymbol('native::method'),/原生符号/);
  assert.throws(()=>parseSourceSymbol(''),/无效/);
+});
+
+test('R8 and ProGuard mappings resolve obfuscated Java frames and filter by obfuscated line range',()=>{
+ const mapping=`com.example.Screen -> a.b:
+    1:1:void render():42:42 -> a
+    2:4:void other():50:52 -> b
+com.example.Worker -> c:
+    void run() -> a`;
+ const matches=deobfuscateJavaMethod(mapping,'a.b.a(SourceFile:1)');
+ assert.equal(matches.length,1);
+ assert.deepEqual({originalClass:matches[0].originalClass,originalMethod:matches[0].originalMethod,obfuscatedClass:matches[0].obfuscatedClass,obfuscatedMethod:matches[0].obfuscatedMethod,obfuscatedStart:matches[0].obfuscatedStart,originalStart:matches[0].originalStart},{originalClass:'com.example.Screen',originalMethod:'render',obfuscatedClass:'a.b',obfuscatedMethod:'a',obfuscatedStart:1,originalStart:42});
+ assert.equal(deobfuscateJavaMethod(mapping,'a.b.b(Foo.java:8)').length,0);
+ assert.equal(deobfuscateJavaMethod(mapping,'c.a()')[0].originalMethod,'run');
+ assert.equal(deobfuscateJavaMethod('com.example.Outer$Inner -> a.b$c:\n    void draw() -> a','a.b$c.a()')[0].originalClass,'com.example.Outer$Inner');
 });

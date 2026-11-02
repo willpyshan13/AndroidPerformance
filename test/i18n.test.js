@@ -152,6 +152,7 @@ test('Source workspace has English labels for local/remote snapshots, search sta
   const guidance=[
     '本地快照复制受支持的文本源码并以 SHA-256 校验；读取期间项目可能变化，本地快照不是原子 Git 提交。远程快照通过 GitHub 或 AOSP HTTPS 读取指定版本，保存提交标识，不执行项目脚本。源码搜索是文本匹配，不证明性能事件与结果存在因果关系。',
     '包含 Kotlin、Java、XML、C/C++ 等受支持文本；跳过构建目录、符号链接、单文件超过 512 KiB 的文件。最多 5,000 文件和 32 MiB。',
+    'Gradle 工程会额外包含 build/outputs/mapping 下的 mapping.txt，用于 R8 / ProGuard 混淆符号定位。',
     '仅支持 GitHub 和 android.googlesource.com 的公开仓库。需要本机 Git 和网络；浅克隆的临时下载量可能大于快照上限，不读取子模块或 Git LFS 对象。',
     '最多显示前 300 文件；可搜索全部快照文件。',
   ];

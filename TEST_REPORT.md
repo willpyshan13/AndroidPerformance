@@ -537,7 +537,7 @@ npm run test:device -- \
 
 - 堆分析页新增 CSV 导出，当前视图中的搜索词和对象数变化筛选会作用于完整匹配结果，不受表格每页最多显示 1,000 行的限制。当前类统计和基线对比使用各自列；不兼容类匹配会标记为不可比。导出含 UTF-8 BOM、CSV 双引号转义和表格公式前缀防护，并明确字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小。
 - 两项 `heap-export` 单元回归覆盖 CSV 头、字节解释、逗号 / 引号转义、公式注入防护和不可比行。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
-- 重建 macOS arm64 `.app` 并运行打包 smoke。首次 smoke 暴露新 ES module 未加入静态资源路由；加入路由后重建，renderer、16 个页面状态、Java、Trace Processor、Perfetto UI 及现有 CPU PNG 导出 smoke 均通过。CSV 序列化通过定向测试，打包页面静态模块路由通过 smoke；未在打包 smoke 内加载真实 HPROF 点击导出。
+- 重建 macOS arm64 `.app` 并运行打包 smoke。首次 smoke 暴露新 ES module 未加入静态资源路由；加入路由后重建，renderer、16 个页面状态、Java、Trace Processor、Perfetto UI 及现有 CPU PNG 导出 smoke 均通过。CSV 序列化通过定向测试，打包 smoke 使用 145 字节合成 HPROF 走完文件输入、HTTP 分析、类名筛选和 CSV 下载，检查 MIME、UTF-8 BOM、命中类保留和未命中类排除；该 smoke 不替代真实设备 HPROF 验证。
 
 ## 布局检查线索的结构化证据（2026-11-03）
 
@@ -546,5 +546,5 @@ npm run test:device -- \
 
 ## CPU 时间图打包 renderer 大样本验证（2026-11-03）
 
-- macOS arm64 打包 Electron renderer 载入 50,000 个合成样本，建立时间索引，等距投影 2,000 个样本，绘制 48,000 个栈帧并通过 `getImageData` 读取实际 Canvas 像素缓冲区。smoke 实测最终打包 smoke 实测约 46 ms：索引 29.2 ms、投影 1.2 ms、Canvas 命令 13 ms、像素读取 2.8 ms。前一轮约 49 ms；此为单机合成基准，不代表其他设备性能。
+- macOS arm64 打包 Electron renderer 载入 50,000 个合成样本，建立时间索引，等距投影 2,000 个样本，绘制 48,000 个栈帧并通过 `getImageData` 读取实际 Canvas 像素缓冲区。smoke 实测最终打包 smoke 实测约 47 ms：索引 29.9 ms、投影 1.2 ms、Canvas 命令 13.3 ms、像素读取 2.7 ms。前几轮测量约 46–50 ms；此为单机合成基准，不代表其他设备性能。
 - 打包 smoke 同时保留 PNG 导出、空 / 演示状态导航、菜单和资源检查；当前真实设备大型 perf.data 端到端数据仍待验证。

@@ -1,6 +1,5 @@
 package dev.androidperformance.agent
 
-import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import androidx.compose.runtime.Composable
@@ -30,6 +29,6 @@ fun ApwComposeRecompositionProbe(name: String) {
     }
     val count = remember(name) { AtomicLong() }
     SideEffect {
-        Log.d("APWCompose", "APW1|$processSessionId|$instanceId|$encodedName|${count.incrementAndGet()}|${SystemClock.elapsedRealtimeNanos()}")
+        Log.d("APWCompose", "APW1|$processSessionId|$instanceId|$encodedName|${count.incrementAndGet()}|${System.nanoTime()}|U")
     }
 }

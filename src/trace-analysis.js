@@ -8,9 +8,10 @@ import { promisify } from 'node:util';
 const exec=promisify(execFile),MAX=256*1024*1024;
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 export async function locateTraceProcessor(){
-  const paths=[process.env.TRACE_PROCESSOR_PATH,process.resourcesPath&&join(process.resourcesPath,'trace-processor','trace_processor_shell'),join(root,'tools','trace-processor','trace_processor_shell')].filter(Boolean);
+  const name=process.platform==='win32'?'trace_processor_shell.exe':'trace_processor_shell';
+  const paths=[process.env.TRACE_PROCESSOR_PATH,process.resourcesPath&&join(process.resourcesPath,'trace-processor',name),join(root,'tools','trace-processor',name)].filter(Boolean);
   for(const path of paths)try{await access(path,constants.X_OK);return path;}catch{}
-  throw new Error('未找到 Trace Processor；macOS 请运行 npm run prepare:trace-processor 或设置 TRACE_PROCESSOR_PATH');
+  throw new Error('未找到 Trace Processor；请运行 npm run prepare:trace-processor 或设置 TRACE_PROCESSOR_PATH');
 }
 export const TRACE_QUERY=`
 SELECT 'bounds' AS kind, 'trace' AS label, CAST(start_ts AS TEXT) AS count, CAST(end_ts AS TEXT) AS value FROM trace_bounds
@@ -194,6 +195,62 @@ export async function queryFrameTimeline(path,{packageName=null,locator=locateTr
  const filter=packageName?` AND (hex(CAST(p.name AS BLOB)) = '${hex}' OR substr(hex(CAST(p.name AS BLOB)),1,${prefix.length}) = '${prefix}')`:'';
  const query=FRAME_TIMELINE_QUERY.replace('WHERE a.dur >= 0 ORDER BY',`WHERE a.dur >= 0${filter} ORDER BY`);
  const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`FrameTimeline 查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseFrameTimeline(result.stdout);
+}
+
+const MONOTONIC_CLOCK_QUERY=`SELECT CAST(machine_id AS TEXT) AS machine_id,CAST(snapshot_id AS TEXT) AS snapshot_id,
+ hex(CAST(COALESCE(clock_name,'') AS BLOB)) AS clock_name_hex,
+ CAST(clock_value AS TEXT) AS clock_value,CAST(ts AS TEXT) AS trace_ts
+ FROM clock_snapshot WHERE clock_name='MONOTONIC'
+ ORDER BY snapshot_id LIMIT 10001`;
+
+export function parseMonotonicClockSnapshots(csv){
+ const rows=parseCsv(csv),header=rows.shift();
+ if(!header||header.join(',')!=='machine_id,snapshot_id,clock_name_hex,clock_value,trace_ts')throw new Error('时钟快照返回列无效');
+ const snapshots=[],machines=new Set();
+ for(const row of rows.slice(0,10000)){
+  if(row.length!==5||!(/^(?:\d+)?$/.test(row[0]))||!/^[0-9a-f]+$/i.test(row[1])||!/^[0-9a-f]+$/i.test(row[2])||!/^4d4f4e4f544f4e4943$/i.test(row[2])||!/^\d{1,19}$/.test(row[3])||! /^-?\d{1,19}$/.test(row[4]))throw new Error('Monotonic 时钟快照格式无效');
+  machines.add(row[0]||'local');snapshots.push({machineId:row[0]||null,snapshotId:Number(row[1]),monotonicNs:row[3],traceNs:row[4]});
+ }
+ if(machines.size>1)throw new Error('追踪包含多台设备的时钟快照，无法确认 Compose Probe 对应设备；请使用单设备追踪');
+ snapshots.sort((a,b)=>BigInt(a.monotonicNs)<BigInt(b.monotonicNs)?-1:BigInt(a.monotonicNs)>BigInt(b.monotonicNs)?1:0);
+ for(let i=1;i<snapshots.length;i++)if(BigInt(snapshots[i].monotonicNs)<=BigInt(snapshots[i-1].monotonicNs)||BigInt(snapshots[i].traceNs)<=BigInt(snapshots[i-1].traceNs))throw new Error('Monotonic 时钟快照不是严格递增序列');
+ return snapshots;
+}
+
+export function mapMonotonicToTraceNs(value,snapshots){
+ if(typeof value!=='string'||!/^\d{1,19}$/.test(value)||!Array.isArray(snapshots)||snapshots.length<2)return null;
+ const time=BigInt(value);if(time<BigInt(snapshots[0].monotonicNs)||time>BigInt(snapshots.at(-1).monotonicNs))return null;
+ for(let i=1;i<snapshots.length;i++){
+  const left=snapshots[i-1],right=snapshots[i],x0=BigInt(left.monotonicNs),x1=BigInt(right.monotonicNs);
+  if(time>x1)continue;
+  const y0=BigInt(left.traceNs),y1=BigInt(right.traceNs),mapped=y0+((time-x0)*(y1-y0))/(x1-x0);
+  return mapped.toString();
+ }
+ return null;
+}
+
+export async function queryComposeFrameCorrelation(path,{events,packageName=null,locator=locateTraceProcessor,runner=exec}={}){
+ if(!Array.isArray(events)||events.length>500)throw new Error('Compose 运行时事件最多支持 500 条');
+ const selected=[];
+ for(const event of events){
+  if(!event||typeof event!=='object'||typeof event.elapsedNs!=='string'||!/^\d{1,19}$/.test(event.elapsedNs)||typeof event.clock!=='string'||!['uptime','elapsed-realtime'].includes(event.clock)||typeof event.name!=='string'||event.name.length<1||event.name.length>300||/[^\x20-\uFFFF]/.test(event.name)||!['automatic-execution','automatic-skip','side-effect'].includes(event.measurement))throw new Error('Compose 运行时事件格式无效');
+  selected.push({elapsedNs:event.elapsedNs,clock:event.clock,name:event.name,measurement:event.measurement,count:Number.isSafeInteger(event.count)&&event.count>0?event.count:null});
+ }
+ const [timeline,snapshots]=await Promise.all([
+  queryFrameTimeline(path,{packageName,locator,runner}),
+  (async()=>{const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,MONOTONIC_CLOCK_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Monotonic 时钟查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseMonotonicClockSnapshots(result.stdout);})()
+ ]);
+ const clockMismatchCount=selected.filter(event=>event.clock!=='uptime').length,uptimeEvents=selected.filter(event=>event.clock==='uptime');
+ if(snapshots.length<2)return {available:false,reason:'追踪没有足够的 CLOCK_MONOTONIC 快照，不能把 Compose uptime 时间映射到追踪时间。',frames:timeline.frames,clockSnapshots:snapshots.length,matchedEventFramePairs:0,uniqueMatchedEvents:0,unmappedEvents:uptimeEvents.length,clockMismatchCount};
+ const frames=timeline.frames.map(frame=>({...frame,composeEvents:[]})),unmappedEvents=0;
+ let mappedEvents=0,matchedEventFramePairs=0;const uniqueMatched=new Set();
+ for(const [eventIndex,event] of selected.entries()){
+  if(event.clock!=='uptime')continue;
+  const traceNs=mapMonotonicToTraceNs(event.elapsedNs,snapshots);if(traceNs===null){unmappedEvents++;continue;}mappedEvents++;
+  const time=BigInt(traceNs);
+  for(const frame of frames){const start=BigInt(frame.tsNs),end=start+BigInt(frame.durationNs);if(time<start||time>end)continue;frame.composeEvents.push({...event,traceNs});matchedEventFramePairs++;uniqueMatched.add(eventIndex);}
+ }
+ return {available:true,frames:frames.filter(frame=>frame.composeEvents.length),frameCount:frames.length,clockSnapshots:snapshots.length,mappedEvents,unmappedEvents,clockMismatchCount,matchedEventFramePairs,uniqueMatchedEvents:uniqueMatched.size,truncated:timeline.truncated,note:'Compose uptime 时间通过追踪内置 CLOCK_MONOTONIC 快照映射至 Perfetto 时间轴；只表示时间区间重合，不证明 State 更新导致该帧或 Jank。'};
 }
 
 export function parseStartupTrace(csv){

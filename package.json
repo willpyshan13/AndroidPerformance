@@ -15,17 +15,21 @@
     "desktop": "electron .",
     "package:mac": "electron-builder --mac dir --arm64",
     "package:dmg": "electron-builder --mac dmg --arm64",
+    "package:dmg:x64": "electron-builder --mac dmg --x64",
     "package:win": "electron-builder --win nsis --x64",
     "package:linux": "electron-builder --linux AppImage",
+    "package:linux:arm64": "electron-builder --linux AppImage --arm64",
+    "prepare:desktop-tools": "node scripts/prepare-sdk-tools.js",
     "test": "node --test",
     "test:device": "node scripts/device-smoke.js",
     "prepare:perfetto-ui": "node scripts/prepare-perfetto-ui.js",
-    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/hprof-worker.js && node --check src/shark.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-trace-processor.js && node --check scripts/prepare-perfetto-ui.js && node --check scripts/prepare-shark.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/layout-agent.js && node --check src/agent-package.js && node --check src/compose-runtime.js",
+    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/hprof-worker.js && node --check src/shark.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-sdk-tools.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-trace-processor.js && node --check src/trace-processor-artifacts.js && node --check scripts/prepare-perfetto-ui.js && node --check scripts/prepare-shark.js && node --check scripts/prepare-ui-inspector.js && node --check src/compose-inspector.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/layout-agent.js && node --check src/agent-package.js && node --check src/compose-runtime.js",
     "prepare:adb": "bash scripts/prepare-adb.sh",
     "prepare:apk-tools": "node scripts/prepare-apk-tools.js",
     "prepare:simpleperf": "node scripts/prepare-simpleperf.js",
     "prepare:trace-processor": "node scripts/prepare-trace-processor.js",
-    "prepare:shark": "node scripts/prepare-shark.js"
+    "prepare:shark": "node scripts/prepare-shark.js",
+    "prepare:ui-inspector": "node scripts/prepare-ui-inspector.js"
   },
   "build": {
     "appId": "dev.androidperformance.workbench",
@@ -45,6 +49,11 @@
       {
         "from": "tools/java-runtime",
         "to": "java-runtime"
+      },
+      {
+        "from": "tools/ui-inspector",
+        "to": "ui-inspector",
+        "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"]
       }
     ],
     "directories": {
@@ -105,12 +114,30 @@
     },
     "win": {
       "icon": "desktop/resources/icon.png",
-      "target": "nsis"
+      "target": "nsis",
+      "extraResources": [
+        { "from": "tools/perfetto-ui", "to": "perfetto-ui", "filter": ["**/*"] },
+        { "from": "tools/shark-cli", "to": "shark-cli", "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"] },
+        { "from": "tools/java-runtime", "to": "java-runtime" },
+        { "from": "tools/ui-inspector", "to": "ui-inspector", "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"] },
+        { "from": "tools/platform-tools", "to": "platform-tools", "filter": ["adb.exe", "AdbWin*.dll", "NOTICE.txt", "source.properties"] },
+        { "from": "tools/apk-tools", "to": "apk-tools", "filter": ["aapt2.exe", "NOTICE.txt", "source.properties"] },
+        { "from": "tools/trace-processor", "to": "trace-processor", "filter": ["trace_processor_shell.exe", "LICENSE", "source.json"] }
+      ]
     },
     "linux": {
       "icon": "desktop/resources/icon.png",
       "category": "Development",
-      "target": "AppImage"
+      "target": "AppImage",
+      "extraResources": [
+        { "from": "tools/perfetto-ui", "to": "perfetto-ui", "filter": ["**/*"] },
+        { "from": "tools/shark-cli", "to": "shark-cli", "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"] },
+        { "from": "tools/java-runtime", "to": "java-runtime" },
+        { "from": "tools/ui-inspector", "to": "ui-inspector", "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"] },
+        { "from": "tools/platform-tools", "to": "platform-tools", "filter": ["adb", "NOTICE.txt", "source.properties"] },
+        { "from": "tools/apk-tools", "to": "apk-tools", "filter": ["aapt2", "NOTICE.txt", "source.properties"] },
+        { "from": "tools/trace-processor", "to": "trace-processor", "filter": ["trace_processor_shell", "LICENSE", "source.json"] }
+      ]
     },
     "nsis": {
       "oneClick": false,

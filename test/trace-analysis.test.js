@@ -134,6 +134,36 @@ test('FrameTimeline process filter is restricted and applied before result limit
  await assert.rejects(queryFrameTimeline('/trace',{packageName:"com.example.app' OR 1=1--",locator:async()=>'/tp',runner}),/包名无效/);
 });
 
+test('Compose uptime maps through monotonic clock snapshots without extrapolation',async()=>{
+ const {parseMonotonicClockSnapshots,mapMonotonicToTraceNs}=await import('../src/trace-analysis.js');
+ const csv='"machine_id","snapshot_id","clock_name_hex","clock_value","trace_ts"\n"","0","4d4f4e4f544f4e4943","500000000","1000000000"\n"","1","4d4f4e4f544f4e4943","600000000","1100000000"\n';
+ const snapshots=parseMonotonicClockSnapshots(csv);assert.equal(snapshots.length,2);assert.equal(mapMonotonicToTraceNs('515000000',snapshots),'1015000000');assert.equal(mapMonotonicToTraceNs('499999999',snapshots),null);assert.equal(mapMonotonicToTraceNs('600000001',snapshots),null);
+ assert.throws(()=>parseMonotonicClockSnapshots(csv.replace('"600000000"','"500000000"')),/严格递增/);
+ assert.throws(()=>parseMonotonicClockSnapshots(csv.replace('"","1"','"7","1"')),/多台设备/);
+});
+
+test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline frames',async(t)=>{
+ const {queryComposeFrameCorrelation}=await import('../src/trace-analysis.js');
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const v=n=>{n=BigInt(n);const b=[];do{let x=Number(n&127n);n>>=7n;if(n)x|=128;b.push(x);}while(n);return Buffer.from(b);};
+ const num=(field,n)=>Buffer.concat([v(field*8),v(n)]),msg=(field,b)=>Buffer.concat([v(field*8+2),v(b.length),b]);
+ const frameStart=Buffer.concat([num(1,123),num(2,42),num(3,43),num(4,1000),msg(5,Buffer.from('example layer')),num(6,2),num(7,0),num(9,64),num(10,1)]);
+ const framePacket=(ts,event)=>msg(1,Buffer.concat([num(8,ts),num(10,1),msg(76,event)]));
+ const expected=Buffer.concat([num(1,124),num(2,42),num(3,43),num(4,1000),msg(5,Buffer.from('example layer'))]);
+ // TracePacket.clock_snapshot: repeated Clock values, with BOOTTIME selected as the primary trace clock.
+ const clock=(id,timestamp)=>Buffer.concat([num(1,id),num(2,timestamp)]);
+ const snapshot=(mono,boot)=>Buffer.concat([msg(1,clock(3,mono)),msg(1,clock(6,boot)),num(2,6)]);
+ const clockPacket=(mono,boot)=>msg(1,Buffer.concat([num(8,boot),msg(6,snapshot(mono,boot))]));
+ const data=Buffer.concat([
+  clockPacket(500000000,1000000000),clockPacket(600000000,1100000000),
+  framePacket(1000000000,msg(3,expected)),framePacket(1016000000,msg(5,num(1,124))),framePacket(1000000000,msg(4,frameStart)),framePacket(1030000000,msg(5,num(1,123)))
+ ]);
+ const dir=await mkdtemp(join(tmpdir(),'compose-frame-correlation-')),path=join(dir,'sample.trace');try{
+  await writeFile(path,data);const result=await queryComposeFrameCorrelation(path,{events:[{elapsedNs:'515000000',clock:'uptime',name:'HomeScreen',measurement:'side-effect'}]});assert.equal(result.available,true,JSON.stringify(result));assert.equal(result.clockSnapshots,2);assert.equal(result.mappedEvents,1);assert.equal(result.uniqueMatchedEvents,1);assert.equal(result.matchedEventFramePairs,1);assert.equal(result.frames.length,1);assert.equal(result.frames[0].composeEvents[0].traceNs,'1015000000');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
 test('startup trace preserves precise timestamps and missing display times',async()=>{
  const {parseStartupTrace,queryStartupTrace}=await import('../src/trace-analysis.js');
  const csv='"startup_id","ts","dur","package_hex","type_hex","ttid","ttfd","upid"\n"3","9007199254740993","1000000","636F6D2E617070","636F6C64","500000","","12"\n';

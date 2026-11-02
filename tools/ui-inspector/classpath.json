@@ -1,0 +1,152 @@
+[
+  {
+    "file": "lib/00-lz4-java-1.11.4.jar",
+    "size": 899910,
+    "sha256": "58c8e0b813960d2a248e050c353baea73139b48a2ffc55382d42c69707e17325"
+  },
+  {
+    "file": "lib/01-jsr305-3.0.2.jar",
+    "size": 19936,
+    "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+  },
+  {
+    "file": "lib/02-gson-2.11.0.jar",
+    "size": 298435,
+    "sha256": "57928d6e5a6edeb2abd3770a8f95ba44dce45f3b23b7a9dc2b309c581552a78b"
+  },
+  {
+    "file": "lib/03-error_prone_annotations-2.36.0.jar",
+    "size": 19401,
+    "sha256": "77440e270b0bc9a249903c5a076c36a722c4886ca4f42675f2903a1c53ed61a5"
+  },
+  {
+    "file": "lib/04-failureaccess-1.0.2.jar",
+    "size": 4740,
+    "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064"
+  },
+  {
+    "file": "lib/05-guava-33.4.0-jre.jar",
+    "size": 3080298,
+    "sha256": "b918c98a7e44dbe94ebd9fe3e40cddaadb5a93e6a78eb6008b42df237241e538"
+  },
+  {
+    "file": "lib/06-listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+    "size": 322,
+    "sha256": "8f7efc8c5fb07d620062002e9e26c9bb6b3a56f35d1c55533d1ed973ed043148"
+  },
+  {
+    "file": "lib/07-j2objc-annotations-3.0.0.jar",
+    "size": 12467,
+    "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64"
+  },
+  {
+    "file": "lib/08-protobuf-java-3.25.5.jar",
+    "size": 1875414,
+    "sha256": "8540247fad9e06baefa8fb45eb313802d019f485f14300e0f9d6b556ed88e753"
+  },
+  {
+    "file": "lib/09-picocli-4.7.7.jar",
+    "size": 417640,
+    "sha256": "f86e30fffd10d2b13b8caa8d4b237a7ee61f2ffccf5b1941de718b765d235bf8"
+  },
+  {
+    "file": "lib/10-jna-platform-5.6.0.jar",
+    "size": 2735878,
+    "sha256": "9ecea8bf2b1b39963939d18b70464eef60c508fed8820f9dcaba0c35518eabf7"
+  },
+  {
+    "file": "lib/11-jna-5.14.0.jar",
+    "size": 1878533,
+    "sha256": "34ed1e1f27fa896bca50dbc4e99cf3732967cec387a7a0d5e3486c09673fe8c6"
+  },
+  {
+    "file": "lib/12-checker-qual-3.43.0.jar",
+    "size": 231525,
+    "sha256": "3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6"
+  },
+  {
+    "file": "lib/13-annotations-23.0.0.jar",
+    "size": 29371,
+    "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05"
+  },
+  {
+    "file": "lib/14-kotlin-stdlib-jdk7-2.2.10.jar",
+    "size": 945,
+    "sha256": "cf95eccc6cc784dff479dee0b8834f3584b93292cc5d91972e82f5d7b9e13e3b"
+  },
+  {
+    "file": "lib/15-kotlin-stdlib-jdk8-2.2.10.jar",
+    "size": 951,
+    "sha256": "8974bfdd08b1d81843fe8d11f0729ab6e5b3c1f88d671ebe0c006358129ce149"
+  },
+  {
+    "file": "lib/16-kotlin-stdlib-2.2.10.jar",
+    "size": 1750374,
+    "sha256": "9c67cc79efd6b9215b49d2a4308f5f3433537376c7c88e89bdd6729bd096e61a"
+  },
+  {
+    "file": "lib/17-kotlinx-coroutines-core-jvm-1.10.2.jar",
+    "size": 1479317,
+    "sha256": "5ca175b38df331fd64155b35cd8cae1251fa9ee369709b36d42e0a288ccce3fd"
+  },
+  {
+    "file": "lib/18-kotlinx-coroutines-core-1.9.0.jar",
+    "size": 136423,
+    "sha256": "7089c33c145865020760d3dbca5e4634133cc3dd7feb926e830f6de6ede28ac6"
+  },
+  {
+    "file": "lib/19-layout_inspector_compose_java_proto_unshaded.jar",
+    "size": 463553,
+    "sha256": "702f53c6542a36ae8bc3070dfec74c822420f560bf35e55eb22f504ae4e1f5b6"
+  },
+  {
+    "file": "lib/20-adblib.tools.jar",
+    "size": 2071656,
+    "sha256": "30743f48ca9f73178103a6235af2572cf7318f6acaf67bf95ae008e4cae6360c"
+  },
+  {
+    "file": "lib/21-adblib.jar",
+    "size": 1884764,
+    "sha256": "0f0b66b739f059ee2fecdde3b8027caa6d7d27df49a9094bb3f0eadb1c3b1020"
+  },
+  {
+    "file": "lib/22-annotations.jar",
+    "size": 17665,
+    "sha256": "3e32601befd45311055dd213a5df5446252c8344d9c0c9dec036f0e7867b5f8d"
+  },
+  {
+    "file": "lib/23-tools.common.jar",
+    "size": 655415,
+    "sha256": "cff9371d6687bad31d5e1d2929b8519c3999d8a09c87959fc6c35ae533c6aa6d"
+  },
+  {
+    "file": "lib/24-dump-ui.jar",
+    "size": 337,
+    "sha256": "05959643f37075ed9512c730dbb7deea6fb4a66bb46bb15e59c2635e5e3c8605"
+  },
+  {
+    "file": "lib/25-libcli.jar",
+    "size": 7597219,
+    "sha256": "77627ba26f4526d8a465e6667d4f2eb107b54664064000b6142065d7cc27d9da"
+  },
+  {
+    "file": "lib/26-libcommon.jar",
+    "size": 3317,
+    "sha256": "044cfe503a6f14833c44c7118c1f9b540677f11f8d989bfae39ef755ef267a30"
+  },
+  {
+    "file": "lib/27-libui_inspector_protocol_java_proto-nojarjar.jar",
+    "size": 396179,
+    "sha256": "276ead89152b6a9012c77832a8dd2de89143d041d0c8488e5e03013cd0a1038e"
+  },
+  {
+    "file": "lib/28-libcore.jar",
+    "size": 413754,
+    "sha256": "202a1c8a176e46b0a0719809771541766385a626c9bcfc91d116823d4173ddeb"
+  },
+  {
+    "file": "lib/29-cli.res.jar",
+    "size": 7548449,
+    "sha256": "36f50598074047f161f154841367de36ef721a2ffc592233e12ce78e90ed73e9"
+  }
+]

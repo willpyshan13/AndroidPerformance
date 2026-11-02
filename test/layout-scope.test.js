@@ -55,6 +55,14 @@ test('layout comparison pairs only unique package/resource IDs and reports uncer
  assert.equal(result.unkeyedBefore,1);assert.equal(result.unkeyedAfter,1);
 });
 
+test('layout comparison pairs Compose semantics by unique TestTag and flags repeated tags',()=>{
+ const n=(tag,text,className='ComposeSemanticsNode')=>({id:0,depth:0,className,attributes:{package:'','resource-id':'','compose-test-tag':tag,text}});
+ const result=compareLayouts([n('checkout.submit','继续'),n('duplicate','旧一'),n('duplicate','旧二'),n('ignored','旧 View','Button')],[n('checkout.submit','确认'),n('duplicate','新一'),n('ignored','新 View','Button')]);
+ assert.deepEqual(result.changes.map(change=>[change.id,change.kind]),[['compose-test-tag:checkout.submit','changed']]);
+ assert.deepEqual(result.ambiguous,['compose-test-tag:duplicate']);
+ assert.equal(result.unkeyedBefore,1);assert.equal(result.unkeyedAfter,1);
+});
+
 test('layout timeline summary separates additions, removals, changes and ambiguous IDs',()=>{
  const node=(id,text)=>({id:0,depth:0,attributes:{package:'app','resource-id':id,text}});
  assert.deepEqual(summarizeLayoutChanges([node('same','old'),node('gone','x'),node('repeat','a'),node('repeat','b')],[node('same','new'),node('added','y'),node('repeat','c')]),{added:1,removed:1,changed:1,ambiguous:1});

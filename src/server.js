@@ -7,12 +7,13 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Adb, locateAdb } from './adb.js';
 import { parseFrames } from './parsers.js';
 import { validateRecord } from './records.js';
+import { captureComposeInspector, resolveComposeInspectorResources } from './compose-inspector.js';
 import { locateAapt2 } from './apk.js';
 import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryComposeFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -33,7 +34,7 @@ async function readBody(req) {
   catch { throw Object.assign(new Error('JSON 格式错误'), { status: 400 }); }
 }
 
-export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath }) {
+export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath, composeInspectorDir, composeInspectorJavaPath }) {
   const gpuDir=join(dataDir,'gpu-artifacts');
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
@@ -43,6 +44,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   let gpuBusy=false;
   let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
+  const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):null)});
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -86,7 +88,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       if (req.method === 'GET') {
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
-        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, platform: process.platform, desktop, dataDir });
+        if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
           const size=(await stat(traceSession.path)).size;res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});const stream=createReadStream(traceSession.path);stream.on('error',()=>res.destroy());return stream.pipe(res);
@@ -224,6 +226,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           try { return json(await analyzeApkUpload(req,apkAnalyzer)); } finally { apkBusy=false; }
         }
         const body = await readBody(req);
+        if(path==='/api/layout/compose-inspector')return json(await captureComposeInspector(adb,await composeInspectorResources,body.serial,body.packageName,{continuationToken:body.continuationToken??null,includeResolutionStack:body.includeResolutionStack===true}));
         if(path==='/api/cpu-profile/archive/load'){
           if(perfBusy)return json({error:'已有 CPU 文件正在处理'},409);
           perfBusy=true;let handedOff=false;try{
@@ -328,6 +331,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
           traceBusy=true;try{return json(await queryFrameTimeline(traceSession.path,{packageName:body.packageName??null}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/compose-frame-correlation'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryComposeFrameCorrelation(traceSession.path,{events:body.events,packageName:body.packageName??null}));}finally{traceBusy=false;}
         }
         if (path === '/api/trace/window') {
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

@@ -1,0 +1,10 @@
+Android Studio UI Inspector CLI
+Copyright 2026 The Android Open Source Project.
+Licensed under the Apache License, Version 2.0. The full license text is in LICENSE-2.0.txt.
+Source revision and build target are recorded in source.json.
+
+The JAR runtime dependencies are pinned by filename and SHA-256 in classpath.json. Exact Maven coordinates and license identifiers are listed in DEPENDENCIES.md. Apache-2.0 and protobuf's BSD-3-Clause texts are included here; the Checker Framework MIT notice and JNA dual-license notice are retained inside their respective JARs.
+
+Android Studio adblib, adblib-tools, tools.common, UI Inspector CLI/core/common, protocol classes and Compose inspection protocol classes are Apache-2.0, Android Open Source Project. JNA is dual-licensed; this distribution uses its Apache-2.0 license option.
+
+These artifacts are used locally to inspect a connected Android device. The application does not upload the resulting hierarchy or parameter values.

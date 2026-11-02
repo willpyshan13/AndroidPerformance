@@ -11,6 +11,13 @@ test('Compose probe parser aggregates per-instance cumulative counts without mer
  const result=parseComposeRecompositionLog(raw,{serial:'device',packageName:'com.example.app',uid:10001,timestamp:123});
  assert.deepEqual(result.composables,[{name:'Card',measurement:'side-effect',recompositions:5,instances:1,lastElapsedNs:'400'},{name:'FeedScreen',measurement:'side-effect',recompositions:5,instances:2,lastElapsedNs:'300'}]);
  assert.equal(result.eventCount,4);assert.equal(result.events.length,4);assert.equal(result.source,'adb-logcat');assert.match(result.note,/不代表实际重组/);
+ assert.equal(result.events[0].clock,'elapsed-realtime');
+});
+
+test('Compose probe parser recognizes tagged uptime timestamps for frame correlation',()=>{
+ const tagged=`APW1|${'9'.repeat(32)}|${'a'.repeat(32)}|${name64}|1|50000000|U`;
+ const result=parseComposeRecompositionLog(tagged);
+ assert.equal(result.events[0].clock,'uptime');assert.deepEqual(result.clockSources,['uptime']);assert.equal(result.invalidRecords,0);
 });
 
 test('automatic Compose execution records aggregate by function without inventing instance identities',()=>{
@@ -21,6 +28,7 @@ test('automatic Compose execution records aggregate by function without inventin
   {name:'Card',measurement:'automatic-execution',executions:1,skips:0,instances:null,lastElapsedNs:'300'}
  ]);
  assert.equal(result.events[0].measurement,'automatic-execution');assert.equal(result.events[0].instanceId,null);
+ assert.equal(result.events[0].clock,'elapsed-realtime');
  assert.match(result.note,/非跳过分支/);
 });
 
@@ -51,6 +59,13 @@ test('automatic Compose group keys connect call-tree nodes to runtime compositio
  ].join('\n'));
  assert.deepEqual(result.callTree,[{composeKey:-100,name:'Screen',executions:1,skips:0,recursive:false,children:[{composeKey:-200,name:'Card',executions:1,skips:1,recursive:false,children:[]}]}]);
  assert.equal(result.events[1].parentGroupKey,-100);assert.equal(result.events[1].groupKey,-200);assert.equal(result.invalidRecords,0);
+});
+
+test('automatic Compose parser retains uptime clock marker on hierarchical records',()=>{
+ const enc=value=>Buffer.from(value).toString('base64url'),session='c'.repeat(32);
+ const tagged=`APW2|${session}|${enc('Screen')}|1|50000000|-|-|1|-|U`;
+ const result=parseComposeRecompositionLog(tagged);
+ assert.equal(result.events[0].clock,'uptime');assert.equal(result.invalidRecords,0);
 });
 
 test('Compose probe parser rejects malformed records and bounds event details',()=>{

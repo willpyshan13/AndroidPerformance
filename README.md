@@ -43,8 +43,8 @@
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
-| 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可对选定 Composable 显式插桩并读取运行时执行次数；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
-| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
+| 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
+| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；运行已安装的 instrumentation 后，确认标准报告更新时自动载入 | AndroidX Benchmark JSON / ADB |
@@ -85,13 +85,14 @@ ADB_PATH=/path/to/platform-tools/adb PORT=4319 npm start
 ```sh
 npm run check         # 语法检查
 npm test              # 自动测试
-npm run package:mac   # macOS arm64 .app
-npm run package:dmg   # macOS arm64 DMG 和 .app
-npm run package:win   # Windows x64 NSIS
-npm run package:linux # Linux AppImage
+npm run package:mac       # macOS arm64 .app
+npm run package:dmg       # macOS arm64 DMG 和 .app
+npm run package:dmg:x64   # macOS x64 DMG 和 .app
+npm run package:win       # Windows x64 NSIS
+npm run package:linux     # Linux x64 AppImage
 ```
 
-Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可使用 `npx electron-builder --mac dmg --x64`，也需要在对应机器上验证。
+Windows / Linux 的原生工具准备与打包配置已加入 GitHub Actions 矩阵，macOS x64 也有独立目标；这些非当前主机目标须等工作流在原生 runner 执行后才算验证。
 
 ## 数据与隐私
 
@@ -99,7 +100,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 - 安装版记录位于系统应用数据目录的 `records/`；可从菜单 **文件 → 打开记录目录** 查看。源码桌面模式使用 `data/desktop-profile/records/`，浏览器模式使用 `data/`。
 - 不调用 AI，也不自动上传采集文件。HAR 导入会丢弃查询参数、凭据、Headers、Cookies 和正文；路径与布局快照仍可能包含业务内容，保存前请按需检查。
 - 界面通过仅监听 `127.0.0.1` 的服务与后端通信，并检查 Host、Origin 和启动时生成的访问令牌。Electron 渲染进程启用 sandbox 与 context isolation。
-- 实时采样最多保存 1,800 条，图表显示最近 120 条。APK 上传上限为 512 MiB、50,000 个文件、8 GiB 解压后总大小；其他导入文件和记录请求上限为 12 MB。手动导入布局 XML 上限为 2 MB；debug View Agent 回包上限为 8 MiB，最多解析 10,000 节点；HAR 上限为 50,000 个请求，表格最多显示 1,000 个匹配请求。
+- 实时采样最多保存 1,800 条，图表显示最近 120 条。APK 上传上限为 512 MiB、50,000 个文件、8 GiB 解压后总大小；其他导入文件和记录请求上限为 12 MB。手动导入布局 XML 上限为 2 MB；布局采集档案最大 48 MiB，含最多 8 MiB XML 与 24 MiB PNG；debug View Agent 回包上限为 8 MiB，最多解析 10,000 节点；HAR 上限为 50,000 个请求，表格最多显示 1,000 个匹配请求。
 - 导入文件中声明的来源属于元数据，不能作为真实性鉴定。
 
 ## 结果解读与范围
@@ -114,7 +115,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 - **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照只包含受支持的文本源码，跳过符号链接及构建目录，最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位按声明名、文件中的类名和包名排列候选，无法证明方法所属类、区分重载或还原混淆与内联；请核对版本和源码。原生符号使用文本搜索。
 - **APK**：一次分析一个 APK；split APK 的结果只涵盖导入的文件。证书页面展示签名结构和证书信息，**不验证签名完整性或证书信任链**。
 
-仍需补齐：完整 Compose Runtime Inspector 的实例级函数树、State Reads 因果关系和帧关联，应用级能耗归因及未经接入的应用网络采集。布局页可在 debug 构建中接入应用内 Agent；兼容的 Compose UI 运行时会采集合并/未合并 Semantics 节点，也可反射读取兼容 Compose 版本的运行时组合组树及按 RecomposeScope 聚合的 State 读取关联数（不读取 State 值）。手动 probe 可统计指定 Composable 的 SideEffect 提交；Kotlin 2.2.21 编译器插件可统计本模块 Composable 函数体执行与 Composer 跳过次数，并提供按函数和可用组 key 聚合的父子调用树，组 key 可与 Agent 组合组节点对照；未接入时使用 UIAutomator 回退。自动插件不能覆盖未重编译的依赖或区分同名实例，部分 lambda 没有组 key；Agent 的 State 关联不代表因果，也没有帧关联；View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列；嵌入式 Perfetto UI 的查询仍不会自动进入工作台报告。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
+仍需补齐：State Reads 因果关系、应用级能耗归因及未经接入的应用网络采集。布局页可在 debug 构建中接入应用内 Agent；兼容的 Compose UI 运行时会采集合并/未合并 Semantics 节点，也可反射读取兼容 Compose 版本的运行时组合组树及按 RecomposeScope 聚合的 State 读取关联数（不读取 State 值）。手动 probe 可统计指定 Composable 的 SideEffect 提交；Kotlin 2.2.21 编译器插件可统计本模块 Composable 函数体执行与 Composer 跳过次数，并提供按函数和可用组 key 聚合的父子调用树，组 key 可与 Agent 组合组节点对照；未接入时使用 UIAutomator 回退。自动插件不能覆盖未重编译的依赖或区分同名实例，部分 lambda 没有组 key；Agent 的 State 关联不代表因果；新版 runtime event 可通过追踪内的 CLOCK_MONOTONIC 快照映射至 Perfetto FrameTimeline，并分别与 gfxinfo 帧区间做时间重合关联；旧版 elapsedRealtime 事件不会参与 Perfetto 映射；时间重合不证明因果或同一设备来源，需自行确认日志与追踪来自同一设备及交互时段；View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列；嵌入式 Perfetto UI 的查询仍不会自动进入工作台报告。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
 
 ## 验证记录
 
@@ -151,7 +152,7 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 
 布局检查还可导入 Compose Compiler 生成的 `composables.txt`、`composables.csv` 和 `classes.txt`，按函数、包、参数或类字段搜索 restartable/skippable 状态与静态稳定性推断。该报告不含应用运行时重组/跳过次数；运行时数据仍需单独采集，静态报告也不能单独证明性能问题。[Android Compose 稳定性诊断文档](https://developer.android.com/develop/ui/compose/performance/stability/diagnose)。
 
-在布局页下载 Agent 源码包，按包内指南接入目标应用的 debug 构建，再使用相同的临时令牌采集。Agent 只在应用进程内读取 View 与可兼容的 Compose Semantics 树，不增加 Android 权限；正式 release 不应包含 Agent 或令牌。可选的 Compose probe 需在目标函数中显式调用并受 debug 构建保护，统计 SideEffect 提交与实例；可选编译器插件自动统计本次编译模块的函数体执行与 Composer 跳过，但需要匹配 Kotlin 2.2.21 编译器。Agent 还可读取组合组树及按 RecomposeScope 统计的 State 关联数（不读取 State 值）；调用树中的匹配 Group key 可定位对应 Runtime 组，多实例会列出候选供选择。这不是完整 Composable 调用树，也不提供帧关联或 State Reads 因果。安全窗口和部分硬件合成内容也无法保证截图完整。
+在布局页下载 Agent 源码包，按包内指南接入目标应用的 debug 构建，再使用相同的临时令牌采集。Agent 只在应用进程内读取 View 与可兼容的 Compose Semantics 树，不增加 Android 权限；正式 release 不应包含 Agent 或令牌。可选的 Compose probe 需在目标函数中显式调用并受 debug 构建保护，统计 SideEffect 提交与实例；可选编译器插件自动统计本次编译模块的函数体执行与 Composer 跳过，但需要匹配 Kotlin 2.2.21 编译器。Agent 还可读取组合组树及按 RecomposeScope 统计的 State 关联数（不读取 State 值）；调用树中的匹配 Group key 可定位对应 Runtime 组，多实例会列出候选供选择。布局页还集成完整 Compose Inspector，可读取实例级 Compose 树、运行时参数与 Modifier、源码位置、merged / unmerged Semantics 和 View 属性，并支持大参数续读、JSON 导出、截图边界高亮，以及定位到已有源码快照中的文件候选。它要求 Android 10（API 29）或更高版本及可注入的目标应用；连接的 API 25 设备会在注入前被门控拒绝。资源解析栈为可选项，首次使用可能修改 `debug_view_attributes_application_package` 并重启 Activity。参数可能含应用展示的数据，只在本机处理。截图在检查器响应后采集，动画期间边界可能错位；快照不提供 State Reads 因果或帧关联，安全窗口和部分硬件合成内容也无法保证完整显示。
 
 启动页面可对已导入的 Perfetto 追踪查询启动区间和 TTID/TTFD，也可按里程碑窗口分别查看已记录的 GC、JIT、类加载、类验证、类初始化及 dex2oat 切片重叠；需要追踪包含相关 Android 事件，TTFD 还依赖应用的 fully drawn 报告。ART 切片时长不是线程 CPU 时间，事件间可能重叠，缺失不代表耗时为零。启动数据不会自动与启动实验逐次配对，已用 Perfetto 官方 Android 12 冷启动样本验证；本机设备采集仍待验证。
 

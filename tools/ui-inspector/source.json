@@ -1,0 +1,9 @@
+{
+  "name": "Android Studio UI Inspector CLI",
+  "source": "https://android.googlesource.com/platform/tools/base/+/45628254f0f8a9bb3755d73f3d30ca78fbb2153d/ui-inspector",
+  "revision": "45628254f0f8a9bb3755d73f3d30ca78fbb2153d",
+  "target": "//tools/base/ui-inspector/cli:dump-ui",
+  "runtimeVersion": "Android Studio tools/base 2026-11-02 snapshot",
+  "license": "Apache-2.0",
+  "packaging": "Bazel runtime classpath and device resources"
+}

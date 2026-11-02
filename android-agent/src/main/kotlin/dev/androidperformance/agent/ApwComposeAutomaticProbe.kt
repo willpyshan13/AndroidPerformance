@@ -1,6 +1,5 @@
 package dev.androidperformance.agent
 
-import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import java.nio.charset.StandardCharsets
@@ -65,6 +64,6 @@ private fun recordAutomaticEvent(prefix: String, name: String, counters: Concurr
     val groupKeyField = frame?.groupKey?.toString() ?: "-"
     Log.d(
         "APWCompose",
-        "$prefix|$automaticProbeSessionId|$encodedName|${counters.computeIfAbsent(name) { AtomicLong() }.incrementAndGet()}|${SystemClock.elapsedRealtimeNanos()}|$encodedParent|$parentKeyField|$edgeCount|$groupKeyField"
+        "$prefix|$automaticProbeSessionId|$encodedName|${counters.computeIfAbsent(name) { AtomicLong() }.incrementAndGet()}|${System.nanoTime()}|$encodedParent|$parentKeyField|$edgeCount|$groupKeyField|U"
     )
 }

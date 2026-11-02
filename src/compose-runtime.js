@@ -19,7 +19,9 @@ export function parseComposeRecompositionLog(raw, {serial, packageName, pid, tim
     const selected = markers[0];
     const marker = selected?.prefix, recordStart = selected?.start ?? -1;
     if (recordStart < 0) continue;
-    const fields = line.slice(recordStart + marker.length).trim().split('|');
+    const fields = line.slice(recordStart + marker.length).trim().split('|'), taggedUptime = fields.at(-1) === 'U';
+    if (taggedUptime) fields.pop();
+    const clock = taggedUptime ? 'uptime' : 'elapsed-realtime';
     if (selected.measurement !== 'side-effect') {
       const legacyExecution = selected.measurement === 'automatic-execution' && fields.length === 3;
       const hierarchical = fields.length === 6 || fields.length === 8, keyedHierarchy = fields.length === 8;
@@ -51,7 +53,7 @@ export function parseComposeRecompositionLog(raw, {serial, packageName, pid, tim
         edge[edgeCounter] = Math.max(edge[edgeCounter], edgeCount);
         invocationEdges.set(edgeKey, edge);
       }
-      events.push({sessionId, name, parentName, parentGroupKey, groupKey, measurement: selected.measurement, instanceId: null, count, elapsedNs});
+      events.push({sessionId, name, parentName, parentGroupKey, groupKey, measurement: selected.measurement, instanceId: null, count, elapsedNs, clock});
       continue;
     }
     if (fields.length !== 5) { invalid++; continue; }
@@ -65,7 +67,7 @@ export function parseComposeRecompositionLog(raw, {serial, packageName, pid, tim
     activeSession = sessionId;
     const key = `${sessionId}\0${name}\0${instanceId}`, previous = instances.get(key);
     if (!previous || count > previous.count) instances.set(key, {sessionId, name, instanceId, count, elapsedNs});
-    events.push({sessionId, name, measurement: selected.measurement, instanceId, count, elapsedNs});
+    events.push({sessionId, name, measurement: selected.measurement, instanceId, count, elapsedNs, clock});
   }
   const grouped = new Map();
   for (const value of instances.values()) {
@@ -99,7 +101,7 @@ export function parseComposeRecompositionLog(raw, {serial, packageName, pid, tim
       return count(b)-count(a) || a.name.localeCompare(b.name);
     }),
     callTree: (childrenByParent.get(callParentKey(null, null)) || []).map(edge => buildCallNode(edge)),
-    events: orderedEvents, eventCount: events.length, truncated: events.length > MAX_EVENTS, invalidRecords: invalid,
-    note: '自动插桩分别统计 Compose 编译器生成的非跳过分支执行次数与 skip 分支次数，执行次数包含首次组合，且无法区分同名多实例；支持新版事件时按函数名聚合父子调用关系（日志环形缓冲区可能使树不完整）。显式 probe 统计 SideEffect 提交次数并可区分实例，但不代表实际重组。State Reads 与 Jank 因果仍不可用。'
+    events: orderedEvents, clockSources: [...new Set(orderedEvents.map(event => event.clock))], eventCount: events.length, truncated: events.length > MAX_EVENTS, invalidRecords: invalid,
+    note: '自动插桩分别统计 Compose 编译器生成的非跳过分支执行次数与 skip 分支次数，执行次数包含首次组合，且无法区分同名多实例；支持新版事件时按函数名聚合父子调用关系（日志环形缓冲区可能使树不完整）。显式 SideEffect 提交次数不代表实际重组。新 probe 使用设备 uptime 纳秒标记，可与 gfxinfo 帧区间作时间重合关联；旧格式时钟包含休眠时间，不能安全对齐。时间重合和 RecomposeScope State 关联均不证明 State Reads 或 Jank 因果。'
   };
 }

@@ -1,3 +1,90 @@
+const LAYOUT_ARCHIVE_TYPE = 'android-performance-layout-capture';
+const MAX_LAYOUT_ARCHIVE_XML_BYTES = 8 * 1024 * 1024;
+const MAX_LAYOUT_ARCHIVE_SCREENSHOT_BYTES = 24 * 1024 * 1024;
+
+export function correlateComposeEventsToFrames(events, frames) {
+  if (!Array.isArray(events) || !Array.isArray(frames) || !frames.length) return {available:false,reason:'请同时载入 Compose 运行时记录和逐帧 gfxinfo 数据。',frames:[],matchedEventCount:0,clockMismatchCount:0};
+  const timedFrames=frames.flatMap(frame=>{
+    const start=frame?.timestamps?.IntendedVsync||frame?.startNsExact,end=frame?.timestamps?.FrameCompleted;
+    if(!/^\d{1,19}$/.test(start||'')||!/^\d{1,19}$/.test(end||''))return [];
+    const startNs=BigInt(start),endNs=BigInt(end);return endNs>startNs?[{frame,startNs,endNs,events:[]}]:[];
+  });
+  if(!timedFrames.length)return {available:false,reason:'当前帧数据没有可用的逐帧起止时间戳。',frames:[],matchedEventCount:0,clockMismatchCount:0};
+  let clockMismatchCount=0,invalidCount=0,matchedEventCount=0;const matchedEventIndices=new Set();
+  for(const [eventIndex,event] of events.entries()){
+    if(event?.clock!=='uptime'){clockMismatchCount++;continue;}
+    if(typeof event.elapsedNs!=='string'||!/^\d{1,19}$/.test(event.elapsedNs)){invalidCount++;continue;}
+    const time=BigInt(event.elapsedNs),matches=timedFrames.filter(candidate=>time>=candidate.startNs&&time<=candidate.endNs);
+    for(const frame of matches){frame.events.push({name:String(event.name||'未知 Composable').slice(0,300),measurement:event.measurement||'unknown',count:Number.isSafeInteger(event.count)?event.count:null,elapsedNs:event.elapsedNs});matchedEventCount++;matchedEventIndices.add(eventIndex);}
+  }
+  return {available:true,frames:timedFrames.filter(item=>item.events.length).map(({frame,events:matched})=>({index:frame.index,durationMs:frame.durationMs,overBudget:frame.overBudget,events:matched})),matchedEventCount,uniqueMatchedEventCount:matchedEventIndices.size,clockMismatchCount,invalidCount,frameCount:timedFrames.length};
+}
+
+export function createLayoutCaptureArchive(layout) {
+  if (!layout || typeof layout.xml !== 'string' || new TextEncoder().encode(layout.xml).length > MAX_LAYOUT_ARCHIVE_XML_BYTES || !layout.xml.includes('<hierarchy')) {
+    throw new Error('当前布局 XML 无效或超过 8 MiB');
+  }
+  let screenshot = null;
+  if (layout.screenshot !== null && layout.screenshot !== undefined) {
+    if (typeof layout.screenshot !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(layout.screenshot) || layout.screenshot.length % 4 !== 0) throw new Error('当前布局截图编码无效');
+    let bytes; try { bytes = Uint8Array.from(atob(layout.screenshot), character => character.charCodeAt(0)); } catch { throw new Error('当前布局截图编码无效'); }
+    if (bytes.length < 24 || bytes.length > MAX_LAYOUT_ARCHIVE_SCREENSHOT_BYTES || [...bytes.slice(0, 8)].join(',') !== '137,80,78,71,13,10,26,10') throw new Error('当前布局截图不是有效 PNG 或超过 24 MiB');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), width = view.getUint32(16), height = view.getUint32(20);
+    if (!width || !height || width * height > 50_000_000 || (layout.imageSize && (layout.imageSize.width !== width || layout.imageSize.height !== height))) throw new Error('当前布局截图尺寸无效或与元数据不一致');
+    screenshot = layout.screenshot;
+  }
+  return {
+    schemaVersion: 1,
+    type: LAYOUT_ARCHIVE_TYPE,
+    exportedAt: Date.now(),
+    capture: {
+      source: String(layout.source || 'unknown').slice(0, 40),
+      timestamp: Number.isSafeInteger(layout.timestamp) ? layout.timestamp : null,
+      serial: typeof layout.serial === 'string' ? layout.serial.slice(0, 256) : null,
+      packageName: typeof layout.packageName === 'string' ? layout.packageName.slice(0, 256) : null,
+      api: Number.isSafeInteger(layout.api) ? layout.api : null,
+      densityDpi: Number.isSafeInteger(layout.densityDpi) ? layout.densityDpi : null,
+      imageSize: layout.imageSize && Number.isSafeInteger(layout.imageSize.width) && Number.isSafeInteger(layout.imageSize.height) ? layout.imageSize : null,
+      warning: typeof layout.warning === 'string' ? layout.warning.slice(0, 2000) : null,
+      note: typeof layout.note === 'string' ? layout.note.slice(0, 2000) : null,
+      xml: layout.xml,
+      screenshot,
+    },
+  };
+}
+
+export function parseLayoutCaptureArchive(document) {
+  if (!document || document.schemaVersion !== 1 || document.type !== LAYOUT_ARCHIVE_TYPE || !document.capture || typeof document.capture !== 'object') throw new Error('不是受支持的布局采集档案');
+  const capture = document.capture;
+  if (typeof capture.xml !== 'string' || new TextEncoder().encode(capture.xml).length > MAX_LAYOUT_ARCHIVE_XML_BYTES || !capture.xml.includes('<hierarchy')) throw new Error('布局档案 XML 无效或超过 8 MiB');
+  if (capture.timestamp !== null && capture.timestamp !== undefined && (!Number.isSafeInteger(capture.timestamp) || capture.timestamp < 0)) throw new Error('布局档案时间戳无效');
+  if (capture.densityDpi !== null && capture.densityDpi !== undefined && (!Number.isSafeInteger(capture.densityDpi) || capture.densityDpi < 72 || capture.densityDpi > 1000)) throw new Error('布局档案显示密度无效');
+  if (capture.imageSize !== null && capture.imageSize !== undefined && (!Number.isSafeInteger(capture.imageSize.width) || !Number.isSafeInteger(capture.imageSize.height) || capture.imageSize.width < 1 || capture.imageSize.height < 1 || capture.imageSize.width * capture.imageSize.height > 50_000_000)) throw new Error('布局档案图像尺寸无效');
+  let screenshot = null;
+  if (capture.screenshot !== null && capture.screenshot !== undefined) {
+    if (typeof capture.screenshot !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(capture.screenshot) || capture.screenshot.length % 4 !== 0) throw new Error('布局档案截图编码无效');
+    let bytes; try { bytes = Uint8Array.from(atob(capture.screenshot), character => character.charCodeAt(0)); } catch { throw new Error('布局档案截图编码无效'); }
+    if (bytes.length < 24 || bytes.length > MAX_LAYOUT_ARCHIVE_SCREENSHOT_BYTES || [...bytes.slice(0, 8)].join(',') !== '137,80,78,71,13,10,26,10') throw new Error('布局档案截图不是有效 PNG 或超过 24 MiB');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), width = view.getUint32(16), height = view.getUint32(20);
+    if (!width || !height || width * height > 50_000_000) throw new Error('布局档案截图像素尺寸无效');
+    if (capture.imageSize && (capture.imageSize.width !== width || capture.imageSize.height !== height)) throw new Error('布局档案截图尺寸与元数据不一致');
+    screenshot = capture.screenshot;
+  }
+  return {
+    source: typeof capture.source === 'string' ? capture.source.slice(0, 40) : 'import',
+    timestamp: Number.isSafeInteger(capture.timestamp) ? capture.timestamp : Date.now(),
+    serial: typeof capture.serial === 'string' ? capture.serial.slice(0, 256) : null,
+    packageName: typeof capture.packageName === 'string' ? capture.packageName.slice(0, 256) : null,
+    api: Number.isSafeInteger(capture.api) ? capture.api : null,
+    densityDpi: capture.densityDpi ?? null,
+    imageSize: capture.imageSize ?? null,
+    warning: typeof capture.warning === 'string' ? capture.warning.slice(0, 2000) : null,
+    note: typeof capture.note === 'string' ? capture.note.slice(0, 2000) : null,
+    xml: capture.xml,
+    screenshot,
+  };
+}
+
 export function parseHar(document) {
   const entries = document?.log?.entries;
   if (!Array.isArray(entries)) throw new Error('不是有效的 HAR 文件，缺少 log.entries');
@@ -465,20 +552,26 @@ export function extractLayoutNodes(root,{maxNodes=10000,maxDepth=100}={}) {
 }
 
 export function compareLayouts(before, after) {
+  function matchId(node) {
+    const resourceId = node.attributes['resource-id'];
+    if (resourceId) return resourceId;
+    const tag = node.attributes['compose-test-tag'];
+    return node.className === 'ComposeSemanticsNode' && typeof tag === 'string' && tag.length ? `compose-test-tag:${tag}` : null;
+  }
   function index(nodes) {
     const map=new Map();let unkeyed=0;
-    for(const node of nodes){const id=node.attributes['resource-id'];if(!id){unkeyed++;continue;}const key=`${node.attributes.package||''}\0${id}`;const list=map.get(key)||[];list.push(node);map.set(key,list);}
+    for(const node of nodes){const id=matchId(node);if(!id){unkeyed++;continue;}const key=`${node.attributes.package||''}\0${id}`;const list=map.get(key)||[];list.push(node);map.set(key,list);}
     return {map,unkeyed};
   }
   const a=index(before),b=index(after),changes=[],ambiguous=[];
-  // Only shared, unique resource IDs are usable as stable ancestry anchors.
+  // Shared unique resource IDs and Compose test tags can anchor descendant matching.
   // Unkeyed or duplicate containers are skipped rather than guessed.
   const anchors=new Set([...a.map.keys()].filter(key=>a.map.get(key).length===1&&b.map.get(key)?.length===1));
   function parents(nodes){
     const result=new Map(),stack=[];
     for(const node of nodes){
       while(stack.length&&stack.at(-1).depth>=node.depth)stack.pop();
-      const id=node.attributes['resource-id'],key=id?`${node.attributes.package||''}\0${id}`:null;
+      const id=matchId(node),key=id?`${node.attributes.package||''}\0${id}`:null;
       result.set(node,stack.at(-1)?.anchor??null);
       const anchor=key&&anchors.has(key)?key:(stack.at(-1)?.anchor??null);
       stack.push({depth:node.depth,anchor});
@@ -492,7 +585,7 @@ export function compareLayouts(before, after) {
     const stack=[],groups=new Map();
     for(const node of nodes){
       while(stack.length&&stack.at(-1).depth>=node.depth)stack.pop();
-      const id=node.attributes['resource-id'],key=id?`${node.attributes.package||''}\0${id}`:null;
+      const id=matchId(node),key=id?`${node.attributes.package||''}\0${id}`:null;
       const parent=stack.at(-1),parentKey=parent?.key;
       if(key&&anchors.has(key)&&parentKey&&anchors.has(parentKey)){
         const group=groups.get(parentKey)||[];group.push(key);groups.set(parentKey,group);

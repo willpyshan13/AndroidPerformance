@@ -34,3 +34,17 @@ macOS arm64 运行 `npm run prepare:trace-processor` 从 Perfetto 官方地址�
 桌面打包前运行 `npm run prepare:shark`。脚本下载 Square LeakCanary 2.14 官方 Shark CLI 发布包，固定校验归档 SHA-256，只保留 Android HPROF 分析需要的核心 JAR，并保存 Apache-2.0 / BSD-2-Clause 许可证及来源信息，同时准备 Eclipse Temurin Java 17 runtime。macOS 与 Linux 常见架构使用固定版本和 SHA-256 的 Temurin JRE；其他平台可通过 `JAVA_HOME` 使用 Java 17 或更新版本。资源写入忽略提交的 `tools/shark-cli/` 和 `tools/java-runtime/`，由桌面安装包带上。首次下载需要网络访问。
 
 Shark 在本地分析当前 HPROF 会话，不上传堆文件。报告由 LeakCanary Shark 生成，包含其 Android reference matcher、object inspector、leak signature 和 retained-size 分析。独立的 `KeyedWeakReference` 路径候选是本工具的辅助查询，不能替代 Shark 报告。可通过界面载入 R8/ProGuard `.map` 或 `.txt` 文件（上限 128 MiB）；文件保存在当前 HPROF 私有临时会话中，并随会话清理。
+
+## Compose UI Inspector
+
+源码库内的 `tools/ui-inspector/` 包含 Android Studio UI Inspector CLI 的 Java runtime classpath，以及推送到设备端的 View/Compose Inspector、payload 和 ART tooling 资源。每个 JAR 的 SHA-256 和相对路径记录在 `classpath.json`，桌面安装包会携带这些资源。运行时需要 Java 17 或更新版本；来源版本、Bazel target 和 Apache-2.0 声明见 `source.json` 与 `NOTICE.txt`。
+
+更新这组资源时，先在 Android Studio `platform/tools/base` checkout 构建 `//tools/base/ui-inspector/cli:dump-ui`，再指向生成的 runfiles 清单和 `cli.res.jar` 执行：
+
+```sh
+UI_INSPECTOR_RUNFILES_MANIFEST=/path/to/bazel-bin/tools/base/ui-inspector/cli/dump-ui.runfiles_manifest \
+UI_INSPECTOR_RESOURCE_JAR=/path/to/bazel-bin/tools/base/ui-inspector/cli/cli.res.jar \
+npm run prepare:ui-inspector
+```
+
+完整检查要求 Android 10（API 29）或更高版本及可注入的应用进程。默认读取参数、Modifier、Semantics 和系统 Composable；资源解析栈须单独启用，因为首次启用可能修改设备设置并重启 Activity。截图在检查器响应后采集，树节点与截图边界可相互高亮，源码位置可搜索当前快照。API 25 测试设备验证了安全拒绝路径；本机 SDK 未安装 Android Emulator，API 29+ 真机采集仍待验证。

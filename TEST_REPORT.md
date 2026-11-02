@@ -1,5 +1,14 @@
 # 当前验证记录（2026-11-02）
 
+## LeakCanary Shark 桌面分析器接入
+
+- 桌面端新增当前 HPROF 会话的 Shark 2.14 分析 API 和报告对话框；使用官方 CLI 的 Android reference matchers、object inspectors、leak signatures 与 retained-size 分析。HPROF 保留在本机临时目录，替换会话或关闭服务时清理。
+- 本次代码新增 Shark 依赖识别、参数边界和 HTTP 会话回归测试。官方发布包由准备脚本校验 SHA-256 后提取核心依赖，并保存 Apache-2.0 / BSD-2-Clause 许可证；打包资源包含 Java 17 runtime。
+- 本轮之前已用 Android Studio 官方 `valid_leak_test.hprof`（约 96 MB / 91 MiB）手动运行 Shark 2.14 CLI，约 1.5–2 秒输出 5 条 application leak、0 条 library leak、1 个 unreachable object，以及 Android-specific leak cause、signature 和 retained size。该大样本未加入仓库。
+- `npm run prepare:shark` 已成功下载并校验 Shark CLI ZIP（SHA-256 `4a1022a4610fd6a4a1306b264f95985c4210e169e2bd4b0ad19bbdcc16d6beef`），准备 10 个核心 JAR 和 Temurin 17.0.21+9 macOS arm64 JRE；Java runtime 约 130 MiB，资源未提交到源码库。
+- macOS arm64 `.app` 打包成功（应用目录约 557 MiB）；检查 `app.asar` 含 Shark 服务、分析模块和界面，bundle resources 含 10 个 Shark JAR 与 Java runtime。直接使用已打包 app resources 对官方 HPROF 运行 Shark 成功，报告含 5 条 application leaks 与 leak signature。
+- `APW_SHARK_SAMPLE=/private/tmp/android-studio-valid-leak.hprof npm test`：198 项，183 通过、0 失败、15 项因未配置其他外部样本而跳过；包含官方 HPROF 到 Shark 报告的端到端回归。`npm run check` 与 `git diff --check` 通过。当前 `adb devices -l` 没有设备，未执行真机用例。
+
 ## LeakCanary watched-object 路径候选增量
 
 - HPROF 解析器识别 `KeyedWeakReference` 子类，读取 `referent`、LeakCanary `key` 和可用的 `description` / `name`；已清除 referent 单独计数，索引外对象和不完整字段布局按不可用计数。

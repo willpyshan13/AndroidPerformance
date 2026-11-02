@@ -20,11 +20,12 @@
     "test": "node --test",
     "test:device": "node scripts/device-smoke.js",
     "prepare:perfetto-ui": "node scripts/prepare-perfetto-ui.js",
-    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/hprof-worker.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-trace-processor.js && node --check scripts/prepare-perfetto-ui.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/agent-package.js",
+    "check": "node --check src/server.js && node --check src/adb.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/offline.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/hprof-worker.js && node --check src/shark.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-trace-processor.js && node --check scripts/prepare-perfetto-ui.js && node --check scripts/prepare-shark.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/agent-package.js",
     "prepare:adb": "bash scripts/prepare-adb.sh",
     "prepare:apk-tools": "node scripts/prepare-apk-tools.js",
     "prepare:simpleperf": "node scripts/prepare-simpleperf.js",
-    "prepare:trace-processor": "node scripts/prepare-trace-processor.js"
+    "prepare:trace-processor": "node scripts/prepare-trace-processor.js",
+    "prepare:shark": "node scripts/prepare-shark.js"
   },
   "build": {
     "appId": "dev.androidperformance.workbench",
@@ -35,6 +36,15 @@
         "from": "tools/perfetto-ui",
         "to": "perfetto-ui",
         "filter": ["**/*"]
+      },
+      {
+        "from": "tools/shark-cli",
+        "to": "shark-cli",
+        "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"]
+      },
+      {
+        "from": "tools/java-runtime",
+        "to": "java-runtime"
       }
     ],
     "directories": {

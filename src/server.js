@@ -10,6 +10,7 @@ import { validateRecord } from './records.js';
 import { locateAapt2 } from './apk.js';
 import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
+import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
 import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
@@ -32,7 +33,7 @@ async function readBody(req) {
   catch { throw Object.assign(new Error('JSON 格式错误'), { status: 400 }); }
 }
 
-export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir }) {
+export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath }) {
   const gpuDir=join(dataDir,'gpu-artifacts');
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
@@ -40,7 +41,8 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false;
   let gpuBusy=false;
-  let apkBusy = false, heapBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
+  let apkBusy = false, heapBusy = false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
+  const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -83,7 +85,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const pkg = url.searchParams.get('package');
       if (req.method === 'GET') {
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
-        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), platform: process.platform, desktop, dataDir });
+        if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, platform: process.platform, desktop, dataDir });
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
           const size=(await stat(traceSession.path)).size;res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});const stream=createReadStream(traceSession.path);stream.on('error',()=>res.destroy());return stream.pipe(res);
@@ -169,19 +171,25 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           perfBusy=true;try{return json(await analyzePerfUpload(req));}finally{perfBusy=false;}
         }
         if (path === '/api/heap/analyze') {
-          if(heapBusy){req.resume();return json({error:'已有堆文件正在分析，请等待完成'},409);}
+          if(heapBusy||sharkBusy){req.resume();return json({error:'已有堆文件或 Shark 分析正在运行，请等待完成'},409);}
           const role=req.headers['x-heap-role']||'current';
           if(!['current','baseline'].includes(role)){req.resume();throw new Error('堆快照用途无效');}
           heapBusy=true;try{
-            const {result,worker}=await analyzeHprofUpload(req,{summaryOnly:role==='baseline'});if(closed){worker.terminate();throw new Error('服务已关闭');}
+            const parsed=await analyzeHprofUpload(req,{summaryOnly:role==='baseline',retainFile:role==='current'});const {result,worker}=parsed;if(closed){worker.terminate();await parsed.cleanup?.();throw new Error('服务已关闭');}
             if(role==='baseline'){await worker.terminate();return json(result);}
             const previous=heapSession;
-            const sessionId=randomUUID();heapSession={worker,sessionId};
-            worker.on('error',()=>{if(heapSession?.worker===worker)heapSession=null;});
-            worker.on('exit',()=>{if(heapSession?.worker===worker)heapSession=null;});
-            if(previous)previous.worker.terminate();
-            return json({...result,sessionId});
+            const sessionId=randomUUID();heapSession={worker,sessionId,filePath:parsed.filePath,cleanup:parsed.cleanup,sharkResources:await sharkResources};
+            worker.on('error',()=>{if(heapSession?.worker===worker){const expired=heapSession;heapSession=null;expired.cleanup?.();}});
+            worker.on('exit',()=>{if(heapSession?.worker===worker){const expired=heapSession;heapSession=null;expired.cleanup?.();}});
+            if(previous){await previous.worker.terminate();await previous.cleanup?.();}
+            return json({...result,sessionId,sharkAvailable:heapSession.sharkResources.available});
           }finally{heapBusy=false;}
+        }
+        if(path==='/api/heap/shark-analysis'){
+          const body=await readBody(req);
+          if(sharkBusy)return json({error:'Shark 分析已在运行，请等待完成'},409);
+          if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
+          sharkBusy=true;try{return json(await analyzeWithShark(heapSession.filePath,heapSession.sharkResources,{mappingPath:body.mappingPath??null}));}finally{sharkBusy=false;}
         }
         if (path === '/api/apk/analyze') {
           if(apkBusy){req.resume();return json({error:'已有 APK 正在分析，请等待完成'},409);}
@@ -372,7 +380,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       json({ error: '接口不存在' }, 404);
     } catch (error) { json({ error: error.message || '请求失败' }, error.status || 400); }
   });
-  server.on('close',()=>{closed=true;if(heapSession){heapSession.worker.terminate();heapSession=null;}if(traceSession){try{traceSession.cleanupSync();}catch{}traceSession=null;}});
+  server.on('close',()=>{closed=true;if(heapSession){const expired=heapSession;heapSession=null;expired.worker.terminate();expired.cleanup?.();}if(traceSession){try{traceSession.cleanupSync();}catch{}traceSession=null;}});
   server.requestTimeout = 180000;
   return server;
 }

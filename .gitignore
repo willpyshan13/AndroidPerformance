@@ -9,3 +9,5 @@ tools/apk-tools/
 tools/simpleperf/
 tools/trace-processor/
 tools/perfetto-ui/
+tools/shark-cli/
+tools/java-runtime/

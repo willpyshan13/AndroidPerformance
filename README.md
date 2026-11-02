@@ -39,7 +39,7 @@
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
 | CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、采样点时间线与函数汇总 | Android NDK simpleperf |
-| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Perfetto heapprofd |
+| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Shark、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
@@ -66,6 +66,7 @@ npm run prepare:apk-tools  # 从本机 Android SDK 准备 AAPT2
 npm run prepare:simpleperf  # 准备 macOS simpleperf 资源（需要稳定版 NDK 和 r26 或更早版本）
 npm run prepare:trace-processor  # 下载并校验 macOS arm64 的官方 Trace Processor
 npm run prepare:perfetto-ui  # 下载并校验本机自托管的 Perfetto UI
+npm run prepare:shark        # 下载并校验 Shark 及 Java runtime
 npm run desktop
 ```
 
@@ -179,6 +180,8 @@ Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围�
 多事件导入可选回归样本为 Android 官方 simpleperf `perf_with_two_event_types.data`（SHA-256 `32c9e9edc7894fb96094041db31b6ddcb63f3b5bb24f402089e39c78d4dc9779`），设置 `APW_MULTI_EVENT_PERF` 后运行 `npm test`。
 
 堆分析已用公开 Android 堆测试样本及 API 25 真机 HPROF 验证。真实设备采集会下载原始 `.hprof`，随后自动分析；页面展示记录数、类统计、实例、字段和引用查询。可设置 `APW_ANDROID_HPROF` 和 `APW_ANDROID_O_HPROF` 指向公开样本运行附加回归；文件校验值分别为 `14dcec5fa5ddb30fa3142fc5aaa90cdee02969662207458371d13a5eba007363` 和 `700b60f9b9bfb64d488f7663cc58b09f68760ed822a760911d4f4952ed4debbc`。
+
+桌面构建还包含 LeakCanary Shark 2.14 分析器。源码环境首次打包前运行 `npm run prepare:shark`，脚本下载官方发布包并校验 SHA-256，只提取 CLI 所需的核心 JAR 与许可证，同时准备 Java 17 runtime；HPROF 页面提供“Shark Android 泄漏分析”，报告包含泄漏路径、指纹、Android reference matcher / inspector 结果和 retained size。项目另有本地 `KeyedWeakReference` 路径候选分析；该候选结果与 Shark 的泄漏判定分开展示。Shark 接受混淆映射文件路径供 API 调用，当前图形界面尚未提供映射文件选择。
 
 内存分配剖析会将原始 Perfetto 追踪下载到本机，并用 Trace Processor 汇总调用点。Native heapprofd 要求 Android 10（API 29）或更高版本；ART 分配采样要求 Android 12（API 31）或更高版本。目标应用还需满足系统的 debuggable/profileable 限制。Native 采样中的“未释放”是追踪期间的分配估计，不是 HPROF 存活对象或精确保留大小；独立命名的应用子进程可能需要单独配置。API 25 真机页面已验证能力门控，实际采样仍待支持设备验证。
 

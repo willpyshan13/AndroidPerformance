@@ -79,6 +79,12 @@ function createWindow() {
     webPreferences: { preload: join(here, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, spellcheck: false },
   });
   window.once('ready-to-show', () => window.show());
+  if (process.env.APW_SMOKE_READY_FILE) window.webContents.once('did-finish-load', async () => {
+    try {
+      const rendererReady = await window.webContents.executeJavaScript("document.querySelectorAll('#nav .nav-item').length > 0 && document.querySelector('#main') !== null");
+      await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady }), { mode: 0o600 });
+    } catch (error) { console.error('Desktop smoke readiness check failed:', error); }
+  });
   window.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => { if (new URL(url).origin !== origin) { event.preventDefault(); openExternal(url); } });
   window.webContents.on('will-attach-webview', event => event.preventDefault());

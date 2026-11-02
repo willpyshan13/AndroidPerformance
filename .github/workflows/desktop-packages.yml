@@ -104,6 +104,9 @@ jobs:
       - run: npm run prepare:shark
       - run: npm run prepare:perfetto-ui
       - run: node scripts/run-npm-task.js ${{ matrix.command }}
+      - name: Launch packaged Windows app and verify startup
+        if: runner.os == 'Windows'
+        run: node scripts/desktop-smoke.js
       - uses: actions/upload-artifact@v7
         with:
           name: android-performance-${{ matrix.label }}

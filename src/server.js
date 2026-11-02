@@ -97,6 +97,16 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           }))).filter(Boolean).sort((a, b) => b.timestamp - a.timestamp);
           return json({ sessions });
         }
+        const layoutHistory = path.match(/^\/api\/sessions\/([\da-f-]{36})\/layout$/);
+        if (layoutHistory) {
+          try {
+            const session = JSON.parse(await readFile(join(dataDir, `${layoutHistory[1]}.json`), 'utf8'));
+            if (session.kind !== 'layout' || typeof session.payload?.xml !== 'string') return json({ error: '布局记录不存在或已损坏' }, 404);
+            return json({ id: session.id, name: session.name, kind: session.kind, source: session.source,
+              timestamp: session.timestamp, packageName: session.packageName,
+              payload: { source: session.payload.source, timestamp: session.payload.timestamp, xml: session.payload.xml } });
+          } catch { return json({ error: '布局记录不存在或已损坏' }, 404); }
+        }
         const session = path.match(/^\/api\/sessions\/([\da-f-]{36})$/);
         if (session) {
           try { return json(JSON.parse(await readFile(join(dataDir, `${session[1]}.json`), 'utf8'))); }

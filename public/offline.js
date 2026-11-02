@@ -402,6 +402,12 @@ export function compareLayouts(before, after) {
   return {changes,ambiguous,unkeyedBefore:a.unkeyed,unkeyedAfter:b.unkeyed};
 }
 
+export function summarizeLayoutChanges(before,after){
+  const diff=compareLayouts(before,after),summary={added:0,removed:0,changed:0,ambiguous:diff.ambiguous.length};
+  for(const change of diff.changes)summary[change.kind]++;
+  return summary;
+}
+
 export function layoutComparisonReport(baseline,current,generatedAt=Date.now()) {
   if(!Array.isArray(baseline?.nodes)||!Array.isArray(current?.nodes))throw new Error('需要两份布局快照');
   const diff=compareLayouts(baseline.nodes,current.nodes);

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {layoutScope,extractLayoutNodes,compareLayouts,layoutComparisonReport,inspectLayout} from '../public/offline.js';
+import {layoutScope,extractLayoutNodes,compareLayouts,summarizeLayoutChanges,layoutComparisonReport,inspectLayout} from '../public/offline.js';
 test('layout extraction rejects partial node counts and depths at their exact boundaries',()=>{
  const element=(tag,attrs={},children=[])=>({tagName:tag,attributes:Object.entries(attrs).map(([name,value])=>({name,value})),children});
  const node=(children=[])=>element('node',{class:'android.view.View',bounds:'[1,2][3,4]'},children);
@@ -31,6 +31,11 @@ test('layout comparison pairs only unique package/resource IDs and reports uncer
  assert.deepEqual(result.changes.map(x=>[x.id,x.kind]),[['title','changed'],['gone','removed'],['added','added']]);
  assert.deepEqual(result.changes[0].fields,['text']);assert.deepEqual(result.ambiguous,['repeat']);
  assert.equal(result.unkeyedBefore,1);assert.equal(result.unkeyedAfter,1);
+});
+
+test('layout timeline summary separates additions, removals, changes and ambiguous IDs',()=>{
+ const node=(id,text)=>({id:0,depth:0,attributes:{package:'app','resource-id':id,text}});
+ assert.deepEqual(summarizeLayoutChanges([node('same','old'),node('gone','x'),node('repeat','a'),node('repeat','b')],[node('same','new'),node('added','y'),node('repeat','c')]),{added:1,removed:1,changed:1,ambiguous:1});
 });
 
 test('layout comparison detects moves between shared unique ancestors without guessing unkeyed containers',()=>{

@@ -1,5 +1,5 @@
 import { DEMO_DEVICE, DEMO_PACKAGE, demoSample, demoHistory, demoFrames, demoStartup, demoLayout, DEMO_HAR } from './demo.js';
-import { parseHar, apkBaselineEvidence, mergeNetworkAgentSnapshot, summarizeHarHosts, summarizeNetworkEndpoints, buildNetworkTimeline, parseBenchmark, compareBenchmarks, benchmarkSampleSummary, benchmarkContextWarnings, compareHeaps, parseFoldedStacks, reverseCallTree, layoutFlame, buildSampleTimeline, sampleQuality, profileForTimeBin, profileForTimeRange, layoutScope, extractLayoutNodes, compareLayouts, layoutComparisonReport, inspectLayout, clusterFrames, clusterFrameTimeline, traceEventWindow } from './offline.js';
+import { parseHar, apkBaselineEvidence, mergeNetworkAgentSnapshot, summarizeHarHosts, summarizeNetworkEndpoints, buildNetworkTimeline, parseBenchmark, compareBenchmarks, benchmarkSampleSummary, benchmarkContextWarnings, compareHeaps, parseFoldedStacks, reverseCallTree, layoutFlame, buildSampleTimeline, sampleQuality, profileForTimeBin, profileForTimeRange, layoutScope, extractLayoutNodes, compareLayouts, summarizeLayoutChanges, layoutComparisonReport, inspectLayout, clusterFrames, clusterFrameTimeline, traceEventWindow } from './offline.js';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -36,7 +36,7 @@ const routes = [
 ];
 const state = { route: 'overview', demo: false, theme: ['system','light','dark'].includes(localStorage.getItem('apw-theme'))?localStorage.getItem('apw-theme'):'system', uiScale: ['0.9','1','1.1','1.2'].includes(localStorage.getItem('apw-scale'))?localStorage.getItem('apw-scale'):'1', devices: [], serial: '', packageName: localStorage.getItem('apw-package') || '', info: null, status: null,
   samples: [], monitoring: false, generation: 0, pollTimer: null, interval: 2000, error: '', frames: null, budget: 16.667, startup: null, startupTrace:null, compilation:null, startupMode: 'cold', runs: 3,
-  sourceSnapshots:[], sourceSnapshot:null, sourceQuery:'', sourceMatches:null, sourceFile:null, sourceLine:null, gpuArtifacts:[], gpuChecks:{}, gpuCapabilities:null, agiPath:null, battery:null, batteryBefore:null, batteryDelta:null, batteryEndCaptured:false, traceResult:null, traceArchives:[], traceIncludeApp:false, frameTimeline:null, frameTimelineScope:'all', binderScope:'all', binderDirection:'both', cpuProfile:null, cpuOriginal:null, cpuTimeline:null, cpuPerfFile:null, cpuArchives:[], cpuSymfs:'', cpuEvents:[], cpuEvent:null, cpuEventsTruncated:false, cpuBin:null, cpuRange:null, cpuThreadFilter:null, cpuFilter:'', cpuFocus:[], layout: null, nodes: [], selectedNode: null, layoutFilter: '', layoutRoot: null, layoutBaseline: null, heap: null, heapBaseline: null, heapRole: 'current', heapView: 'classes', heapFilter: '', heapBrowse: null, network: null, networkAgentActive:false, networkAgentTimer:null, networkAgentGeneration:0, baseline: null, current: null, apk:null, apkTab:'overview',apkFilter:'',apkCategory:'all',apkComponent:'all', sessions: [], busy: new Set(), replay: false, networkFilter: '', deviceGeneration: 0 };
+  sourceSnapshots:[], sourceSnapshot:null, sourceQuery:'', sourceMatches:null, sourceFile:null, sourceLine:null, gpuArtifacts:[], gpuChecks:{}, gpuCapabilities:null, agiPath:null, battery:null, batteryBefore:null, batteryDelta:null, batteryEndCaptured:false, traceResult:null, traceArchives:[], traceIncludeApp:false, frameTimeline:null, frameTimelineScope:'all', binderScope:'all', binderDirection:'both', cpuProfile:null, cpuOriginal:null, cpuTimeline:null, cpuPerfFile:null, cpuArchives:[], cpuSymfs:'', cpuEvents:[], cpuEvent:null, cpuEventsTruncated:false, cpuBin:null, cpuRange:null, cpuThreadFilter:null, cpuFilter:'', cpuFocus:[], layout: null, nodes: [], selectedNode: null, layoutFilter: '', layoutRoot: null, layoutBaseline: null, layoutTimelineDiffs:null, heap: null, heapBaseline: null, heapRole: 'current', heapView: 'classes', heapFilter: '', heapBrowse: null, network: null, networkAgentActive:false, networkAgentTimer:null, networkAgentGeneration:0, baseline: null, current: null, apk:null, apkTab:'overview',apkFilter:'',apkCategory:'all',apkComponent:'all', sessions: [], busy: new Set(), replay: false, networkFilter: '', deviceGeneration: 0 };
 let toastTimer, importHandler;
 function applyAppearance(){
   const dark=state.theme==='dark'||(state.theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);
@@ -205,7 +205,7 @@ function renderLayout() {
   return pageHeader('布局检查','从可访问性层级到屏幕，检查可见界面的结构。',button('layout-baseline','设为对比基线','layers',false,!layout)+button('import-layout','导入 XML','upload')+button('save-layout','保存快照','download',false,!layout)+button('capture-layout','采集当前界面','layers',true,state.busy.has('layout'))) +
     note(layout?.note || '采集设备当前前台窗口的 UIAutomator 可访问性层级，不保证属于所选应用，也不是完整 View/Compose 树。安全窗口可能没有截图；没有可访问性语义的节点可能缺失。') +
     (state.busy.has('layout')?`<div class="toolbar">${loading('正在获取层级与屏幕快照…')}</div>`:'') +
-    `<div class="panel"><div class="panel-head"><h2>历史快照</h2>${button('refresh-sessions','刷新','refresh')}</div><div class="panel-body"><div class="toolbar"><label>保存的层级 <select id="layout-history"><option value="">选择快照</option>${history.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} · ${date(s.timestamp)} · ${esc(s.source)}</option>`).join('')}</select></label>${button('layout-load-current','载入当前快照','folder',false,!history.length||state.busy.has('layout'))}${button('layout-load-baseline','载入为基线','layers',false,!history.length||state.busy.has('layout'))}</div><p class="hint">按保存时间从早到晚排列。选择“与上一版比较”会将相邻两份记录载入差异视图；也可以分别载入任意快照作为当前版本或基线。</p>${history.length>1?`<div class="table-wrap"><table><thead><tr><th>时间</th><th>快照</th><th>来源</th><th>时间线</th></tr></thead><tbody>${history.map((s,i)=>`<tr><td>${date(s.timestamp)}</td><td>${esc(s.name)}</td><td>${esc(s.source)}</td><td>${i?`<button class="button small" data-layout-timeline-compare="${esc(s.id)}">与上一版比较</button>`:'— 起点'}</td></tr>`).join('')}</tbody></table></div>`:''}</div></div><div style="height:20px"></div>`+
+    `<div class="panel"><div class="panel-head"><h2>历史快照时间线</h2><div class="toolbar">${button('layout-analyze-timeline',state.busy.has('layout-timeline')?'正在分析…':'分析全部差异','chart',false,history.length<2||state.busy.has('layout-timeline'))}${button('refresh-sessions','刷新','refresh')}</div></div><div class="panel-body"><div class="toolbar"><label>保存的层级 <select id="layout-history"><option value="">选择快照</option>${history.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} · ${date(s.timestamp)} · ${esc(s.source)}</option>`).join('')}</select></label>${button('layout-load-current','载入当前快照','folder',false,!history.length||state.busy.has('layout'))}${button('layout-load-baseline','载入为基线','layers',false,!history.length||state.busy.has('layout'))}</div><p class="hint">按保存时间排列。全量分析只读取 XML，不下载截图；每个版本显示相对上一版的新增、移除、属性或层级变化及无法消歧的重复 ID。无 resource-id 的节点不参与变化匹配。选择“与上一版比较”可打开完整差异详情。</p>${state.busy.has('layout-timeline')?`<p class="hint">正在分析 ${Math.min(history.length,state.layoutTimelineDiffs?Object.keys(state.layoutTimelineDiffs).length+1:1)} / ${history.length} 份快照…</p>`:''}${history.length?`<div class="table-wrap"><table><thead><tr><th>时间</th><th>快照</th><th>来源</th><th>相对上一版</th><th></th></tr></thead><tbody>${history.map((s,i)=>{const d=state.layoutTimelineDiffs?.[s.id];return `<tr><td>${date(s.timestamp)}</td><td>${esc(s.name)}</td><td>${esc(s.source)}</td><td>${i===0?'— 时间线起点':d?`+${d.added} / −${d.removed} / ~${d.changed} · ${d.ambiguous} 项未消歧`:'未分析'}</td><td>${i?`<button class="button small" data-layout-timeline-compare="${esc(s.id)}">与上一版比较</button>`:'—'}</td></tr>`;}).join('')}</tbody></table></div>`:empty('还没有已保存的布局','采集或导入布局后保存快照，即可建立时间线。','layers')}</div></div><div style="height:20px"></div>`+
     `<div class="panel inspector"><section><div class="panel-head"><h2>界面层级</h2><span class="tag">${state.nodes.length} 节点</span></div><div style="padding:10px"><div class="toolbar">${button('layout-isolate','隔离选中节点','search',false,state.selectedNode===null)}${button('layout-reset','显示全部','refresh',false,state.layoutRoot===null)}</div><p class="hint">${state.layoutRoot===null?'显示完整层级':`已隔离 ${esc(state.nodes[state.layoutRoot]?.className||'节点')} 及其子节点`}</p><input id="layout-search" class="search" style="width:100%;min-width:0" placeholder="搜索类名、文本或属性" aria-label="搜索布局节点" value="${esc(state.layoutFilter)}"></div><div class="tree" id="layout-tree">${layoutTree()}</div></section><section class="canvas-pane"><div class="panel-head"><h2>屏幕快照</h2>${layout?sourceTag(layout.source):'<span class="tag">未采集</span>'}</div>${layout?phonePreview():empty('暂无屏幕快照','采集后可点击屏幕选中节点','phone')}</section><section><div class="panel-head"><h2>节点属性</h2>${icon('info',14)}</div><div id="properties">${properties()}</div></section></div><div class="hint">${esc(layout?.warning || '')}</div>`+layoutFindings()+layoutDiff();
 }
 function layoutFindings(){
@@ -338,6 +338,26 @@ async function compareLayoutTimeline(id){
     state.layoutBaseline={timestamp:before.payload.timestamp??before.timestamp,source:before.payload.source,name:before.name,nodes:beforeNodes};
     state.layout=after.payload;state.nodes=afterNodes;state.selectedNode=afterNodes.length?0:null;state.layoutRoot=null;state.layoutFilter='';state.replay=true;
     toast('已载入相邻快照差异');
+  });
+}
+async function analyzeLayoutTimeline(){
+  const history=state.sessions.filter(s=>s.kind==='layout').sort((a,b)=>a.timestamp-b.timestamp);
+  if(history.length<2)throw new Error('至少需要两份已保存的布局快照');
+  return task('layout-timeline',async()=>{
+    const diffs={};let previousNodes=null;state.layoutTimelineDiffs={};
+    for(let offset=0;offset<history.length;offset+=4){
+      const batch=history.slice(offset,offset+4),records=await Promise.all(batch.map(s=>api(`/sessions/${s.id}/layout`)));
+      for(let j=0;j<records.length;j++){
+        const record=records[j];if(record.kind!=='layout'||typeof record.payload?.xml!=='string')throw new Error('Invalid layout history record');const nodes=buildNodes(record.payload.xml);
+        if(record.kind!=='layout')throw new Error(`记录 ${record.name} 不是布局快照`);
+        if(previousNodes){
+          diffs[record.id]=summarizeLayoutChanges(previousNodes,nodes);
+        }
+        previousNodes=nodes;
+      }
+      state.layoutTimelineDiffs={...diffs};render();
+    }
+    toast(`已比较 ${history.length} 份布局快照的相邻版本`);
   });
 }
 async function browseHeapClass(classId,offset) {
@@ -687,7 +707,7 @@ async function task(key,work) {
   if(state.busy.has(key))return;state.busy.add(key);render();
   try{return await work();}finally{state.busy.delete(key);render();}
 }
-async function refreshSessions(){state.sessions=(await api('/sessions')).sessions;}
+async function refreshSessions(){state.sessions=(await api('/sessions')).sessions;state.layoutTimelineDiffs=null;}
 async function save(kind) {
   const payload={monitor:{samples:state.samples},frames:state.frames,startup:state.startup,layout:state.layout,network:state.network,apk:state.apk,battery:state.battery?{source:state.battery.source,packageName:state.battery.packageName,snapshot:state.battery,before:state.batteryEndCaptured?state.batteryBefore:null}:null}[kind];
   if(!payload||(kind==='monitor'&&!state.samples.length))throw new Error('尚无可保存的数据');
@@ -787,6 +807,7 @@ const actions={
   'run-startup':()=>{requireTarget();const n=Number($('#startup-runs').value);if(!Number.isInteger(n)||n<1||n>10)throw new Error('重复次数须为 1–10 的整数');state.runs=n;state.startupMode=$('#startup-mode').value;return task('startup',async()=>{state.startup=state.demo?demoStartup(state.startupMode,n):await api('/startup',{serial:state.serial,packageName:state.packageName,mode:state.startupMode,runs:n});toast('启动实验已完成');});},
   'layout-load-current':()=>loadLayoutHistory(false),
   'layout-load-baseline':()=>loadLayoutHistory(true),
+  'layout-analyze-timeline':()=>analyzeLayoutTimeline(),
   'layout-baseline':()=>{if(!state.layout)throw new Error('请先采集或导入快照');state.layoutBaseline={timestamp:state.layout.timestamp,source:state.layout.source,nodes:structuredClone(state.nodes)};render();toast('当前层级已设为基线；采集或导入另一快照后可比较');},
   'layout-clear-baseline':()=>{state.layoutBaseline=null;render();},
   'layout-export-diff':()=>{if(!state.layoutBaseline||!state.layout)throw new Error('请先选择两份布局快照');const report=layoutComparisonReport(state.layoutBaseline,{...state.layout,nodes:state.nodes});download(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),`layout-comparison-${Date.now()}.json`);},

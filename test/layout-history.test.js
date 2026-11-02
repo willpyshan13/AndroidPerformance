@@ -16,6 +16,8 @@ test('two layout snapshots survive archive round-trip and remain comparable',asy
  const first=await save(payload('before')),second=await save(payload('after'));const list=await (await fetch(base+'/sessions',{headers})).json();assert.equal(list.sessions.filter(x=>x.kind==='layout').length,2);
  const left=await (await fetch(base+'/sessions/'+first.id,{headers})).json(),right=await (await fetch(base+'/sessions/'+second.id,{headers})).json();
  assert.deepEqual(left.payload,payload('before'));assert.deepEqual(right.payload,payload('after'));
+ const timeline=await (await fetch(base+`/sessions/${second.id}/layout`,{headers})).json();
+ assert.equal(timeline.kind,'layout');assert.equal(timeline.payload.xml,payload('after').xml);assert.equal(timeline.payload.screenshot,undefined);
  const node=xml=>({id:0,depth:0,attributes:Object.fromEntries([...xml.matchAll(/(package|resource-id|text)="([^"]*)"/g)].map(m=>[m[1],m[2]]))});
  const diff=compareLayouts([node(left.payload.xml)],[node(right.payload.xml)]);assert.deepEqual(diff.changes[0].fields,['text']);assert.equal(diff.changes[0].after.id,0);
 });

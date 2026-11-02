@@ -33,6 +33,16 @@ test('automatic Compose parser keeps cumulative execution and skip counts distin
  assert.equal(result.events[3].count,3);assert.equal(result.invalidRecords,0);
 });
 
+test('automatic Compose records preserve parent calls and build a bounded call tree',()=>{
+ const enc=value=>Buffer.from(value).toString('base64url'),session='b'.repeat(32);
+ const event=(prefix,name,count,edgeCount,parent='-')=>`${prefix}|${session}|${enc(name)}|${count}|${count*100}|${parent==='-'?parent:enc(parent)}|${edgeCount}`;
+ const result=parseComposeRecompositionLog([
+  event('APW2','Screen',1,1),event('APW2','Card',1,1,'Screen'),event('APW2','Card',2,2,'Screen'),event('APW3','Card',3,1,'Screen')
+ ].join('\n'));
+ assert.deepEqual(result.callTree,[{name:'Screen',executions:1,skips:0,recursive:false,children:[{name:'Card',executions:2,skips:1,recursive:false,children:[]}]}]);
+ assert.equal(result.events[1].parentName,'Screen');assert.equal(result.invalidRecords,0);
+});
+
 test('Compose probe parser rejects malformed records and bounds event details',()=>{
  const raw=[event('d'.repeat(32),1,10),'APW1|bad|bad|0|x',...Array.from({length:505},(_,i)=>event('e'.repeat(24)+i.toString(16).padStart(8,'0'),i+1,i+20))].join('\n');
  const result=parseComposeRecompositionLog(raw);

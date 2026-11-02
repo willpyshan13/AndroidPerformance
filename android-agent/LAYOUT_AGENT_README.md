@@ -53,7 +53,7 @@ android {
 }
 ```
 
-插件只处理当前目标模块编译出的 `@Composable` 函数：在正常分支记录函数体执行，在 `Composer.skipToGroupEnd` 分支记录跳过；执行数包含首次组合。函数标识来自包名和函数名，不包含参数值。自动模式无法区分同名函数的多个运行时实例；每次执行或跳过都会写一条 Logcat 事件，可能增加调试开销。它只覆盖应用本次编译的 Kotlin Composable，不会自动插桩依赖库或其他未重编译的 APK 代码。
+插件只处理当前目标模块编译出的 `@Composable` 函数：在正常分支记录函数体执行，在 `Composer.skipToGroupEnd` 分支记录跳过；执行数包含首次组合。函数标识来自包名和函数名，不包含参数值。新版事件包含父函数和累计边计数，桌面端可构建 Logcat 窗口内的聚合调用树；环形缓冲区可能截断树，且自动模式无法区分同名函数的多个运行时实例。每次执行或跳过都会写一条 Logcat 事件，可能增加调试开销。它只覆盖应用本次编译的 Kotlin Composable，不会自动插桩依赖库或其他未重编译的 APK 代码。
 
 - 如果要观测选定 Composable 的 SideEffect 提交次数和独立实例，可将 ZIP 中的 `ApwComposeRecompositionProbe.kt` 放入目标模块 `src/debug/kotlin/dev/androidperformance/agent/`，并在目标函数体内调用。probe 标记为不可跳过，以便父 Composable 每次重新执行时都能记录：
 

@@ -24,6 +24,11 @@ public final class IrCalls {
         return call;
     }
 
+    public static IrCallImpl unitCall(int start, int end, IrType unitType, IrSimpleFunctionSymbol function) {
+        return new IrCallImpl(IrElementConstructorIndicator.INSTANCE, start, end,
+                unitType, (IrStatementOrigin) null, function, null);
+    }
+
     public static void prependToBranch(IrBranch branch, IrStatement statement) {
         IrExpression result = branch.getResult();
         if (result instanceof IrContainerExpression) {

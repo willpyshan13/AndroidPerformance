@@ -42,6 +42,12 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
         val recordSkip = pluginContext.referenceFunctions(
             CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticSkip"))
         ).singleOrNull() ?: return
+        val enter = pluginContext.referenceFunctions(
+            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticEnter"))
+        ).singleOrNull() ?: return
+        val exit = pluginContext.referenceFunctions(
+            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticExit"))
+        ).singleOrNull() ?: return
         val composable = FqName("androidx.compose.runtime.Composable")
         moduleFragment.transformChildrenVoid(object : IrElementTransformerVoid() {
             override fun visitSimpleFunction(declaration: IrSimpleFunction): IrStatement {
@@ -84,6 +90,14 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
                         IrCalls.prependToBranch(branch, skipCall)
                     }
                 }
+                body.statements.add(0, IrCalls.stringCall(
+                    declaration.startOffset, declaration.endOffset,
+                    pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, enter, signature
+                ))
+                body.statements.add(IrCalls.unitCall(
+                    declaration.startOffset, declaration.endOffset,
+                    pluginContext.irBuiltIns.unitType, exit
+                ))
                 return transformed
             }
         })

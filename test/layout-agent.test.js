@@ -61,6 +61,7 @@ test('downloadable View Agent ZIP contains the Java source and lifecycle guide',
  const paths=['LAYOUT_AGENT_README.md','src/main/java/dev/androidperformance/agent/LayoutAgent.java','src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt','src/main/kotlin/dev/androidperformance/agent/ApwComposeAutomaticProbe.kt','compose-compiler-plugin/settings.gradle.kts','compose-compiler-plugin/build.gradle.kts','compose-compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar','compose-compiler-plugin/src/main/java/dev/androidperformance/compiler/IrCalls.java','compose-compiler-plugin/src/main/kotlin/dev/androidperformance/compiler/ApwComposeInstrumentationRegistrar.kt'];assert.deepEqual(Object.keys(entries).sort(),paths.slice().sort());
  for(const path of paths)assert.deepEqual(entries[path],await readFile(new URL('../android-agent/'+path,import.meta.url)));
  assert.match(entries['src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt'].toString(),/@NonSkippableComposable/);
+ assert.match(entries['src/main/kotlin/dev/androidperformance/agent/ApwComposeAutomaticProbe.kt'].toString(),/apwComposeAutomaticEnter/);assert.match(entries['src/main/kotlin/dev/androidperformance/agent/ApwComposeAutomaticProbe.kt'].toString(),/apwComposeAutomaticExit/);
 });
 
 test('protected layout Agent API forwards the shared token and returns an app snapshot',async t=>{

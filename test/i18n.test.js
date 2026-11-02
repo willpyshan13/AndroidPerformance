@@ -14,6 +14,17 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });
 
+test('settings capability summary reflects implemented modules and documented limits in English',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const settings=app.slice(app.indexOf('function renderSettings()'),app.indexOf('\nconst $$ =',app.indexOf('function renderSettings()')));
+  const summary='已实现：设备与应用监控、CPU 采样、内存与堆分析、布局检查、系统追踪、帧与启动分析、电池统计、OkHttp 网络采集、GPU 工具集成、Benchmark 与 Macrobenchmark、APK 分析和源码工作区。';
+  const limits='功能取决于设备权限、Android 版本和外部工具。完整 Compose Inspector 需要 API 29+ 与目标调试接口；实时网络只采集接入 OkHttp Agent 的请求；系统 UID mAh 是估计值，不是实测功耗。';
+  assert.ok(settings.includes(`tr('${summary}')`));
+  assert.ok(settings.includes(`tr('${limits}')`));
+  assert.match(translate(summary,'en-US'),/^Available:/);
+  assert.match(translate(limits,'en-US'),/API 29\+.*OkHttp Agent.*estimates/);
+});
+
 test('English localization changes static UI labels but skips code, table content, and unknown user text',()=>{
   const entry=(tag,value)=>{
     const parent={tag,closest(){return ['pre','code','textarea','input','td'].includes(tag)?this:null;},matches(selector){return selector.split(',').includes(tag);}};

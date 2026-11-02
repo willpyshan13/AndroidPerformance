@@ -10,13 +10,39 @@ export function parseHar(document) {
     for (const key of ['blocked', 'dns', 'connect', 'ssl', 'send', 'wait', 'receive']) {
       const n = entry.timings?.[key]; timings[key] = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
     }
-    return { id: i + 1, method: String(entry.request?.method || 'GET'), host: url.host, path: url.pathname,
+    const connectionId=typeof entry.connection==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(entry.connection)?entry.connection:null;
+    return { id: i + 1, method: String(entry.request?.method || 'GET'), host: url.host, path: url.pathname, connectionId,
       // Discard queries, URL credentials, headers, cookies and bodies on import.
       url: `${url.protocol}//${url.host}${url.pathname}`, status: Number(entry.response?.status || 0),
       timeMs: typeof entry.time === 'number' && Number.isFinite(entry.time) && entry.time >= 0 ? entry.time : null,
       bytes: typeof entry.response?.content?.size === 'number' && Number.isFinite(entry.response.content.size) && entry.response.content.size >= 0 ? entry.response.content.size : null,
       startedAt: Number.isFinite(Date.parse(entry.startedDateTime)) ? Date.parse(entry.startedDateTime) : null, timings };
   });
+}
+
+export function filterNetworkRequests(rows,{query='',method='all',status='all',connection='all',minDuration='',maxDuration='',from='',to=''}={}){
+ if(!Array.isArray(rows)||typeof query!=='string')throw new Error('网络筛选参数无效');
+ const numeric=(value,label)=>{if(value===''||value===null||value===undefined)return null;const n=Number(value);if(!Number.isFinite(n)||n<0)throw new Error(`${label}必须是非负数字`);return n;};
+ const min=numeric(minDuration,'最小耗时'),max=numeric(maxDuration,'最大耗时');if(min!==null&&max!==null&&min>max)throw new Error('最小耗时不能大于最大耗时');
+ const dateValue=(value,label)=>{if(!value)return null;const n=Date.parse(value);if(!Number.isFinite(n))throw new Error(`${label}无效`);return n;};
+ const start=dateValue(from,'起始时间'),end=dateValue(to,'结束时间');if(start!==null&&end!==null&&start>end)throw new Error('起始时间不能晚于结束时间');
+ const needle=query.toLocaleLowerCase();
+ return rows.filter(row=>{
+  if(needle&&!`${row.host||''}${row.path||''}`.toLocaleLowerCase().includes(needle))return false;
+  if(method!=='all'&&row.method!==method)return false;
+  if(connection!=='all'&&row.connectionId!==connection)return false;
+  if(status!=='all'){const code=Number(row.status)||0;if(status==='2xx'&&(code<200||code>=300)||status==='3xx'&&(code<300||code>=400)||status==='4xx'&&(code<400||code>=500)||status==='5xx'&&(code<500||code>=600)||status==='failure'&&!(row.failed===true||code===0||code>=400))return false;}
+  if(min!==null&&(row.timeMs===null||row.timeMs<min)||max!==null&&(row.timeMs===null||row.timeMs>max))return false;
+  if(start!==null&&(row.startedAt===null||row.startedAt<start)||end!==null&&(row.startedAt===null||row.startedAt>end))return false;
+  return true;
+ });
+}
+
+export function networkRequestsCsv(rows){
+ if(!Array.isArray(rows)||rows.length>50000)throw new Error('网络导出记录无效或超过 50,000 条');
+ const columns=[['开始时间',r=>r.startedAt!==null&&r.startedAt!==undefined&&Number.isFinite(new Date(r.startedAt).getTime())?new Date(r.startedAt).toISOString():''],['方法',r=>r.method],['URL',r=>r.url],['状态',r=>r.status],['调用失败',r=>r.failed===true?'是':r.failed===false?'否':''],['连接 ID',r=>r.connectionId],['总耗时 ms',r=>r.timeMs],['响应内容字节',r=>r.bytes],['DNS ms',r=>r.timings?.dns],['连接 ms',r=>r.timings?.connect],['TLS ms',r=>r.timings?.ssl],['等待 ms',r=>r.timings?.wait],['接收 ms',r=>r.timings?.receive]];
+ const cell=value=>{let text=value===null||value===undefined?'':String(value);if(typeof value==='string'&&/^[\t\r ]*[=+\-@]/.test(value))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;};
+ return [columns.map(([name])=>cell(name)).join(','),...rows.map(row=>columns.map(([,get])=>cell(get(row))).join(','))].join('\r\n')+'\r\n';
 }
 
 // Only inspect the file listing of this APK; packaging does not prove that a

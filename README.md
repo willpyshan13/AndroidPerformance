@@ -141,7 +141,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 参考文档：[Android ADB](https://developer.android.com/tools/adb) · [dumpsys](https://developer.android.com/tools/dumpsys) · [Perfetto](https://perfetto.dev/docs/getting-started/system-tracing)
 
-网络页面可下载 OkHttp Agent 源码包。调试接入方式见 [android-agent/README.md](android-agent/README.md)。该链路尚待 Android 真机和真实应用验证。
+网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可将当前筛选结果导出为 CSV。CSV 会引用并转义字段，且阻止表格公式注入。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包。调试接入方式见 [android-agent/README.md](android-agent/README.md)。Agent 链路尚待 Android 真机和真实应用验证。
 
 堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用；这些信息不代表原生或硬件像素内存，也不是保留大小。
 

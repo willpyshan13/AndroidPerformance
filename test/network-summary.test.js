@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseHar,summarizeHarHosts,summarizeNetworkEndpoints,buildNetworkTimeline} from '../public/offline.js';
+import {parseHar,filterNetworkRequests,networkRequestsCsv,summarizeHarHosts,summarizeNetworkEndpoints,buildNetworkTimeline} from '../public/offline.js';
 
 test('HAR host statistics use only present phase evidence, including zero and independent TLS',()=>{
  const entries=[
@@ -19,6 +19,29 @@ test('HAR host statistics use only present phase evidence, including zero and in
 test('HAR retains epoch timestamps and rejects non-finite values as absent',()=>{
  const [row]=parseHar({log:{entries:[{startedDateTime:'1970-01-01T00:00:00.000Z',request:{url:'http://localhost/'},response:{content:{size:Infinity}},time:Infinity,timings:{ssl:Infinity}}]}});
  assert.equal(row.startedAt,0);assert.equal(row.bytes,null);assert.equal(row.timeMs,null);assert.equal(row.timings.ssl,null);
+});
+
+test('network filters combine method, status, connection, time and duration without widening evidence',()=>{
+ const rows=parseHar({log:{entries:[
+  {startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-a',request:{url:'https://one.test/a?secret=1',method:'GET'},response:{status:200},time:10},
+  {startedDateTime:'2026-01-01T00:00:01.000Z',connection:'socket-b',request:{url:'https://one.test/b',method:'POST'},response:{status:503},time:40},
+  {startedDateTime:'2026-01-01T00:00:02.000Z',connection:'https://private.test',request:{url:'https://two.test/c',method:'GET'},response:{status:302},time:25},
+ ]}});
+ assert.deepEqual(rows.map(row=>row.connectionId),['socket-a','socket-b',null]);
+ const result=filterNetworkRequests(rows,{query:'ONE.TEST',method:'GET',status:'2xx',connection:'socket-a',minDuration:'5',maxDuration:'15',from:'2026-01-01T00:00:00.000Z',to:'2026-01-01T00:00:00.500Z'});
+ assert.deepEqual(result.map(row=>row.id),[1]);
+ assert.deepEqual(filterNetworkRequests(rows,{status:'failure'}).map(row=>row.id),[2]);
+ assert.deepEqual(filterNetworkRequests(rows,{status:'3xx'}).map(row=>row.id),[3]);
+ assert.throws(()=>filterNetworkRequests(rows,{minDuration:'30',maxDuration:'10'}),/不能大于/);
+ assert.throws(()=>filterNetworkRequests(rows,{from:'bad-date'}),/无效/);
+});
+
+test('network CSV export quotes fields, omits HAR secrets, and protects spreadsheet formulas',()=>{
+ const [harRow]=parseHar({log:{entries:[{request:{url:'https://u:p@example.test/a,b?token=secret',method:'GET'},response:{status:200},time:12}]} });
+ const csv=networkRequestsCsv([harRow,{...harRow,id:2,method:'=1+1',url:'https://example.test/a,"b',startedAt:null}]);
+ assert.match(csv,/"开始时间","方法","URL"/);assert.match(csv,/"'=1\+1"/);assert.match(csv,/"https:\/\/example\.test\/a,""b"/);
+ assert.doesNotMatch(csv,/secret|u:p|token=/);assert.equal(csv.endsWith('\r\n'),true);assert.equal((csv.match(/\r\n/g)||[]).length,3);
+ assert.throws(()=>networkRequestsCsv(Array(50001).fill(harRow)),/超过/);
 });
 
 test('network activity timeline positions overlapping requests and excludes missing times',()=>{

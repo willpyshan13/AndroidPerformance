@@ -220,3 +220,14 @@ test('System trace page translates trace-window, Binder, SQL, and thread-state g
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Layout inspector localizes capture controls and reports accessibility/Compose evidence limits',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderLayout()'),end=app.indexOf('function cpuFocusNode()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '采集设备当前前台窗口的 UIAutomator 可访问性层级，不保证属于所选应用，也不是完整 View/Compose 树。安全窗口可能没有截图；没有可访问性语义的节点可能缺失。',
+    'CompositionData 与 State-scope 数量是调试快照关联，不读取 State 值，也不代表完整重组因果关系。',
+    '编译器执行计数包括首次组合；跳过计数来自 Composer.skipToGroupEnd，不区分 Composable 多实例。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

@@ -429,3 +429,10 @@ npm run test:device -- \
 - 首页设备能力状态不在原先的英文文本节点白名单内，会在英文模式继续显示中文；改为显式走本地化，并新增首页仪表盘文案回归，覆盖状态、设备证据、统计指标和模块入口。
 - 检查 Google 官方 AAPT2 文档并下载 Google Maven 最新 Linux 包样本，解包后的 ELF 架构为 x86-64。当前没有已验证的 Linux ARM64 AAPT2 方案；因此不把缺少 AAPT2 的 Linux ARM64 安装包标记为功能齐全，以免破坏 APK 分析功能。
 - 完整 `npm test`：292 项，276 通过、0 失败、16 项因未配置可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。
+
+
+## Electron renderer startup smoke（2026-11-03）
+
+- 原生 Windows x64 runner 构建 NSIS/MSI 后启动打包目录中的应用；Java runtime 首次解包、本机 HTTP 服务、主页面与 JavaScript 模块加载、渲染器导航和主视图均通过。GitHub Actions run [41513852231](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41513852231) 的 Windows package job 和 smoke step 成功。该 smoke 启动的是安装包生成的应用目录，尚未执行安装器后的安装路径验证。
+- smoke 暴露本机服务未开放 `/i18n.js`：入口脚本因此没有渲染导航。已补静态资源路由，并新增 HTTP 回归测试检查入口的模块依赖；当前全量测试 293 项，277 通过、0 失败、16 个可选官方样本测试跳过，`npm run check` 通过。
+- 获批 host 桌面上的开发模式 Electron smoke 返回 16 个导航项，且主视图已渲染。沙盒内 Electron 的 SIGABRT 仍说明该受限运行环境不适用于可见桌面启动测试。

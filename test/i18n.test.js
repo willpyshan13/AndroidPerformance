@@ -80,6 +80,14 @@ test('literal toast messages and dialog titles have English translations',async(
   assert.deepEqual(untranslated,[]);
 });
 
+test('literal user-facing errors have English translations before they reach a dialog or toast',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const messages=[...app.matchAll(/new Error\(\s*(['"])([^'"]*[\u3400-\u9fff][^'"]*)\1/g)].map(match=>match[2]);
+  const untranslated=[...new Set(messages)].filter(message=>/[\u3400-\u9fff]/.test(translate(message,'en-US')));
+  assert.deepEqual(untranslated,[]);
+  assert.match(app,/function showDialog\(title,html\).*localizeTextNodes\(content,state\.language\)/);
+});
+
 test('English translations cover literal state-dependent UI labels without rewriting embedded HTML samples',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const branches=[...app.matchAll(/\?\s*'([^'`]*[\u3400-\u9fff][^'`]*)'\s*:\s*'([^'`]*[\u3400-\u9fff][^'`]*)'/g)].flatMap(match=>[match[1],match[2]]);

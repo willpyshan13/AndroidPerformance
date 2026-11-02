@@ -941,7 +941,7 @@ async function save(kind) {
 }
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 function pickFile(handler,accept='.json',maxBytes=12*1024*1024) {importHandler=handler;importFileLimit=maxBytes;$('#file-input').accept=accept;$('#file-input').value='';$('#file-input').click();}
-function showDialog(title,html) {$('#dialog-title').textContent=tr(title);$('#dialog-content').innerHTML=html;$('#detail-dialog').showModal();}
+function showDialog(title,html) {$('#dialog-title').textContent=tr(title);const content=$('#dialog-content');content.innerHTML=html;localizeTextNodes(content,state.language);$('#detail-dialog').showModal();}
 function showFrameThreadSummary(){
  const r=state.frameThreadResult;if(!r||r.sessionId!==state.traceResult?.sessionId)throw new Error('追踪会话已更换，请重新读取帧记录');
  if($('#detail-dialog').open)$('#detail-dialog').close();

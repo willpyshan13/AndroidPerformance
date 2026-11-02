@@ -1,6 +1,6 @@
 # 当前验证记录（2026-11-02）
 
-## 布局时间线与电池采样增量
+## 布局、电池与真机 HPROF 增量
 
 - 完整 `npm test`：181 项，166 通过、0 失败、15 项因未配置外部官方样本而跳过。
 - `npm run check` 和 `git diff --check`：通过。
@@ -14,6 +14,15 @@
 - 桌面 WebView 在真机上采集 2 个 batterystats 样本，间隔约 1.1 秒；设备报告电量等级 100%、UID 估计 0.340 mAh，网络计数未提供。
 - 保存后从本机档案重新载入，界面仍显示 2 个样本；导出的 JSON 包含 2 个样本，最后样本时间戳与结束快照一致。
 - 这是单设备的 UI/采集/保存/导出验证，不代表 Android 版本兼容矩阵或能耗测量准确性。
+
+## API 25 真机 HPROF 采集与对象查询
+
+- 设备：rk3399-all，Android 7.1.2 / API 25，包名 `com.will.calendar.demo`（包含 Compose UI）。
+- 从“堆转储”页采集 HPROF，下载原始文件后自动载入分析；页面识别 15.4 MiB、JAVA PROFILE 1.0.3、196,210 条对象/数组记录、84,213 条 GC root 记录，并索引 2,983 类。
+- 类列表识别 `androidx.compose.ui.node.LayoutNode`、Compose Runtime、`android.graphics.Bitmap` 和目标应用的 `CalendarDemoActivity`。
+- 查询 `java.lang.String`：46,604 个实例；分页浏览后打开真实实例，显示字段（`count`、`hash`、`value`）及 `zh-CN` 字符串预览。
+- 该对象的引用来源查询返回一条已索引引用边；候选根路径查询如实返回未找到路径，并提示引用图覆盖不完整。
+- 这验证的是一份 API 25 堆文件的采集、解析和交互路径；不证明跨版本兼容、精确保留大小、完整引用语义或 Compose Inspector 能力。
 
 ## 自动回归
 
@@ -40,7 +49,7 @@
 | 记录持久化 | 通过；monitor、frames、layout、startup、network 5 种记录保存后读回一致 |
 | 采集清理 | 通过；设备临时 XML 已移除、采集锁已释放 |
 
-启动数值只证明该设备接受并完成启动命令，不证明冷/温/热请求实际对应系统判定的启动模式：设备没有返回 LaunchState。设备也不支持 Perfetto，因此此处没有验证真实 FrameTimeline、TTID/TTFD、trace 或线程关联。内存、CPU profiling、HPROF、GPU、实时网络和设备能耗归因没有纳入本次真机 smoke；它们仍由自动化/离线样本覆盖或等待兼容设备验证。
+启动数值只证明该设备接受并完成启动命令，不证明冷/温/热请求实际对应系统判定的启动模式：设备没有返回 LaunchState。设备也不支持 Perfetto，因此此处没有验证真实 FrameTimeline、TTID/TTFD、trace 或线程关联。上表所述的设备 smoke 不含 CPU profiling、GPU、实时网络和设备能耗归因；HPROF 已在上面的单独增量验证中覆盖。
 
 # Android Performance 0.1.1 历史测试记录
 

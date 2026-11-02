@@ -863,7 +863,7 @@ const actions={
   'choose-heap-baseline':()=>{if(state.busy.has('heap'))return;state.heapRole='baseline';$('#heap-input').value='';$('#heap-input').click();},
   'heap-view-classes':()=>{state.heapView='classes';render();},
   'heap-view-compare':()=>{if(state.heapBaseline){state.heapView='compare';render();}},
-  'capture-heap':()=>{requireTarget();if(state.demo)throw new Error('请连接真实设备后采集');return task('heap',async()=>{const blob=await api('/heap',{serial:state.serial,packageName:state.packageName},true);download(blob,`heap-${Date.now()}.hprof`);toast('堆快照已下载');});},
+  'capture-heap':()=>{requireTarget();if(state.demo)throw new Error('请连接真实设备后采集');return task('heap',async()=>{const blob=await api('/heap',{serial:state.serial,packageName:state.packageName},true),file=new File([blob],`heap-${Date.now()}.hprof`,{type:'application/octet-stream'});download(blob,file.name);try{await analyzeHeapFile(file,'current');toast('堆快照已采集并分析');}catch(error){toast(`堆快照已下载，但分析失败：${error.message}`,true);}});},
   'trace-thread-states':()=>{const raw=$('#trace-tid').value;if(!/^\d+$/.test(raw))throw new Error('请输入线程 TID');return readTraceThreadStates(Number(raw));},
   'trace-window-apply':()=>changeTraceWindow(),
   'trace-window-reset':()=>changeTraceWindow(true),
@@ -1000,11 +1000,16 @@ $('#perf-input').onchange=async event=>{
   const file=event.target.files[0];if(!file)return;
   try{if(file.size>256*1024*1024)throw new Error('perf.data 不能超过 256 MiB');await loadPerfEvent(file);}catch(error){toast(error.message,true);}
 };
+async function analyzeHeapFile(file,role){
+  if(!file.name.toLowerCase().endsWith('.hprof'))throw new Error('请选择 .hprof 文件');if(file.size>256*1024*1024)throw new Error('HPROF 文件不能超过 256 MiB');
+  const response=await fetch('/api/heap/analyze',{method:'POST',headers:{'X-Workbench-Token':token,'X-Heap-Role':role},body:file}),result=await response.json();if(!response.ok)throw new Error(result.error||'分析失败');
+  if(role==='baseline'){state.heapBaseline={...result,fileName:file.name};if(state.heap)state.heapView='compare';}else {state.heap={...result,fileName:file.name};state.heapView=state.heapBaseline?'compare':'classes';}
+  state.heapFilter='';return result;
+}
 $('#heap-input').onchange=async event=>{
   const file=event.target.files[0];if(!file)return;
-  try {if(!file.name.toLowerCase().endsWith('.hprof'))throw new Error('请选择 .hprof 文件');if(file.size>256*1024*1024)throw new Error('HPROF 文件不能超过 256 MiB');
-    await task('heap',async()=>{const response=await fetch('/api/heap/analyze',{method:'POST',headers:{'X-Workbench-Token':token,'X-Heap-Role':state.heapRole},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error||'分析失败');if(state.heapRole==='baseline'){state.heapBaseline={...result,fileName:file.name};if(state.heap)state.heapView='compare';}else {state.heap={...result,fileName:file.name};state.heapView=state.heapBaseline?'compare':'classes';}state.heapFilter='';toast(state.heapRole==='baseline'?'基线快照已导入':'当前快照分析完成');});
-  } catch(error){toast(error.message,true);}
+  try{await task('heap',async()=>{await analyzeHeapFile(file,state.heapRole);toast(state.heapRole==='baseline'?'基线快照已导入':'当前快照分析完成');});}
+  catch(error){toast(error.message,true);}
 };
 $('#apk-input').onchange=async event=>{
   const file=event.target.files[0];if(!file)return;

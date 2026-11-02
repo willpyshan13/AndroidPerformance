@@ -5,7 +5,23 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/server.js';
-import {compareLayouts} from '../public/offline.js';
+import {compareLayouts,layoutDiffOverlays} from '../public/offline.js';
+
+test('layout difference overlays include current rectangles, classify changes and enforce draw bounds',()=>{
+ const changes=[
+  {id:'added',kind:'added',after:{bounds:[1,2,11,12]}},
+  {id:'changed',kind:'changed',after:{bounds:[2,3,12,13]}},
+  {id:'moved',kind:'changed',moved:true,after:{bounds:[3,4,13,14]}},
+  {id:'removed',kind:'removed',after:null},
+  {id:'invalid',kind:'changed',after:{bounds:[0,0,NaN,1]}},
+ ];
+ assert.deepEqual(layoutDiffOverlays(changes),[
+  {id:'added',kind:'added',bounds:[1,2,11,12]},
+  {id:'changed',kind:'changed',bounds:[2,3,12,13]},
+  {id:'moved',kind:'moved',bounds:[3,4,13,14]},
+ ]);
+ assert.equal(layoutDiffOverlays(changes,1).length,1);assert.throws(()=>layoutDiffOverlays(changes,-1),/参数无效/);
+});
 
 test('two layout snapshots survive archive round-trip and remain comparable',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'apw-layout-history-'));

@@ -43,7 +43,7 @@
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
-| 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、高亮 UIAutomator 暴露的可访问性节点、按透明度叠加参考设计图、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签与零尺寸线索；支持导入 XML | UIAutomator |
+| 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、高亮 UIAutomator 暴露的可访问性节点、按透明度叠加参考设计图、在当前截图叠加新增和变化节点边界、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签与零尺寸线索；支持导入 XML | UIAutomator |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |

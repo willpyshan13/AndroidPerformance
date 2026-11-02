@@ -408,6 +408,14 @@ export function summarizeLayoutChanges(before,after){
   return summary;
 }
 
+export function layoutDiffOverlays(changes,limit=500){
+  if(!Array.isArray(changes)||!Number.isInteger(limit)||limit<0)throw new Error('布局差异边界参数无效');
+  return changes.filter(change=>{
+    const bounds=change?.after?.bounds;
+    return Array.isArray(bounds)&&bounds.length===4&&bounds.every(Number.isFinite)&&bounds[2]>=bounds[0]&&bounds[3]>=bounds[1];
+  }).slice(0,limit).map(change=>({id:change.id,kind:change.kind==='added'?'added':change.moved||change.orderChanged?'moved':'changed',bounds:[...change.after.bounds]}));
+}
+
 export function layoutComparisonReport(baseline,current,generatedAt=Date.now()) {
   if(!Array.isArray(baseline?.nodes)||!Array.isArray(current?.nodes))throw new Error('需要两份布局快照');
   const diff=compareLayouts(baseline.nodes,current.nodes);

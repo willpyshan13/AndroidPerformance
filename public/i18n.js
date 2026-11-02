@@ -259,7 +259,7 @@ const en={
  '界面层级':'View hierarchy',
  '节点属性':'Node properties',
  '节点检查线索':'Node inspection hints',
- '采样质量':'Sample quality',
+ '采样质量':'Sample quality','采集诊断':'Capture diagnostics','输出':'output','未提供':'Not provided','记录样本：':'Recorded samples: ','被截断样本：':'Cut samples: ','丢失样本：':'Lost samples: ','截断调用栈：':'Truncated stacks: ','内核丢失':'Kernel lost','用户态丢失':'User-space lost','设备输出未包含可解析的丢失计数。':'The device output did not include a parseable lost-sample count.','这些计数来自采集器输出；“未提供”表示原始输出没有给出该项，不代表为零。重新导入 perf.data 时采集器输出不可恢复。':'These counts come from the recorder output. “Not provided” means the original output did not report that item; it does not mean zero. Recorder output cannot be recovered when perf.data is imported later.',
  '采样函数时间分布':'Sampled function timeline',
  '线程采样时间线':'Thread sample timeline',
  'CPU 采样与 FrameTimeline 关联':'CPU samples and FrameTimeline correlation',

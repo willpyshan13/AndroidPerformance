@@ -11,6 +11,7 @@ import { parseNetworkAgentLog } from './network-agent.js';
 import { parseGpuCapabilities } from './gpu.js';
 import { captureLayoutFromAgent } from './layout-agent.js';
 import { parseComposeRecompositionLog } from './compose-runtime.js';
+import { parseSimpleperfDiagnostics } from './simpleperf-diagnostics.js';
 import { parseLeakCanaryLog } from './leakcanary-live.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
 
@@ -311,12 +312,23 @@ export class Adb {
       try {
         await this.run(['-s',serial,'push',binary,remoteBinary],{timeout:30000});
         await this.shell(serial,['chmod','755',remoteBinary]);
-        await this.shell(serial,[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f',String(frequencyHz),'--duration',String(seconds),'--call-graph',callGraph,'-o',remoteData],{timeout:(seconds+45)*1000});
+        const recordArgs=[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f',String(frequencyHz),'--duration',String(seconds),'--call-graph',callGraph,'-o',remoteData];
+        const quoted=recordArgs.map(arg=>`'${String(arg).replaceAll("'", "'\\''")}'`);
+        let recordOutput='';
+        try {
+          const result=await this.runner(this.path,['-s',serial,'shell',...quoted],{timeout:(seconds+45)*1000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});
+          recordOutput=`${result.stdout||''}\n${result.stderr||''}`;
+        } catch(error) {
+          recordOutput=`${error.stdout||''}\n${error.stderr||''}`;
+          if(error.signal==='SIGKILL')throw new Error('ADB 被系统强制终止（SIGKILL），请检查程序签名或选择新下载的官方 Platform Tools；当前路径：'+this.path);
+          const detail=error.stderr?.toString().trim()||error.message;
+          throw new Error(error.code==='ENOENT'?'未找到 ADB，请设置 ADB_PATH 或安装 Android Platform Tools':`ADB 执行失败：${detail.slice(0,1200)}`);
+        }
         const raw=(await this.shell(serial,['wc','-c',remoteData])).trim(),match=raw.match(/^(\d+)(?:\s|$)/),size=match?Number(match[1]):NaN;
         if(!Number.isSafeInteger(size)||size<8||size>256*1024*1024)throw new Error('采样文件为空或超过 256 MiB 上限');
         await this.run(['-s',serial,'pull',remoteData,local],{timeout:120000});
         const data=await readFile(local);if(data.length!==size||data.subarray(0,8).toString('ascii')!=='PERFILE2')throw new Error('设备未返回有效的 perf.data');
-        return data;
+        return {data,diagnostics:parseSimpleperfDiagnostics(recordOutput)};
       } catch(error) { throw new Error(`CPU 采样失败：${error.message}；目标通常需要可调试或可 profile，设备及内核也必须允许采样。`); }
       finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData]),unlink(local)]);}
     });

@@ -52,11 +52,11 @@ test('Macrobenchmark HTTP route forwards the selected Gradle project and prevent
 
 test('CPU profile API forwards validated sampling configuration and multi-event selection',async t=>{
  const events=['cpu-clock:u','cpu-cycles:u','instructions:u'];let received;
- const adb={captureCpuProfile:async(serial,packageName,seconds,locator,selected,options)=>{received={serial,packageName,seconds,locator,selected,options};return Buffer.from('PERFILE2test');}};
+ const adb={captureCpuProfile:async(serial,packageName,seconds,locator,selected,options)=>{received={serial,packageName,seconds,locator,selected,options};return {data:Buffer.from('PERFILE2test'),diagnostics:{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true}};}};
  const dir=await mkdtemp(join(tmpdir(),'apw-cpu-profile-api-'));const app=createApp({adb,dataDir:dir,token:'cpu-profile-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
  t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
  const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile`,{method:'POST',headers:{'X-Workbench-Token':'cpu-profile-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:5,events,frequencyHz:499,callGraph:'dwarf'})});
- assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events,options:{frequencyHz:499,callGraph:'dwarf'}});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.deepEqual(JSON.parse(Buffer.from(response.headers.get('x-cpu-capture-diagnostics'),'base64url').toString()),{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true});assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events,options:{frequencyHz:499,callGraph:'dwarf'}});
 });
 
 test('CPU events API queries the requested device and returns supported events',async t=>{

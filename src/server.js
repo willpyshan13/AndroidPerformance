@@ -426,8 +426,12 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/layout/agent') return json(await adb.layoutAgent(body.serial,body.packageName,body.token));
         if (path === '/api/compose/recompositions') return json(await adb.composeRecompositionSnapshot(body.serial,body.packageName));
         if (path === '/api/cpu-profile') {
-          const data=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp'});
-          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' });
+          const capture=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp'});
+          const data=Buffer.isBuffer(capture)?capture:capture.data;
+          const diagnostics=Buffer.isBuffer(capture)?null:capture.diagnostics;
+          const headers={ 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' };
+          if(diagnostics)headers['X-CPU-Capture-Diagnostics']=Buffer.from(JSON.stringify(diagnostics)).toString('base64url');
+          res.writeHead(200,headers);
           return res.end(data);
         }
         if (path === '/api/cpu-events') return json(await adb.listCpuEvents(body.serial));

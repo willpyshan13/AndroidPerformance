@@ -41,7 +41,7 @@ Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装�
 | --- | --- | --- |
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
-| CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布 | Android NDK simpleperf |
+| CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断 | Android NDK simpleperf |
 | 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取目标应用 Logcat 中的 LeakCanary 实时事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、LeakCanary Logcat、Shark、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
@@ -163,7 +163,7 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 
 完整 Perfetto UI 使用自托管的 v59.1 静态资源。点击追踪页“在本机完整 Perfetto 中查看”会通过本机服务将当前追踪送入同源 iframe；分享与下载开关默认关闭，追踪留在本机浏览器内存。源码运行前执行 `npm run prepare:perfetto-ui`；桌面打包会将该资源放入应用资源目录。主工作台与 Perfetto UI 各自使用不同 CSP，Perfetto 仅允许本机资源、WASM 和本地 worker。
 
-CPU 采样完成后会下载并尝试自动载入分析；若解析失败，下载的原始文件仍可使用。采样可以保存为本机档案，载入前校验 SHA-256 并重新分析。支持指定本机 `symfs` 符号目录并重新解析，符号文件需要与采样中的路径和构建 ID 对应；不匹配的文件会被 simpleperf 拒绝，无法解析的函数仍显示为 `unknown`。
+CPU 采样完成后会下载并尝试自动载入分析；若解析失败，下载的原始文件仍可使用。实时采集会一并显示 simpleperf 输出中可识别的记录数、切除数、丢失数、内核 / 用户态丢失数及截断调用栈数。未由设备报告的项目保持“未提供”，不会按零计，也不会从解析后的时间线推算；单独导入 perf.data 时，这些采集器诊断不可恢复。采样可以保存为本机档案，载入前校验 SHA-256 并重新分析。支持指定本机 `symfs` 符号目录并重新解析，符号文件需要与采样中的路径和构建 ID 对应；不匹配的文件会被 simpleperf 拒绝，无法解析的函数仍显示为 `unknown`。
 
 启动追踪的可选真实样本回归：从 Perfetto 官方测试数据获取 `api31_startup_cold.perfetto-trace`（SHA-256 `aadf4a141dc0249abd4d7080a7d94bd614949eb0e7398fa6f3c75b503c70dade`），设置 `APW_STARTUP_TRACE` 为本机路径后执行 `npm test`。未设置时相关真实样本测试会跳过。
 

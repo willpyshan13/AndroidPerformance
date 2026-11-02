@@ -9,8 +9,19 @@ function event(id,count,time,name=name64,session='9'.repeat(32)){return `APW1|${
 test('Compose probe parser aggregates per-instance cumulative counts without merging distinct instances',()=>{
  const raw=[event('z'.repeat(32),99,90,name64,'8'.repeat(32)),event('a'.repeat(32),1,100),event('a'.repeat(32),3,300),event('b'.repeat(32),2,200),event('c'.repeat(32),5,400,Buffer.from('Card').toString('base64url'))].join('\n');
  const result=parseComposeRecompositionLog(raw,{serial:'device',packageName:'com.example.app',uid:10001,timestamp:123});
- assert.deepEqual(result.composables,[{name:'Card',recompositions:5,instances:1,lastElapsedNs:'400'},{name:'FeedScreen',recompositions:5,instances:2,lastElapsedNs:'300'}]);
- assert.equal(result.eventCount,4);assert.equal(result.events.length,4);assert.equal(result.source,'adb-logcat');assert.match(result.note,/不含跳过次数/);
+ assert.deepEqual(result.composables,[{name:'Card',measurement:'side-effect',recompositions:5,instances:1,lastElapsedNs:'400'},{name:'FeedScreen',measurement:'side-effect',recompositions:5,instances:2,lastElapsedNs:'300'}]);
+ assert.equal(result.eventCount,4);assert.equal(result.events.length,4);assert.equal(result.source,'adb-logcat');assert.match(result.note,/不代表实际重组/);
+});
+
+test('automatic Compose execution records aggregate by function without inventing instance identities',()=>{
+ const automatic=(time,name=name64,session='9'.repeat(32))=>`APW2|${session}|${name}|${time}`;
+ const result=parseComposeRecompositionLog([automatic(100),automatic(200),automatic(300,Buffer.from('Card').toString('base64url'))].join('\n'));
+ assert.deepEqual(result.composables,[
+  {name:'FeedScreen',measurement:'automatic-invocation',invocations:2,instances:null,lastElapsedNs:'200'},
+  {name:'Card',measurement:'automatic-invocation',invocations:1,instances:null,lastElapsedNs:'300'}
+ ]);
+ assert.equal(result.events[0].measurement,'automatic-invocation');assert.equal(result.events[0].instanceId,null);
+ assert.match(result.note,/可能包含随后被 Composer 跳过/);
 });
 
 test('Compose probe parser rejects malformed records and bounds event details',()=>{

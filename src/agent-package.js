@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=join(dirname(dirname(fileURLToPath(import.meta.url))),'android-agent');
 const paths=['README.md','src/main/java/dev/androidperformance/agent/NetworkEvents.java','src/main/java/dev/androidperformance/agent/LogcatSink.java'];
-const layoutPaths=['LAYOUT_AGENT_README.md','src/main/java/dev/androidperformance/agent/LayoutAgent.java','src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt'];
+const layoutPaths=['LAYOUT_AGENT_README.md','src/main/java/dev/androidperformance/agent/LayoutAgent.java','src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt','src/main/kotlin/dev/androidperformance/agent/ApwComposeAutomaticProbe.kt','compose-compiler-plugin/settings.gradle.kts','compose-compiler-plugin/build.gradle.kts','compose-compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar','compose-compiler-plugin/src/main/java/dev/androidperformance/compiler/IrCalls.java','compose-compiler-plugin/src/main/kotlin/dev/androidperformance/compiler/ApwComposeInstrumentationRegistrar.kt'];
 const crcTable=Uint32Array.from({length:256},(_,i)=>{let x=i;for(let j=0;j<8;j++)x=(x>>>1)^((x&1)?0xedb88320:0);return x>>>0;});
 function crc32(data){let n=0xffffffff;for(const byte of data)n=(n>>>8)^crcTable[(n^byte)&255];return (n^0xffffffff)>>>0;}
 // Fixed local files, uncompressed ZIP entries, no shell, no user-supplied paths.

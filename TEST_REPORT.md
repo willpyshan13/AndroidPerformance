@@ -1,5 +1,13 @@
 # 当前验证记录（2026-11-02）
 
+## Compose 编译器自动执行观测
+
+- 新增可选 Kotlin 2.2.21 Compose 编译器插件和 `ApwComposeAutomaticProbe.kt` 运行时入口。插件识别目标模块编译的 `@Composable` 函数，在 Composable 函数入口插入记录调用；自动模式不需要在各个 Composable 手写 probe，但函数之后仍可能被 Composer 跳过。
+- 事件采用独立 `APW2` 日志格式，记录进程会话、函数名和设备单调时钟。解析器按函数名统计函数入口调用次数，不伪造实例身份；既有 `APW1` 显式 probe 仍按 SideEffect 提交次数和实例计数，两种测量分开显示。
+- 插件 `gradle jar` 构建成功；以真实 Compose 1.7.6 页面构建安装到 API 25 设备，三次状态更新后，桌面解析器直接读回 main Logcat 的 16 条 APW2 记录，0 条无效；`InstrumentedScreen` 与其无参数 `StaticChild` 均为 4 次调用（含首次组合）。这确认自动计数会包含后续可被 Composer 跳过的函数调用，不等价于实际重组。该验证使用临时 smoke APK，不代表用户目标应用已接入插件。
+- 插件目前只支持匹配 Kotlin 2.2.21 编译器 API，且只插桩本次编译的目标模块，不覆盖未重编译依赖；不能区分同名 Composable 的多个实例，也不提供 State Reads、完整调用树或 Jank 因果。每次执行写一条 debug 日志，正式测量前应移除。
+- 定向回归仍在运行；本节不代替完整 Compose Runtime Inspector；自动调用次数可能包含被 Composer 跳过的函数。临时 smoke APK 后续需卸载并恢复用户原 Activity。
+
 ## 应用内 Android View Debug Agent
 
 - 新增仅供目标应用 debug 构建接入的 `LayoutAgent.java`：通过 Android 本机抽象 socket 在应用进程内读取当前 Activity View 树、属性与窗口截图；最多 10,000 节点、100 层；`FLAG_SECURE` 或超过 16,000,000 像素时不生成截图。

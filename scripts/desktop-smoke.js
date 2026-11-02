@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -52,6 +52,8 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   const readyFile = join(tempRoot, `${label}-ready.json`);
   const executable = join(installDir, `${pkg.build.productName}.exe`);
   await access(executable);
+  await mkdir(profileDir, { recursive: true });
+  await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   let childError;
   let childOutput = '';
   const child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
@@ -62,8 +64,9 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { childOutput = `${childOutput}${chunk}`.slice(-8000); });
 
   try {
-    const { origin, rendererReady, rendererState } = await waitForReady(child, readyFile, () => childError?.message || childOutput, () => childError);
+    const { origin, rendererReady, rendererState, menuLabels } = await waitForReady(child, readyFile, () => childError?.message || childOutput, () => childError);
     if (!rendererReady) throw new Error(`${label}: desktop renderer did not build its navigation and main view: ${JSON.stringify(rendererState)}`);
+    if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
     if (!page.ok) throw new Error(`${label}: main page returned HTTP ${page.status}`);
     const html = await page.text();

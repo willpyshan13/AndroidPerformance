@@ -77,7 +77,8 @@ function createWindow() {
         await new Promise(resolve => setTimeout(resolve, 100));
       } while (Date.now() < deadline);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent;
-      await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState }), { mode: 0o600 });
+      const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
+      await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });
     } catch (error) { console.error('Desktop smoke readiness check failed:', error); }
   });
   if (process.env.APW_SMOKE_READY_FILE) {

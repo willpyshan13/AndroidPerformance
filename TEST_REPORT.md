@@ -464,3 +464,9 @@ npm run test:device -- \
 - Added localization and package inclusion regression checks. Targeted desktop tests: 5 passed; full suite pending.
 - Full suite after dialog localization: 299 tests, 283 passed, 0 failed, 16 optional official-sample tests skipped; syntax and whitespace checks passed.
 - Rebuilt the macOS arm64 `.app`; packaged-app smoke passed with the renderer, Java runtime, Trace Processor, and Perfetto UI ready. The archive contains `desktop/main.js`, `desktop/menu.js`, and `desktop/locale.js`.
+
+## Packaged desktop locale smoke（2026-11-03）
+
+- Desktop smoke now seeds an `en-US` preference before launch and reads the top-level Electron menu labels from the running app. It requires English `File` and `Analyze` entries and rejects any Chinese menu label on macOS, MSI, and NSIS paths.
+- Rebuilt and launched the macOS arm64 `.app`; its persisted English menu check passed alongside the renderer and bundled Java, Trace Processor, and Perfetto UI checks. Windows installer behavior awaits the next native GitHub Actions run.
+- `npm test`: 299 tests, 283 passed, 0 failed, 16 optional official-sample tests skipped. `npm run check` and `git diff --check` passed.

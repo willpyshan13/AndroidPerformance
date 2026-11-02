@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -34,6 +34,8 @@ try {
   await stat(join(resources, 'java-runtime', 'bin', 'java'));
   await stat(join(resources, 'trace-processor', 'trace_processor_shell'));
   await stat(join(resources, 'perfetto-ui', 'index.html'));
+  await mkdir(profileDir, { recursive: true });
+  await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
     env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -55,6 +57,7 @@ try {
   }
   if (!ready) throw new Error('Packaged macOS app did not start its local service within 60 seconds');
   if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify(ready.rendererState)}`);
+  if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);
   const html = await page.text();

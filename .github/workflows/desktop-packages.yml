@@ -67,6 +67,13 @@ jobs:
       - name: Install AppImage runtime dependency
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64
+      - name: Exclude native staging from Windows Defender during packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $paths = @((Join-Path $env:GITHUB_WORKSPACE 'tools'), (Join-Path $env:GITHUB_WORKSPACE 'dist'))
+          New-Item -ItemType Directory -Force -Path $paths | Out-Null
+          Add-MpPreference -ExclusionPath $paths
       - run: npm ci
       - name: Prepare macOS tools
         if: matrix.mac

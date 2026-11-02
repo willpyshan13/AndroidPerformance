@@ -23,6 +23,12 @@ test('CPU profile capture validates perf magic and cleans both copies',async()=>
  const before=calls.length;for(const events of [[],Array(9).fill('cpu-clock'),['cpu-clock','cpu-clock'],['cpu-clock;id']])await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf',events),/simpleperf 事件名/);assert.equal(calls.length,before);
 });
 
+test('CPU event discovery parses device simpleperf list output and removes uploaded binary',async()=>{
+ const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);const joined=args.join(' ');if(joined.includes('ro.product.cpu.abi'))return {stdout:'arm64-v8a'};if(joined.includes('ro.build.version.sdk'))return {stdout:'34'};if(joined.includes("'list'"))return {stdout:'List of hardware events:\n  cpu-cycles\t# CPU cycles\n  instructions\nList of software events:\n  cpu-clock (may not supported)\n'};return {stdout:''};});
+ const result=await adb.listCpuEvents('ABC',async(abi,api)=>{assert.equal(abi,'arm64-v8a');assert.equal(api,'34');return '/fake/simpleperf';});
+ assert.deepEqual(result,{events:['cpu-cycles','instructions','cpu-clock'],source:'simpleperf list'});assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
+});
+
 test('flame layout uses normalized event weights and preserves stack ancestry',()=>{
  const p=parseFoldedStacks('t;main;a 6\nt;main;b 4\n');const graph=layoutFlame(p.root);
  const a=graph.frames.find(x=>x.node.name==='a'),b=graph.frames.find(x=>x.node.name==='b');

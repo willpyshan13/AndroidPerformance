@@ -338,6 +338,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' });
           return res.end(data);
         }
+        if (path === '/api/cpu-events') return json(await adb.listCpuEvents(body.serial));
         if (path === '/api/heap') {
           const data = await adb.heapDump(body.serial, body.packageName);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="heap.hprof"' });

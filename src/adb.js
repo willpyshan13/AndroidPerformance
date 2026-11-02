@@ -265,6 +265,20 @@ export class Adb {
       finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData]),unlink(local)]);}
     });
   }
+  async listCpuEvents(serial, locator=locateDeviceSimpleperf) {
+    validateTarget(serial);
+    return this.exclusive(serial,async()=>{
+      const abi=(await this.shell(serial,['getprop','ro.product.cpu.abi'])).trim(),api=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim(),binary=await locator(abi,api),remote=`/data/local/tmp/apw-simpleperf-list-${randomUUID()}`;
+      try {
+        await this.run(['-s',serial,'push',binary,remote],{timeout:30000});
+        await this.shell(serial,['chmod','755',remote]);
+        const output=await this.shell(serial,[remote,'list'],{timeout:60000,maxBuffer:4*1024*1024});
+        const events=[...new Set(output.split(/\r?\n/).map(line=>line.replace(/\s+#.*$/,'').replace(/\s+\(may not supported\)\s*$/,'').trim()).filter(name=>/^[A-Za-z0-9_./:-]{1,160}$/.test(name)))].slice(0,2000);
+        if(!events.length)throw new Error('simpleperf 未返回可识别的设备事件');
+        return {events,source:'simpleperf list'};
+      } finally {await this.shell(serial,['rm','-f',remote]).catch(()=>{});}
+    });
+  }
   async waitHeapFile(serial, remote, { timeoutMs = 120000, intervalMs = 1000, stableChecks = 3 } = {}) {
     const deadline = Date.now() + timeoutMs;
     let previous = 0, stable = 0;

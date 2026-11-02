@@ -543,3 +543,8 @@ npm run test:device -- \
 
 - UIAutomator 可交互节点线索新增稳定规则 ID、warning/info 严重级别、high/medium 置信度、节点 ID 和证据字段。无标签仅在当前读取子树字段完整且确实为空时提示；小触控区域记录原始边界、密度、dp 尺寸和 48 dp 阈值，并标为中置信度；页面直接展示规则、严重级别、置信度和证据，中英文标签已接入。
 - `test/layout-scope.test.js` 覆盖原有识别边界及结构化字段、rule ID、证据和置信度；定向测试 12 项通过。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。重建 macOS arm64 `.app` 后打包 smoke 通过，renderer、16 个页面状态及桌面资源检查正常。当前 ADB 设备列表为空，无法用真机布局采集确认不同 Android / UIAutomator 实现的字段差异。
+
+## CPU 时间图打包 renderer 大样本验证（2026-11-03）
+
+- macOS arm64 打包 Electron renderer 载入 50,000 个合成样本，建立时间索引，等距投影 2,000 个样本，绘制 48,000 个栈帧并通过 `getImageData` 读取实际 Canvas 像素缓冲区。smoke 实测最终打包 smoke 实测约 46 ms：索引 29.2 ms、投影 1.2 ms、Canvas 命令 13 ms、像素读取 2.8 ms。前一轮约 49 ms；此为单机合成基准，不代表其他设备性能。
+- 打包 smoke 同时保留 PNG 导出、空 / 演示状态导航、菜单和资源检查；当前真实设备大型 perf.data 端到端数据仍待验证。

@@ -414,6 +414,11 @@ export function layoutScope(nodes, rootId = null) {
   return nodes.slice(start, end);
 }
 
+export function matchComposeRuntimeGroups(nodes, key) {
+  if (!Array.isArray(nodes) || !Number.isSafeInteger(key)) return [];
+  return nodes.filter(node => node?.className === 'ComposeRuntimeGroup' && node.attributes?.['compose-key'] === String(key));
+}
+
 // Accessibility snapshots may omit fields or descendants. Report candidates
 // only when the recorded subtree has explicit, empty label fields throughout.
 export function inspectLayout(nodes,{densityDpi=null}={}){

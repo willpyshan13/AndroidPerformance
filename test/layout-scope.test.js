@@ -1,6 +1,18 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {layoutScope,extractLayoutNodes,compareLayouts,summarizeLayoutChanges,layoutComparisonReport,inspectLayout} from '../public/offline.js';
+import {layoutScope,extractLayoutNodes,compareLayouts,summarizeLayoutChanges,layoutComparisonReport,inspectLayout,matchComposeRuntimeGroups} from '../public/offline.js';
+test('compiler group keys resolve all matching runtime groups without guessing instance identity',()=>{
+ const nodes=[
+  {id:1,className:'ComposeRuntimeGroup',attributes:{'compose-key':'-42'}},
+  {id:2,className:'ComposeRuntimeGroup',attributes:{'compose-key':'-42'}},
+  {id:3,className:'ComposeRuntimeGroup',attributes:{'compose-key':'7'}},
+  {id:4,className:'android.view.View',attributes:{'compose-key':'-42'}}
+ ];
+ assert.deepEqual(matchComposeRuntimeGroups(nodes,-42).map(node=>node.id),[1,2]);
+ assert.deepEqual(matchComposeRuntimeGroups(nodes,7).map(node=>node.id),[3]);
+ assert.deepEqual(matchComposeRuntimeGroups(nodes,Number.MAX_SAFE_INTEGER+1),[]);
+ assert.deepEqual(matchComposeRuntimeGroups(nodes,'-42'),[]);
+});
 test('layout extraction rejects partial node counts and depths at their exact boundaries',()=>{
  const element=(tag,attrs={},children=[])=>({tagName:tag,attributes:Object.entries(attrs).map(([name,value])=>({name,value})),children});
  const node=(children=[])=>element('node',{class:'android.view.View',bounds:'[1,2][3,4]'},children);

@@ -195,3 +195,17 @@ test('Network analysis localizes filter states and explains timing, grouping, an
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('CPU profiling localizes timeline states and clarifies sampled-weight and symbol evidence',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function cpuFocusNode()'),end=app.indexOf('function renderHeap()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '使用 simpleperf symfs 查找与设备路径及构建 ID 匹配的本机符号文件。更换目录后需重新解析；不保证所有符号均可恢复。',
+    '保存原始 perf.data 到本机，载入前校验 SHA-256 并重新分析；采样可能包含敏感信息。',
+    '仅统计时间线中有效的已读取样本，不等于丢失采样数或 CPU 时间；没有调用方可能是采集方式或真实栈深度所致。时间线已截断时，统计不覆盖全部样本；被跳过的样本不在时间线中。本统计覆盖全部已读取时间，不随时间筛选变化。',
+    '色块只表示采样点，并非线程运行状态；点击线程的时间段按该线程和时间筛选火焰图及调用树。追踪状态按 PID/TID 查询当前 Perfetto 窗口，不自动对齐时间，也不能证明来自同一设备或同一线程生命周期。',
+    '每列对应一个时间段，颜色按采样栈最末端的函数（叶函数）汇总事件周期权重；列内显示各函数所占比例。点击时间段可按全部线程筛选下方调用树。图表仅反映已读取样本，不表示 CPU 时间或函数的包含成本。',
+    '横向宽度表示当前范围内的事件周期权重；每一层是调用关系，不表示时间顺序。点击或按回车放大，最多绘制 3,000 节点、41 层。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

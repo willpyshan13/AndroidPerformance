@@ -126,3 +126,14 @@ test('Source workspace has English labels for local/remote snapshots, search sta
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('GPU artifact page has English labels, capability status, and tool limitations',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderGpu()'),end=app.indexOf('\nasync function refreshGpu',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>]/.test(text)))];
+  const guidance=[
+    '本模块管理本机产物，不采集 GPU 数据，也不内置 AGI。文件按导入时的 SHA-256 校验；校验相同只表示未发生变化，不证明文件格式有效或来源可信。Perfetto 追踪可交给系统追踪分析；.gfxtrace 可在桌面端交给 AGI，或导出后手动打开。',
+    '仅显示系统属性和包管理器报告；缺失不代表设备不支持。AGI 的实际兼容性、GPU 计数器、驱动及应用可采集性需要在 AGI 中验证。',
+    '选择设备后读取系统报告。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

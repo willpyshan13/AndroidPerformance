@@ -27,8 +27,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
@@ -145,6 +147,10 @@ public final class LayoutAgent {
         } else { response.put("screenshot", JSONObject.NULL); response.put("warning", "Secure window or screenshot exceeds 16 megapixels"); }
         response.put("truncated", state.truncated); response.put("composeHosts", state.composeHosts);
         response.put("composeNodes", state.composeNodes); response.put("composeWarning", state.composeWarning);
+        response.put("composeRuntimeGroups", state.composeRuntimeGroups); response.put("composeStateReads", state.composeStateReads);
+        response.put("composeStateReadsAvailable", state.composeHosts > 0 && state.composeStateReadsAvailable);
+        response.put("composeStateReadsWarning", state.composeStateReadsWarning);
+        response.put("composeRuntimeWarning", state.composeRuntimeWarning); response.put("composeRuntimeDetail", safe(state.composeRuntimeDetail));
         return response;
     }
 
@@ -193,6 +199,90 @@ public final class LayoutAgent {
         } catch (Exception error) {
             state.composeWarning = true;
         }
+        try {
+            Object composition = composeComposition(host);
+            Object slotTable = fieldValue(composition, "slotTable");
+            Object compositionData = slotTable;
+            Map<Object, Integer> stateReadCounts = stateReadCounts(composition);
+            state.composeStateReadsAvailable = state.composeStateReadsAvailable && stateReadCounts != null;
+            if (stateReadCounts == null) state.composeStateReadsWarning = true;
+            Method groups = findMethod(compositionData.getClass(), "getCompositionGroups");
+            if (groups == null) throw new NoSuchMethodException("compositionGroups");
+            Object roots = groups.invoke(compositionData);
+            if (!(roots instanceof Iterable)) throw new IllegalStateException("Invalid Compose group list");
+            out.startTag(null, "node"); attr(out, "class", "ComposeRuntimeTree"); attr(out, "compose-tree", "runtime");
+            attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", ""); attr(out, "resource-id", "");
+            attr(out, "index", "0"); attr(out, "bounds", "[0,0][0,0]");
+            for (Object group : (Iterable<?>)roots) writeCompositionGroup(out, group, depth + 1, state, stateReadCounts);
+            out.endTag(null, "node");
+        } catch (Exception error) {
+            state.composeRuntimeWarning = true;
+            state.composeRuntimeDetail = error.getClass().getSimpleName() + (error.getMessage() == null ? "" : ": " + error.getMessage());
+        }
+    }
+
+    private static Object composeComposition(View host) throws Exception {
+        View parent = host;
+        Object composition = null;
+        while (parent != null) {
+            try { composition = fieldValue(parent, "composition"); break; }
+            catch (NoSuchFieldException ignored) {}
+            parent = parent.getParent() instanceof View ? (View)parent.getParent() : null;
+        }
+        if (composition == null) throw new NoSuchFieldException("AbstractComposeView.composition");
+        Method original = findMethod(composition.getClass(), "getOriginal");
+        if (original != null) composition = original.invoke(composition);
+        return composition;
+    }
+
+    private static Object fieldValue(Object instance, String name) throws Exception {
+        if (instance == null) throw new IllegalStateException("Missing Compose runtime value");
+        for (Class<?> type = instance.getClass(); type != null; type = type.getSuperclass()) {
+            try {
+                Field field = type.getDeclaredField(name); field.setAccessible(true);
+                Object value = field.get(instance);
+                if (value == null) throw new IllegalStateException("Missing Compose field " + name);
+                return value;
+            } catch (NoSuchFieldException ignored) {}
+        }
+        throw new NoSuchFieldException(name);
+    }
+
+    private static Map<Object, Integer> stateReadCounts(Object composition) {
+        Map<Object, Integer> counts = new IdentityHashMap<>();
+        try {
+            Object observations = fieldValue(composition, "observations");
+            Method asMap = findMethod(observations.getClass(), "asMap");
+            Object values = asMap == null ? null : asMap.invoke(observations);
+            if (!(values instanceof Map)) return null;
+            for (Object scopes : ((Map<?, ?>)values).values()) {
+                if (scopes instanceof Iterable) for (Object scope : (Iterable<?>)scopes) counts.put(scope, counts.containsKey(scope) ? counts.get(scope) + 1 : 1);
+            }
+        } catch (Exception ignored) { return null; }
+        return counts;
+    }
+
+    private static void writeCompositionGroup(XmlSerializer out, Object group, int depth, CaptureState state, Map<Object, Integer> stateReadCounts) throws Exception {
+        if (group == null || depth > MAX_DEPTH || state.count >= MAX_NODES) { state.truncated = true; return; }
+        state.count++; state.composeRuntimeGroups++;
+        Object key = invoke(group, "getKey"), identity = invoke(group, "getIdentity"), sourceInfo = invoke(group, "getSourceInfo");
+        int reads = 0;
+        Object data = invoke(group, "getData");
+        if (data instanceof Iterable) for (Object item : (Iterable<?>)data) {
+            if (stateReadCounts != null && item != null && item.getClass().getName().contains("RecomposeScope")) reads += stateReadCounts.getOrDefault(item, 0);
+        }
+        if (stateReadCounts != null) state.composeStateReads += reads;
+        out.startTag(null, "node"); attr(out, "class", "ComposeRuntimeGroup"); attr(out, "compose-tree", "runtime");
+        attr(out, "compose-key", safe(String.valueOf(key))); attr(out, "compose-identity", safe(String.valueOf(identity)));
+        attr(out, "compose-source-info", safe(sourceInfo == null ? "" : String.valueOf(sourceInfo)));
+        attr(out, "compose-state-read-count", stateReadCounts == null ? "unavailable" : Integer.toString(reads));
+        attr(out, "index", "0"); attr(out, "resource-id", ""); attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", "");
+        attr(out, "bounds", "[0,0][0,0]"); attr(out, "checkable", "false"); attr(out, "checked", "false"); attr(out, "clickable", "false");
+        attr(out, "long-clickable", "false"); attr(out, "focusable", "false"); attr(out, "focused", "false"); attr(out, "selected", "false");
+        attr(out, "enabled", "true"); attr(out, "scrollable", "false"); attr(out, "visibility", "visible"); attr(out, "alpha", "1.000");
+        Object children = invoke(group, "getCompositionGroups");
+        if (children instanceof Iterable) for (Object child : (Iterable<?>)children) writeCompositionGroup(out, child, depth + 1, state, stateReadCounts);
+        out.endTag(null, "node");
     }
 
     private static void writeSemanticsTree(XmlSerializer out, String tree, SemanticsSnapshot root, int[] hostLocation, int[] rootLocation, int hostWidth, int hostHeight, int depth) throws Exception {
@@ -335,5 +425,5 @@ public final class LayoutAgent {
         final Map<String, Object> properties = new java.util.LinkedHashMap<>();
         final List<SemanticsSnapshot> children = new ArrayList<>();
     }
-    private static final class CaptureState { int count; int composeHosts; int composeNodes; boolean truncated; boolean composeWarning; }
+    private static final class CaptureState { int count; int composeHosts; int composeNodes; int composeRuntimeGroups; int composeStateReads; boolean composeStateReadsAvailable = true; boolean truncated; boolean composeWarning; boolean composeRuntimeWarning; boolean composeStateReadsWarning; String composeRuntimeDetail = ""; }
 }

@@ -44,9 +44,14 @@ export async function captureLayoutFromAgent(adb,serial,packageName,sharedToken)
     if(response.truncated===true)warnings.push('View 树达到 10,000 节点或 100 层采集上限');
     const composeHosts=Number.isSafeInteger(response.composeHosts)&&response.composeHosts>=0?response.composeHosts:0;
     const composeNodes=Number.isSafeInteger(response.composeNodes)&&response.composeNodes>=0?response.composeNodes:0;
+    const composeRuntimeGroups=Number.isSafeInteger(response.composeRuntimeGroups)&&response.composeRuntimeGroups>=0?response.composeRuntimeGroups:0;
+    const composeStateReads=Number.isSafeInteger(response.composeStateReads)&&response.composeStateReads>=0?response.composeStateReads:0;
+    const composeStateReadsAvailable=response.composeStateReadsAvailable===true;
     if(response.composeWarning===true)warnings.push('检测到 Compose 宿主，但当前 Compose 运行时接口不兼容，未能读取其 Semantics 树');
+    if(response.composeRuntimeWarning===true)warnings.push(`当前 Compose 运行时不支持读取组合组树或 State Reads${typeof response.composeRuntimeDetail==='string'&&response.composeRuntimeDetail?`（${response.composeRuntimeDetail.slice(0,180)}）`:''}`);
+    if(response.composeStateReadsWarning===true)warnings.push('Compose State 观察关联不可用，当前快照无法报告 State-scope 关联数');
     const densityOutput=await adb.shell(serial,['wm','density']).catch(()=>''),densities=[...densityOutput.matchAll(/(?:Physical|Override)\s+density:\s*(\d+)/g)].map(m=>Number(m[1])),densityDpi=densities.at(-1);
-    return {xml:response.xml,screenshot,imageSize,densityDpi:Number.isSafeInteger(densityDpi)&&densityDpi>=72&&densityDpi<=1000?densityDpi:null,warning:warnings.length?warnings.join('；'):null,source:'agent',timestamp:Date.now(),serial,packageName,truncated:response.truncated===true,composeHosts,composeNodes,note:`应用内 Debug Agent View 树与窗口截图；${composeHosts?`包含 ${composeNodes} 个 Compose Semantics 节点（合并与未合并树）。`:'未检测到 Compose 宿主。'}不包含 Composable 调用树、重组计数或 State Reads；截图仍受安全窗口与系统渲染限制。`};
+    return {xml:response.xml,screenshot,imageSize,densityDpi:Number.isSafeInteger(densityDpi)&&densityDpi>=72&&densityDpi<=1000?densityDpi:null,warning:warnings.length?warnings.join('；'):null,source:'agent',timestamp:Date.now(),serial,packageName,truncated:response.truncated===true,composeHosts,composeNodes,composeRuntimeGroups,composeStateReads,composeStateReadsAvailable,note:`应用内 Debug Agent View 树与窗口截图；${composeHosts?`包含 ${composeNodes} 个 Compose Semantics 节点、${composeRuntimeGroups} 个组合组和 ${composeStateReadsAvailable?`${composeStateReads} 条 State 读取关联（按 RecomposeScope 统计）`:'State 读取关联不可用'}。`:'未检测到 Compose 宿主。'}不读取 State 值。组合组/State Reads 受 Compose 运行时私有接口兼容性影响；尚无帧关联。截图仍受安全窗口与系统渲染限制。`};
   }finally{
     if(Number.isInteger(port))await adb.run(['-s',serial,'forward','--remove',`tcp:${port}`],{timeout:10000}).catch(()=>{});
   }

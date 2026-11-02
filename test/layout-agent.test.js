@@ -23,13 +23,25 @@ async function harness(t,response){
 test('layout debug agent forwards a read-only View snapshot and always removes ADB forwarding',async t=>{
  const h=await harness(t,{ok:true,xml:'<hierarchy><node class="android.view.View" bounds="[0,0][1080,1920]"/></hierarchy>',screenshot:png.toString('base64'),truncated:false});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
- assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.equal(result.composeHosts,0);assert.equal(result.composeNodes,0);assert.match(result.note,/Composable.*State Reads/);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
+ assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.equal(result.composeHosts,0);assert.equal(result.composeNodes,0);assert.match(result.note,/不读取 State 值/);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
 });
 
 test('layout agent reports Compose Semantics counts and runtime incompatibility',async t=>{
  const h=await harness(t,{ok:true,xml:'<hierarchy><node class="ComposeSemanticsNode" compose-tree="merged" text="Hello"/></hierarchy>',screenshot:null,composeHosts:1,composeNodes:7,composeWarning:true});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
  assert.equal(result.composeHosts,1);assert.equal(result.composeNodes,7);assert.match(result.warning,/Compose 宿主/);assert.match(result.note,/7 个 Compose Semantics 节点/);
+});
+
+test('layout agent reports runtime group and per-scope state-read relationship counts',async t=>{
+ const xml='<hierarchy><node class="ComposeRuntimeTree"><node class="ComposeRuntimeGroup" compose-key="-1" compose-state-read-count="2"/></node></hierarchy>';
+ const h=await harness(t,{ok:true,xml,screenshot:png.toString('base64'),composeHosts:1,composeNodes:4,composeRuntimeGroups:30,composeStateReads:7,composeStateReadsAvailable:true,composeRuntimeWarning:false});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
+ assert.equal(result.composeRuntimeGroups,30);assert.equal(result.composeStateReads,7);assert.equal(result.composeStateReadsAvailable,true);assert.match(result.note,/30 个组合组和 7 条 State 读取关联/);assert.equal(result.warning,null);assert.match(result.xml,/compose-state-read-count="2"/);
+});
+
+test('layout agent reports unavailable State observations instead of zero',async t=>{
+ const h=await harness(t,{ok:true,xml:'<hierarchy/>',screenshot:png.toString('base64'),composeHosts:1,composeStateReads:0,composeStateReadsAvailable:false,composeStateReadsWarning:true});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);assert.equal(result.composeStateReadsAvailable,false);assert.match(result.note,/State 读取关联不可用/);assert.match(result.warning,/State 观察关联不可用/);
 });
 
 test('layout agent distinguishes secure screenshots and reports truncated trees',async t=>{

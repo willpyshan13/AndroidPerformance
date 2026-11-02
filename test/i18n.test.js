@@ -183,3 +183,15 @@ test('Heap page labels preserve HPROF evidence while explaining allocation-profi
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Network analysis localizes filter states and explains timing, grouping, and truncation',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderNetwork()'),end=app.indexOf('\nfunction renderBenchmark()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '筛选会同步更新汇总、接口统计、时间线和列表；时间按本机时区解释。连接筛选仅对 HAR 中存在连接 ID 的记录可用。',
+    '各列为筛选后有数据的请求阶段平均耗时（毫秒），括号内为样本数。TLS 是连接耗时的一部分，不能相加；Agent 的接收阶段包含应用读取间隔，缺失值不代表零耗时。',
+    '按方法、域名和路径分组；HAR 查询参数已丢弃，Agent 不记录路径。P50 / P95 使用最近秩，仅统计有效耗时；样本少时百分位可能就是最大值，不能代表总体性能。统计使用当前筛选结果。',
+    '展示当前筛选中开始时间和总耗时均可用的最早 200 条请求；重叠仅表示记录的时间重合，不证明因果关系。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

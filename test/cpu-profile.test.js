@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseFoldedStacks,layoutFlame} from '../public/offline.js';
+import {parseFoldedStacks,layoutFlame,buildSampleTimeline,cpuLibraryOptions,filterCpuProfileByLibrary} from '../public/offline.js';
 import {Adb} from '../src/adb.js';
 import {parseSimpleperfDiagnostics} from '../src/simpleperf-diagnostics.js';
 test('simpleperf record diagnostics preserve distinct counters and leave absent values unknown',()=>{
@@ -14,6 +14,16 @@ test('folded stacks accumulate event period weights and preserve call order',()=
 });
 test('folded stacks reject malformed values and unsafe weights',()=>{
  for(const s of ['x; 5','x -2','x 9007199254740992','x y'])assert.throws(()=>parseFoldedStacks(s));
+});
+test('CPU library filtering keeps samples containing that library and aggregates only its frames',()=>{
+ const input={event:'cpu-clock',samples:[
+  {timeNs:'1000000',period:'10',pid:1,tid:2,thread:'main',frames:['app','lib call','app caller'],libraries:['/system/bin/app_process64','/data/app/libsample.so','/system/bin/app_process64']},
+  {timeNs:'2000000',period:'5',pid:1,tid:2,thread:'main',frames:['only app'],libraries:['/system/bin/app_process64']},
+  {timeNs:'3000000',period:'7',pid:1,tid:3,thread:'worker',frames:['lib leaf'],libraries:['/data/app/libsample.so']}
+ ]};
+ const timeline=buildSampleTimeline(input),options=cpuLibraryOptions(timeline);assert.deepEqual(options,[{name:'/data/app/libsample.so',weight:17},{name:'/system/bin/app_process64',weight:15}]);
+ const result=filterCpuProfileByLibrary(timeline,'/data/app/libsample.so');assert.equal(result.timeline.samples.length,2);assert.equal(result.profile.root.weight,17);assert.deepEqual(result.profile.symbols.map(row=>row.name).filter(name=>name.startsWith('lib ')),['lib call','lib leaf']);assert.ok(result.timeline.samples.every(sample=>sample.frames.length===sample.libraries.length&&sample.libraries.every(name=>name==='/data/app/libsample.so')));
+ assert.equal(filterCpuProfileByLibrary(timeline,'/missing.so').profile,null);
 });
 test('ART method trace capture starts sampling, stops, validates the file, and cleans remote and local copies',async()=>{
  const {writeFile,access}=await import('node:fs/promises');let local;const calls=[],trace=Buffer.from('SLOW\x03\x00\x20\x00');

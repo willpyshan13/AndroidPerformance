@@ -47,12 +47,18 @@ try:
         if frames_total + chain.nr + 1 > 500000:
             truncated = True
             continue
-        frames = [encode_frame(chain.entries[i].symbol.symbol_name) for i in range(chain.nr)]
+        symbols = [chain.entries[i].symbol for i in range(chain.nr)]
+        frames = [encode_frame(symbol.symbol_name) for symbol in symbols]
+        libraries = [symbol.dso_name or 'unknown' for symbol in symbols]
         frames.reverse()
-        frames.append(encode_frame(lib.GetSymbolOfCurrentSample().symbol_name))
+        libraries.reverse()
+        leaf = lib.GetSymbolOfCurrentSample()
+        frames.append(encode_frame(leaf.symbol_name))
+        libraries.append(leaf.dso_name or 'unknown')
         frames_total += len(frames)
         samples.append({'timeNs': str(sample.time), 'pid': sample.pid, 'tid': sample.tid,
-                        'thread': encode_frame(sample.thread_comm), 'period': str(sample.period), 'frames': frames})
+                        'thread': encode_frame(sample.thread_comm), 'period': str(sample.period), 'frames': frames,
+                        'libraries': libraries})
 finally:
     lib.Close()
 print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'traceOffCpu': trace_offcpu, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))

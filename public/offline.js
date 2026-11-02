@@ -499,8 +499,9 @@ export function buildSampleTimeline(input, bins=60) {
       if(!/^\d+$/.test(s.timeNs)||!/^\d+$/.test(s.period)||!Array.isArray(s.frames)||s.frames.length>127||!Number.isSafeInteger(s.pid)||!Number.isSafeInteger(s.tid))throw Error();
       const time=BigInt(s.timeNs),weight=Number(s.period);if(time===0n||!Number.isSafeInteger(weight)||weight<=0)throw Error();
       if(s.frames.some(f=>typeof f!=='string'||!f||f.length>1000||/[;\r\n]/.test(f))||typeof s.thread!=='string'||/[;\r\n]/.test(s.thread))throw Error();
+      const libraries=Array.isArray(s.libraries)&&s.libraries.length===s.frames.length&&s.libraries.every(name=>typeof name==='string'&&name.length>0&&name.length<=4096&&!/[\x00-\x1f\x7f]/.test(name))?s.libraries:null;
       if(origin===null||time<origin)origin=time;if(last===null||time>last)last=time;
-      valid.push({time,timeNs:s.timeNs,weight,frames:s.frames,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
+      valid.push({time,timeNs:s.timeNs,weight,frames:s.frames,libraries,threadName:s.thread,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
     }catch{skipped++;}
   }
   if(!valid.length)return {available:false,skipped,truncated:!!input.truncated,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null};
@@ -513,6 +514,19 @@ export function buildSampleTimeline(input, bins=60) {
   const samplesByTime=[...valid].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
   return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,samplesByBin,samplesByTime,skipped,truncated:!!input.truncated};
 }
+export function cpuLibraryOptions(timeline,limit=500){
+ if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(limit)||limit<1||limit>2000)return [];
+ const counts=new Map();for(const sample of timeline.samples)for(const name of new Set(sample.libraries||[]))counts.set(name,(counts.get(name)||0)+sample.weight);
+ return [...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,limit).map(([name,weight])=>({name,weight}));
+}
+export function filterCpuProfileByLibrary(timeline,library){
+ if(!timeline?.available||!Array.isArray(timeline.samples)||typeof library!=='string'||!library||library.length>4096)throw new Error('CPU 库筛选参数无效');
+ const samples=[];for(const sample of timeline.samples){if(!Array.isArray(sample.libraries)||sample.libraries.length!==sample.frames.length)continue;const frames=[],libraries=[];for(let i=0;i<sample.frames.length;i++)if(sample.libraries[i]===library){frames.push(sample.frames[i]);libraries.push(library);}if(frames.length)samples.push({timeNs:sample.timeNs,period:String(sample.weight),pid:sample.pid,tid:sample.tid,thread:sample.threadName||sample.thread.replace(/-\d+\/\d+$/,''),frames,libraries});}
+ if(!samples.length)return {timeline:{available:false,event:timeline.event,clockId:timeline.clockId,skipped:0,truncated:timeline.truncated},profile:null};
+ const filteredTimeline=buildSampleTimeline({event:timeline.event,clockId:timeline.clockId,truncated:timeline.truncated,samples},timeline.bins);
+ const folded=filteredTimeline.samples.map(sample=>`${[sample.thread,...sample.frames].join(';')} ${sample.weight}`).join('\n');
+ return {timeline:filteredTimeline,profile:parseFoldedStacks(folded)};
+}
 // Count observed sample records only, not inferred lost samples or CPU time.
 export function sampleQuality(timeline){
  if(!timeline?.available||!Array.isArray(timeline.samples))return null;
@@ -523,7 +537,7 @@ export function sampleQuality(timeline){
  }
  return {samples:timeline.samples.length,unknownLeaf,noCallers,unknownLeafWeight,skipped:timeline.skipped||0,truncated:!!timeline.truncated};
 }
-export function createCpuAnalysisReport({profile=null,timeline=null,methodTrace=null,captureDiagnostics=null,fileName='cpu-profile',generatedAt=new Date().toISOString()}={}){
+export function createCpuAnalysisReport({profile=null,timeline=null,methodTrace=null,captureDiagnostics=null,libraryFilter='all',fileName='cpu-profile',generatedAt=new Date().toISOString()}={}){
   if(methodTrace){
     if(methodTrace.format!=='ART method trace'||!Array.isArray(methodTrace.methods)||!Array.isArray(methodTrace.threads)||!Array.isArray(methodTrace.intervals))throw new Error('ART 方法报告数据无效');
     const sampleRows=(rows,limit)=>rows.length<=limit?rows:Array.from({length:limit},(_,index)=>rows[Math.floor(index*rows.length/limit)]),threads=sampleRows(methodTrace.threads,1000),methods=sampleRows(methodTrace.methods,1000),intervals=sampleRows(methodTrace.intervals,2000);
@@ -531,7 +545,7 @@ export function createCpuAnalysisReport({profile=null,timeline=null,methodTrace=
   }
   if(!profile?.root||!Array.isArray(profile.symbols))throw new Error('CPU 报告没有可导出的采样数据');
   const quality=sampleQuality(timeline),threadTotals=timeline?.available?timeline.groups.slice(0,100).map(row=>({thread:row.thread,pid:row.pid,tid:row.tid,samples:row.counts.reduce((sum,count)=>sum+count,0),weight:row.total})):[];
-  return {schema:'android-performance-cpu-report',schemaVersion:1,generatedAt,fileName,profileType:'sampled-call-stacks',source:profile.source||'import',weightMeaning:'sampling event period; not direct CPU time or CPU percentage',summary:{stacks:profile.stacks,totalWeight:profile.root.weight,symbolCount:profile.symbols.length,event:timeline?.event||'unknown',sampleQuality:quality,timeline:timeline?{available:!!timeline.available,clockId:timeline.clockId||null,durationMs:timeline.durationMs??null,sampleCount:timeline.samples?.length||0,skipped:timeline.skipped||0,truncated:!!timeline.truncated}:null},topFunctions:profile.symbols.slice(0,1000),threads:threadTotals,captureDiagnostics,limits:{topFunctionsReported:Math.min(1000,profile.symbols.length),threadsReported:threadTotals.length}};
+  return {schema:'android-performance-cpu-report',schemaVersion:1,generatedAt,fileName,profileType:'sampled-call-stacks',source:profile.source||'import',weightMeaning:'sampling event period; not direct CPU time or CPU percentage',summary:{stacks:profile.stacks,totalWeight:profile.root.weight,symbolCount:profile.symbols.length,event:timeline?.event||'unknown',libraryFilter:libraryFilter==='all'?null:libraryFilter,sampleQuality:quality,timeline:timeline?{available:!!timeline.available,clockId:timeline.clockId||null,durationMs:timeline.durationMs??null,sampleCount:timeline.samples?.length||0,skipped:timeline.skipped||0,truncated:!!timeline.truncated}:null},topFunctions:profile.symbols.slice(0,1000),threads:threadTotals,captureDiagnostics,limits:{topFunctionsReported:Math.min(1000,profile.symbols.length),threadsReported:threadTotals.length}};
 }
 // Summarize observed leaf-frame weights per time bin. This is a sampled trend,
 // not CPU time or an estimate of inclusive function cost.

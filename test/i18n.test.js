@@ -49,6 +49,15 @@ test('CPU capture configuration has English names and evidence limits',()=>{
  assert.match(translate('频率越高，采样开销和数据量通常越大；FP 依赖帧指针，ARM 32 位上可能不完整。DWARF 开销更高，原生栈还受调试信息影响。','en-US'),/higher frequencies.*FP.*32-bit ARM.*DWARF.*debug information/i);
 });
 
+test('CPU library filtering is localized and explains its sample-stack scope',()=>{
+ assert.equal(translate('动态库','en-US'),'Libraries');assert.equal(translate('全部库','en-US'),'All libraries');
+ assert.match(translate('动态库筛选会保留包含所选库的采样点，并只分析该库对应的栈帧；调用者和被调用方可能位于其他库。权重仍是采样事件周期。','en-US'),/keeps samples.*selected library.*frames.*sampling event periods/i);
+});
+
+test('CPU profiler wires the library selector to profile, timeline, and report filtering',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.match(app,/id="cpu-library"/);assert.match(app,/event\.target\.id==='cpu-library'\)\{try\{applyCpuLibraryFilter/);assert.match(app,/state\.cpuTimeline=filtered\.timeline;state\.cpuProfile=\{\.\.\.filtered\.profile/);assert.match(app,/libraryFilter:state\.cpuLibraryFilter/);
+});
+
 test('settings capability summary reflects implemented modules and documented limits in English',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const settings=app.slice(app.indexOf('function renderSettings()'),app.indexOf('\nconst $$ =',app.indexOf('function renderSettings()')));

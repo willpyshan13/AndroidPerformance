@@ -4,8 +4,8 @@ import {buildSampleTimeline,createCpuAnalysisReport,parseFoldedStacks} from '../
 
 test('simpleperf CPU report keeps event, sample-quality, top-function and thread evidence',()=>{
  const profile={...parseFoldedStacks('main;render 12\nmain;wait 4\n'),fileName:'capture.perf.data'},timeline=buildSampleTimeline({event:'cpu-clock',clockId:'monotonic',samples:[{timeNs:'1000',period:'12',pid:7,tid:8,thread:'main',frames:['main','render']},{timeNs:'2000',period:'4',pid:7,tid:8,thread:'main',frames:['main','wait']}]});
- const report=createCpuAnalysisReport({profile,timeline,captureDiagnostics:{samplesLost:2},generatedAt:'2026-11-03T00:00:00.000Z'});
- assert.equal(report.profileType,'sampled-call-stacks');assert.equal(report.weightMeaning,'sampling event period; not direct CPU time or CPU percentage');assert.equal(report.summary.event,'cpu-clock');assert.equal(report.summary.timeline.sampleCount,2);assert.equal(report.summary.sampleQuality.samples,2);assert.equal(report.topFunctions[0].name,'render');assert.equal(report.threads[0].tid,8);assert.equal(report.captureDiagnostics.samplesLost,2);
+ const report=createCpuAnalysisReport({profile,timeline,captureDiagnostics:{samplesLost:2},libraryFilter:'/data/app/libsample.so',generatedAt:'2026-11-03T00:00:00.000Z'});
+ assert.equal(report.profileType,'sampled-call-stacks');assert.equal(report.weightMeaning,'sampling event period; not direct CPU time or CPU percentage');assert.equal(report.summary.event,'cpu-clock');assert.equal(report.summary.libraryFilter,'/data/app/libsample.so');assert.equal(report.summary.timeline.sampleCount,2);assert.equal(report.summary.sampleQuality.samples,2);assert.equal(report.topFunctions[0].name,'render');assert.equal(report.threads[0].tid,8);assert.equal(report.captureDiagnostics.samplesLost,2);
 });
 
 test('ART method report keeps method totals and bounds thread, method and interval detail',()=>{

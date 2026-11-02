@@ -215,6 +215,7 @@ const en={
  '电池温度':'Battery temperature',
  '设备电池传感器':'Device battery sensor',
  'CPU 调用栈采样':'CPU call stack sampling',
+ '动态库':'Libraries','全部库':'All libraries','所选动态库不在当前时间线上':'The selected library is not in the current timeline','该动态库没有可分析的采样栈':'No analyzable samples are available for this library','CPU 库筛选参数无效':'Invalid CPU library filter','动态库筛选会保留包含所选库的采样点，并只分析该库对应的栈帧；调用者和被调用方可能位于其他库。权重仍是采样事件周期。':'Library filtering keeps samples whose stacks contain the selected library and analyzes frames from that library only. Callers and callees may belong to other libraries. Weights remain sampling event periods.',
  '内存堆分析':'Heap analysis',
  '分析工具':'Analysis tools',
  '从采集到定位，专注每一个细节':'From capture to diagnosis, focus on every detail',

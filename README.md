@@ -191,6 +191,8 @@ Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围�
 
 simpleperf 设备采集可在进行中取消。取消会向本次采样进程发送中断信号，等待其退出后再删除设备和本机临时文件并释放设备采集锁；设备拒绝终止或 ADB 连接异常时，清理能力取决于设备当前连接状态。
 
+导入或采集的 `perf.data` 时间线会保留每个栈帧所属动态库，可按库筛选采样并只在该库对应的栈帧上汇总；没有 DSO 信息的 folded stacks 不提供此筛选。库筛选报告记录所选库及样本范围，调用者/被调用方可能属于其他库，周期权重仍不是 CPU 时间。
+
 堆分析已用公开 Android 堆测试样本及 API 25 真机 HPROF 验证。真实设备采集会下载原始 `.hprof`，随后自动分析；页面展示记录数、类统计、实例、字段和引用查询。可设置 `APW_ANDROID_HPROF` 和 `APW_ANDROID_O_HPROF` 指向公开样本运行附加回归；文件校验值分别为 `14dcec5fa5ddb30fa3142fc5aaa90cdee02969662207458371d13a5eba007363` 和 `700b60f9b9bfb64d488f7663cc58b09f68760ed822a760911d4f4952ed4debbc`。
 
 桌面构建还包含 LeakCanary Shark 2.14 分析器。源码环境首次打包前运行 `npm run prepare:shark`，脚本下载官方发布包并校验 SHA-256，只提取 CLI 所需的核心 JAR 与许可证，同时准备 Java 17 runtime；HPROF 页面提供“Shark Android 泄漏分析”，报告包含泄漏路径、指纹、Android reference matcher / inspector 结果和 retained size。项目另有本地 `KeyedWeakReference` 路径候选分析；该候选结果与 Shark 的泄漏判定分开展示。堆分析页可载入 R8 / ProGuard `.map` 或 `.txt` 映射文件（最多 128 MiB），应用会将映射保存在当前 HPROF 临时会话中供 Shark 使用；清除映射、替换快照或退出应用时删除临时文件。

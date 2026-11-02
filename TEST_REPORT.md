@@ -451,3 +451,9 @@ npm run test:device -- \
 - Added a native macOS CI smoke for both arm64 and x64 package jobs. It locates the packaged `.app`, launches its bundled executable with an isolated profile, waits for renderer navigation and the main view, checks the local app modules and verifies bundled Java, Trace Processor, and Perfetto UI resources.
 - Rebuilt the arm64 `.app` from current sources and ran `node scripts/mac-desktop-smoke.js` on the host. The app started, served its main page and all four JavaScript modules, reported a ready renderer, and exposed all three checked native resources. The first attempt used an older pre-smoke `.app` and timed out; it was discarded after confirming its `app.asar` lacked the current smoke hook.
 - Local packaged-app smoke passed. The new Windows NSIS and macOS package smoke steps still require their latest GitHub Actions run to confirm native CI behavior.
+
+## Localized native desktop menus（2026-11-03）
+
+- The native Electron menu now reads the persisted `zh-CN` / `en-US` preference at startup and is rebuilt immediately when the language setting changes. Navigation actions, accelerators, platform roles, records-folder access, ADB selection, settings, and Perfetto handoff are retained.
+- Pure menu tests verify Chinese and English labels, absence of untranslated Chinese in English menu labels, navigation routes, and macOS application/close roles. The latest rebuilt arm64 `.app` includes the menu module and passed the packaged renderer/resource smoke.
+- Full suite: 298 tests, 282 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.

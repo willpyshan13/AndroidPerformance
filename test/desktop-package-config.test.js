@@ -19,6 +19,7 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
  const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);
  assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);
+ assert.ok(pkg.build.files.includes('desktop/menu.js'),'the localized native menu module must be packaged');
  assert.doesNotMatch(pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n'),/tools\/java-runtime=>java-runtime/);
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const mac=resources('mac').join('\n'),win=resources('win').join('\n'),linux=resources('linux').join('\n');

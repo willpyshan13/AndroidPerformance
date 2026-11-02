@@ -11,10 +11,12 @@ import { createApp, VERSION } from '../src/server.js';
 import { prepareAgiArtifact } from '../src/gpu.js';
 import { normalizeAppearance } from '../src/preferences.js';
 import { ensureWindowsJavaRuntime } from '../src/java-runtime.js';
+import { buildMenuTemplate } from './menu.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const allowedExternal = new Set(['https://ui.perfetto.dev/', 'https://github.com/yuchuangu85/AndroidPerformanceStudio']);
 let window, server, origin, runtimeAdb, agiPath=null;
+let appearanceLanguage='zh-CN';
 const profilePath = process.env.APW_PROFILE_DIR || (!app.isPackaged ? join(here, '..', 'data', 'desktop-profile') : null);
 if (profilePath) { mkdirSync(profilePath, { recursive: true }); app.setPath('userData', profilePath); }
 const singleInstance = app.requestSingleInstanceLock();
@@ -50,25 +52,10 @@ async function chooseAdb() {
     window?.webContents.send('workbench:adb-updated');
   } catch (error) { dialog.showErrorBox('无法设置 ADB', error.message); }
 }
-function installMenu() {
+function installMenu(language='zh-CN') {
   const isMac = process.platform === 'darwin';
-  const menu = [
-    ...(isMac ? [{ label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] : []),
-    { label: '文件', submenu: [
-      { label: '采集记录', accelerator: 'CmdOrCtrl+O', click: () => navigate('sessions') },
-      { label: '打开记录目录', click: async () => { const path = join(app.getPath('userData'), 'records'); mkdirSync(path, { recursive: true }); await shell.openPath(path); } },
-      { label: '选择 ADB 程序…', click: chooseAdb },
-      { type: 'separator' }, { role: isMac ? 'close' : 'quit', label: isMac ? '关闭窗口' : '退出' },
-    ] },
-    { label: '编辑', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
-    { label: '分析', submenu: [
-      ['overview', '概览', '1'], ['monitor', '实时监控', '2'], ['frames', '帧耗时分析', '3'], ['startup', '启动测试', '4'], ['layout', '布局检查', '5'], ['trace', '系统追踪', '6'], ['network', '网络分析', '7'], ['benchmark', '基准对比', '8'],
-      ['apk', 'APK 分析', '9'], ['cpu-profile', 'CPU 采样'], ['heap', '内存堆分析'], ['battery', '电池与资源'], ['gpu', 'GPU 产物'], ['source', '源码工作区'],
-    ].map(([route, label, key]) => ({ label, ...(key ? { accelerator: `CmdOrCtrl+${key}` } : {}), click: () => navigate(route) })) },
-    { label: '视图', submenu: [{ role: 'resetZoom', label: '实际大小' }, { role: 'zoomIn', label: '放大' }, { role: 'zoomOut', label: '缩小' }, { type: 'separator' }, { role: 'togglefullscreen', label: '全屏' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools', label: '开发者工具' }] : [])] },
-    { label: '窗口', submenu: [{ role: 'minimize', label: '最小化' }, { role: 'zoom', label: '缩放' }, ...(isMac ? [{ role: 'front', label: '全部置前' }] : [])] },
-    { label: '帮助', submenu: [ { label: '设置与帮助', accelerator: 'CmdOrCtrl+,', click: () => navigate('settings') }, { label: '打开 Perfetto UI', click: () => openExternal('https://ui.perfetto.dev/') }, ...(!isMac ? [{ label: '关于', click: () => app.showAboutPanel() }] : []) ] },
-  ];
+  const menu=buildMenuTemplate({language,isMac,navigate,chooseAdb,openRecords:async()=>{const path=join(app.getPath('userData'),'records');mkdirSync(path,{recursive:true});await shell.openPath(path);},openPerfetto:()=>openExternal('https://ui.perfetto.dev/'),about:()=>app.showAboutPanel()});
+  if(!app.isPackaged){const view=menu.find(item=>item.label===(language==='en-US'?'View':'视图'));view.submenu.push({role:'toggleDevTools',label:language==='en-US'?'Developer Tools':'开发者工具'});}
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 }
 function createWindow() {
@@ -125,7 +112,7 @@ if (singleInstance) {
     ipcMain.handle('workbench:get-appearance',async event=>{
       authorizeGpuIpc(event);const defaults={theme:'system',scale:'1',language:'zh-CN'};try{const settings=JSON.parse(await readFile(join(app.getPath('userData'),'settings.json'),'utf8')),saved={};if(typeof settings.theme==='string')saved.theme=settings.theme;if(settings.scale!==undefined)saved.scale=settings.scale;if(typeof settings.language==='string')saved.language=settings.language;return {...defaults,...(Object.keys(saved).length?normalizeAppearance(saved):{})};}catch(error){if(error.code==='ENOENT')return defaults;return defaults;}
     });
-    ipcMain.handle('workbench:save-appearance',async(event,value)=>{authorizeGpuIpc(event);const appearance=normalizeAppearance(value);await saveSettings(appearance);return appearance;});
+    ipcMain.handle('workbench:save-appearance',async(event,value)=>{authorizeGpuIpc(event);const appearance=normalizeAppearance(value);await saveSettings(appearance);appearanceLanguage=appearance.language;installMenu(appearanceLanguage);return appearance;});
     ipcMain.handle('workbench:source-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择本地源码目录',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     ipcMain.handle('workbench:agi-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择 Android GPU Inspector 应用程序',properties:['openFile'],...(process.platform==='darwin'?{defaultPath:'/Applications'}:{})});if(result.canceled)return null;const chosen=result.filePaths[0];await access(chosen);agiPath=chosen;await saveSettings({agiPath});return chosen;});
     ipcMain.handle('workbench:agi-launch',async event=>{authorizeGpuIpc(event);const path=await existingAgi();if(!path)throw new Error('未找到 AGI，请先选择应用程序');const error=await shell.openPath(path);if(error)throw new Error(error);return true;});
@@ -144,12 +131,12 @@ if (singleInstance) {
       : app.isPackaged?join(process.resourcesPath,'java-runtime'):join(here,'..','tools','java-runtime');
     const javaPath=join(javaRuntimeDir,'bin',process.platform==='win32'?'java.exe':'java');
     let adbPath = await locateAdb();
-    try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath; } catch {}
+    try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath;appearanceLanguage=normalizeAppearance(settings).language; } catch {}
     runtimeAdb = new Adb(adbPath);
     server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath: javaPath, javaPath });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     origin = `http://127.0.0.1:${server.address().port}`;
-    installMenu(); createWindow();
+    installMenu(appearanceLanguage); createWindow();
     app.on('activate', () => { if (!window) createWindow(); });
   }).catch(async error => {
     if (process.env.APW_SMOKE_READY_FILE) await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ error: error.stack || error.message }), { mode: 0o600 }).catch(() => {});

@@ -31,7 +31,13 @@ export function compareBatteryStats(before,after){
   const warnings=[];
   const delta=(a,b,label)=>{if(a===null||a===undefined||b===null||b===undefined)return null;if(!Number.isSafeInteger(a)||!Number.isSafeInteger(b)||a<0||b<0)throw new Error('快照包含无效计数');if(b<a){warnings.push(`${label} 计数下降，可能发生重置`);return null;}return b-a;};
   const network=before.network&&after.network?Object.fromEntries(Object.keys(before.network).map(k=>[k,delta(before.network[k],after.network[k],k)])):null;
+  const beforeMah=before.power?.source==='batterystats-pwi'?charge(String(before.power.estimatedMah)):null,afterMah=after.power?.source==='batterystats-pwi'?charge(String(after.power.estimatedMah)):null;
+  let power=null;
+  if(beforeMah!==null&&afterMah!==null){
+    if(afterMah<beforeMah)warnings.push('UID mAh 估计下降，可能发生统计重置');
+    else power={estimatedMahDelta:Number((afterMah-beforeMah).toPrecision(12)),source:'batterystats-pwi-delta'};
+  }
   const diffList=(key,field)=>{const a=new Map();for(const row of before[key]||[]){if(a.has(row.name))a.set(row.name,null);else a.set(row.name,row);}const b=new Map();for(const row of after[key]||[]){if(b.has(row.name))b.set(row.name,null);else b.set(row.name,row);}return [...b].map(([name,row])=>{const old=a.get(name);const x=field?old?.[field]:old,y=field?row?.[field]:row;return {name,timeMs:delta(x?.timeMs,y?.timeMs,name),count:delta(x?.count,y?.count,name)};});};
-  return {elapsedMs:after.timestamp-before.timestamp,uid:after.uid,network,wakelocks:diffList('wakelocks','partial'),alarms:diffList('alarms'),jobs:diffList('jobs'),syncs:diffList('syncs'),sensors:diffList('sensors'),warnings,
-    note:'差值仅为同一 UID 在两次系统累计快照之间的变化；缺失行不视为零，计数下降视为不可比。不是应用耗电量或因果结论。'};
+  return {elapsedMs:after.timestamp-before.timestamp,uid:after.uid,network,power,wakelocks:diffList('wakelocks','partial'),alarms:diffList('alarms'),jobs:diffList('jobs'),syncs:diffList('syncs'),sensors:diffList('sensors'),warnings,
+    note:'差值仅为同一 UID 在两次系统累计快照之间的变化；UID mAh 区间差值来自系统模型估计，不是实测值；缺失行不视为零，计数下降视为不可比。共享 UID 也无法分离，不能作为精确应用耗电或因果结论。'};
 }

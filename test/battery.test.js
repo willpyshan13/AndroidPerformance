@@ -14,6 +14,12 @@ test('battery comparison returns only evidenced monotonic deltas and detects res
  const d=compareBatteryStats(a,b);assert.equal(d.network.wifiRxBytes,50);assert.equal(d.network.mobileRxBytes,null);assert.equal(d.jobs[0].timeMs,30);assert.equal(d.alarms[0].count,2);assert.equal(d.jobs[1].timeMs,null);assert.ok(d.warnings.length);
  b.sessionStart++;assert.throws(()=>compareBatteryStats(a,b),/重置/);
 });
+test('battery comparison reports only monotonic same-window system UID mAh estimate deltas',()=>{
+ const a=parseBatteryStats(raw+'9,10123,l,pwi,uid,0.00123\n','com.example.demo',{serial:'ABC'}),b=structuredClone(a);b.timestamp=a.timestamp+1000;b.power={estimatedMah:0.00128,rawValue:'0.00128',source:'batterystats-pwi'};
+ assert.deepEqual(compareBatteryStats(a,b).power,{estimatedMahDelta:0.00005,source:'batterystats-pwi-delta'});
+ b.power={estimatedMah:0.001,rawValue:'0.001',source:'batterystats-pwi'};const reset=compareBatteryStats(a,b);assert.equal(reset.power,null);assert.ok(reset.warnings.some(x=>x.includes('mAh 估计下降')));
+ b.power=null;assert.equal(compareBatteryStats(a,b).power,null);
+});
 test('battery checkin refuses ambiguous UID and never assumes absent network is zero',()=>{
  assert.throws(()=>parseBatteryStats(raw+'9,0,i,uid,20123,com.example.demo\n','com.example.demo'),/多个 UID/);
  const x=parseBatteryStats(raw.replace(/^.*?,nt,.*\n/m,''),'com.example.demo');assert.equal(x.network,null);

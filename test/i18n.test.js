@@ -62,3 +62,11 @@ test('all literal capability and evidence notes have English translations',async
   const untranslated=notes.filter(note=>/[\u3400-\u9fff]/.test(translate(note,'en-US')));
   assert.deepEqual(untranslated,[]);
 });
+
+test('literal toast messages and dialog titles have English translations',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const messages=[...app.matchAll(/toast\(\s*'([^']*[\u3400-\u9fff][^']*)'/g)].map(match=>match[1]);
+  const titles=[...app.matchAll(/showDialog\(\s*'([^']*[\u3400-\u9fff][^']*)'/g)].map(match=>match[1]);
+  const untranslated=[...new Set([...messages,...titles])].filter(text=>/[\u3400-\u9fff]/.test(translate(text,'en-US')));
+  assert.deepEqual(untranslated,[]);
+});

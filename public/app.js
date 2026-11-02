@@ -68,7 +68,7 @@ async function api(path, body, binary = false) {
 }
 const query = () => `serial=${encodeURIComponent(state.serial)}&package=${encodeURIComponent(state.packageName)}`;
 function toast(message, error = false) {
-  $('#toast').textContent = message; $('#toast').className = `visible${error ? ' error' : ''}`;
+  $('#toast').textContent = tr(message); $('#toast').className = `visible${error ? ' error' : ''}`;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').className = '', error ? 6500 : 3500);
 }
 function sourceTag(source = state.demo ? 'demo' : 'adb') {
@@ -940,7 +940,7 @@ async function save(kind) {
 }
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 function pickFile(handler,accept='.json',maxBytes=12*1024*1024) {importHandler=handler;importFileLimit=maxBytes;$('#file-input').accept=accept;$('#file-input').value='';$('#file-input').click();}
-function showDialog(title,html) {$('#dialog-title').textContent=title;$('#dialog-content').innerHTML=html;$('#detail-dialog').showModal();}
+function showDialog(title,html) {$('#dialog-title').textContent=tr(title);$('#dialog-content').innerHTML=html;$('#detail-dialog').showModal();}
 function showFrameThreadSummary(){
  const r=state.frameThreadResult;if(!r||r.sessionId!==state.traceResult?.sessionId)throw new Error('追踪会话已更换，请重新读取帧记录');
  if($('#detail-dialog').open)$('#detail-dialog').close();

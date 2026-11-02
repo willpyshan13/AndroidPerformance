@@ -161,3 +161,15 @@ test('Frame analysis page has English labels and distinguishes gfxinfo, FrameTim
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Startup page localizes known launch modes and profile-header states while retaining raw system evidence',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderStartup()'),end=app.indexOf('\nfunction buildNodes(',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '检查已分析单个 APK 的标准路径和文件头；010 版本可读取 DEX 记录和方法标记。不证明内容完整有效、已安装、编译或生效。分片、其他安装来源或生成方式可能不同。',
+    '010 Profile 的方法标记可重叠，不能相加；类和方法均为记录数量，不代表设备已编译。仅对名称精确匹配的 APK 内 DEX 比较头部校验值；未重新计算 DEX 校验值或解析方法名称。包名、设备安装和实际编译仍需另行核对。',
+    '读取 dumpsys package 中目标包的 Dexopt state，按文件和指令集展示系统报告；状态与原因不能单独证明 Baseline Profile 是否生效。不同 Android 版本或厂商可能不提供可解析数据。',
+    '先导入或采集包含 Android 启动和帧事件的系统追踪。数据由 Perfetto 启动标准库计算；TTFD 依赖应用报告 fully drawn 和相关帧证据，缺失不代表零。可能一条启动对应多个进程记录，不与上面的实验自动配对；最多读取最早 1,000 条。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

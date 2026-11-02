@@ -2,7 +2,7 @@
 
 目标：对齐 AndroidPerformanceStudio 公布的用户功能，同时保留现有 APK 分析。以下状态按本项目实际能力记录；实现后须附上验证结果及设备限制。
 
-界面语言：已加入简体中文 / English 切换并持久化到桌面设置；导航、设备栏、外观设置、首页字段、分析页静态标题和说明、静态操作按钮、空状态、分区标题、表头已本地化；Benchmark 页的 Macrobenchmark 表单、运行状态、操作说明、输入框无障碍标签与占位提示，以及 APK 分析页的各视图、证据说明、动态文件分类和筛选输入项，源码工作区的本地/远程快照、搜索状态和限制说明，以及 GPU 产物页能力状态、校验状态和工具说明、电池页快照采集与历史状态、重复采样说明及 UID 数据范围提示，以及帧分析页 gfxinfo/FrameTimeline/Compose 时间重合证据说明、启动测试页请求模式和已知系统状态标签、内存页 HPROF / Shark / heapprofd 能力与证据边界、网络页筛选状态和时间统计限制、CPU 采样时间线与符号解析说明、系统追踪页时间窗口/PerfettoSQL/Binder/线程状态提示、布局检查页采集控制与 Compose / 无障碍证据边界均已补齐。其他分析模块大部分界面仍为中文，英文界面尚未完成；AI 分析按用户决定不实现。
+界面语言：已加入简体中文 / English 切换并持久化到桌面设置；导航、设备栏、外观设置、首页、Benchmark、APK、源码、GPU、电池、帧、启动、内存、网络、CPU、系统追踪与布局检查页的主要静态标签、能力说明和证据边界已补齐；主要动态状态已逐步接入双语。仍需逐项核对交互对话框的动态正文、个别错误路径和真实数据渲染；English 本地化尚未完成。AI 分析按用户决定不实现。
 
 | 模块 | 当前状态 | 待完成 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 | GPU | 本机产物索引、SHA-256 完整性校验、追踪分析交接，桌面端选择与启动 AGI、校验后交接帧捕获、读取设备声明的 Vulkan/OpenGL ES 能力；复制与模拟 ADB 验证 | AGI 实际打开产物、真机捕获、兼容性与完整关联验证 |
 | Benchmark | AndroidX JSON 参数与指标类型匹配、重复标识保护、设备及运行环境差异提示、预热与重复次数和热降频等待信息、样本分布、sampledMetrics 迭代分组、历史运行和 JSON 报告；已安装 instrumentation 执行与报告新鲜度检查；可运行包含 Gradle Wrapper 的 Macrobenchmark 工程并读取本次生成的标准 JSON、通过受控本机产物接口导入本次 trace；AndroidX 官方 Macro/Micro 报告和模拟 ADB / Gradle 执行器验证 | 尚未在真机上运行 Macrobenchmark 工程验证；未检查追踪与报告的设备关联；独立实验级统计检验及不确定性分析 |
 | 源码工作区 | 本地及 GitHub/AOSP 只读快照、提交标识、校验、文本检索和查看，CPU 和布局类的 Java/Kotlin 声明候选关联；公开仓库及 API 验证，本地服务界面验证创建快照、声明定位及上下文查看 | 原生桌面界面与目录选择验证、更多远程版本与网络环境验证、精确符号解析和更多证据关联 |
-| 界面与发布 | 简体中文与进行中的 English 本地化（导航、设备栏、设置、首页字段及分析页静态标题和说明）；系统/浅色/深色主题、90–120% 界面缩放并保存到 Electron 本机配置；GitHub Actions 原生 runner 全绿并上传 macOS arm64/x64 DMG、Windows x64 NSIS EXE、Linux x64 AppImage；Windows Java runtime 以归档打包并在首次启动时解压，解压路径安全与缓存复用单测通过；Trace Processor 已增加 macOS x64、Windows x64、Linux x64/arm64 校验资源；本机 macOS arm64 `.app` 目录包构建通过，检查到 Java、ADB、AAPT2、Trace Processor、Perfetto UI、Shark CLI 和 UI Inspector 资源，包内 Java `-version` 成功；全量测试 267 项中 251 通过、16 个外部样本测试跳过 | 全面英文界面、本机安装启动和 Windows runtime 实际启动验证、Linux arm64 安装包（当前官方 Linux SDK 缺少原生 ARM64 AAPT2）、本机 DMG 最终产出因 GitHub TLS 连接中断未验证、Apple Developer 签名与公证 |
+| 界面与发布 | 简体中文与进行中的 English 本地化（主要分析页已覆盖，动态对话框和错误路径仍待逐项核对）；系统/浅色/深色主题、90–120% 界面缩放并保存到 Electron 本机配置；GitHub Actions 原生 runner 全绿并上传 macOS arm64/x64 DMG、Windows x64 NSIS EXE、Linux x64 AppImage；Windows Java runtime 以归档打包并在首次启动时解压，解压路径安全与缓存复用单测通过；Trace Processor 已增加 macOS x64、Windows x64、Linux x64/arm64 校验资源；本机 macOS arm64 `.app` 目录包构建通过，检查到 Java、ADB、AAPT2、Trace Processor、Perfetto UI、Shark CLI 和 UI Inspector 资源，包内 Java `-version` 成功；全量测试 267 项中 251 通过、16 个外部样本测试跳过 | 全面英文界面、本机安装启动和 Windows runtime 实际启动验证、Linux arm64 安装包（当前官方 Linux SDK 缺少原生 ARM64 AAPT2）、本机 DMG 最终产出因 GitHub TLS 连接中断未验证、Apple Developer 签名与公证 |
 | APK | 分析单个 APK | 保留现有功能 |
 
 各模块应基于真实证据展示可用性；设备权限、Android 版本或工具缺失时明确提示，不伪造数据。完整 Compose、网络采集与能耗归因需满足目标应用和设备的具体条件。

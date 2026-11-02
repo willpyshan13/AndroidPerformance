@@ -415,3 +415,10 @@ npm run test:device -- \
 - 统计详情新增逐指标 JSON 导出，包含两组逐报告中位数、保存记录身份与时间、执行上下文、差异/缺失警告、95% Bootstrap 区间及解释限制，便于归档和复核。
 - 新增测试覆盖报告格式、环境差异、样本身份和组规模边界；对应英文标签检查通过。`npm run check`、`git diff --check` 均通过。完整 `npm test`：291 项，275 通过、0 失败、16 项因未配置可选官方样本而跳过。
 - macOS arm64 `.app` 目录包重建成功，`codesign --verify --deep --strict` 通过。本机 ADB 成功启动，但本轮设备列表为空，无法进行真机 Benchmark 报告验证。
+
+
+## 原生安装包格式扩展（2026-11-03）
+
+- Electron Builder CI 矩阵新增 macOS arm64/x64 PKG、Windows x64 MSI、Linux x64 DEB 与 RPM，并与现有 DMG、NSIS EXE、AppImage 同次上传。新增各格式打包脚本；配置回归检查脚本目标和 artifact 通配路径。
+- 本机 Apple Silicon 成功执行 `npm run package:mac:installers`，生成 230 MiB arm64 PKG 和 DMG；`pkgutil --check-signature` 显示 PKG 无签名，`hdiutil verify` 验证 DMG checksum 有效。未运行 PKG 安装器；当前没有 Apple Developer Installer 证书。
+- Windows MSI 与 Linux DEB/RPM 需在各自原生 CI runner 验证；Linux arm64 仍因未准备原生 AAPT2 而未加入。完整测试结果见本次后续验证，变更后会重跑配置单测与语法检查。

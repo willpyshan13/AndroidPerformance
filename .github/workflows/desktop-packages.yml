@@ -33,23 +33,32 @@ jobs:
         include:
           - runner: macos-15
             label: macos-arm64
-            artifactPath: dist/v*/*.dmg
-            command: package:dmg
+            artifactPath: |
+              dist/v*/*.dmg
+              dist/v*/*.pkg
+            command: package:mac:installers
             mac: true
           - runner: macos-15-intel
             label: macos-x64
-            artifactPath: dist/v*/*.dmg
-            command: package:dmg:x64
+            artifactPath: |
+              dist/v*/*.dmg
+              dist/v*/*.pkg
+            command: package:mac:installers:x64
             mac: true
           - runner: windows-latest
             label: windows-x64
-            artifactPath: dist/v*/*.exe
-            command: package:win
+            artifactPath: |
+              dist/v*/*.exe
+              dist/v*/*.msi
+            command: package:win:installers
             mac: false
           - runner: ubuntu-24.04
             label: linux-x64
-            artifactPath: dist/v*/*.AppImage
-            command: package:linux
+            artifactPath: |
+              dist/v*/*.AppImage
+              dist/v*/*.deb
+              dist/v*/*.rpm
+            command: package:linux:installers
             mac: false
     runs-on: ${{ matrix.runner }}
     steps:

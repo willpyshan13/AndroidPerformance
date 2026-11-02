@@ -593,6 +593,7 @@ const stateEn={
  'ART trace 采集失败':'ART trace capture failed','ART 方法跟踪时长须为 3–30 秒':'ART method trace duration must be 3–30 seconds','ART 方法采样间隔须为 100–1,000,000 微秒':'ART sampling interval must be 100–1,000,000 microseconds',
  '取消 ART 采集':'Cancel ART capture','正在停止 ART 方法跟踪…':'Stopping ART method tracing…','ART 方法跟踪已取消':'ART method tracing was cancelled',
  '取消 CPU 采集':'Cancel CPU capture','正在停止 CPU 采样…':'Stopping CPU sampling…','CPU 采样已取消':'CPU sampling was cancelled','CPU 采样失败：':'CPU sampling failed: ','CPU 采样任务 ID 无效':'CPU capture ID is invalid','CPU 采样任务已结束':'CPU capture has already ended',
+ '导出 PNG':'Export PNG','CPU 图像已导出':'CPU image exported','调用栈时间图尚未绘制':'The sampled stack timeline has not been rendered yet','无法导出 CPU 图像':'Could not export the CPU image',
  'CPU 报告已导出':'CPU report exported','CPU 报告没有可导出的采样数据':'CPU report has no exportable profile data','ART 方法报告数据无效':'ART method report data is invalid',
  'ART 方法跟踪失败：':'ART method trace failed: ','设备拒绝启动 ART 方法跟踪':'The device refused to start ART method tracing','设备拒绝停止 ART 方法跟踪':'The device refused to stop ART method tracing',
  'ART trace 文件为空或超过 256 MiB 上限':'ART trace is empty or exceeds the 256 MiB limit','设备未返回有效的 ART method trace':'The device did not return a valid ART method trace',

@@ -58,6 +58,10 @@ test('CPU profiler wires the library selector to profile, timeline, and report f
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.match(app,/id="cpu-library"/);assert.match(app,/event\.target\.id==='cpu-library'\)\{try\{applyCpuLibraryFilter/);assert.match(app,/state\.cpuTimeline=filtered\.timeline;state\.cpuProfile=\{\.\.\.filtered\.profile/);assert.match(app,/libraryFilter:state\.cpuLibraryFilter/);
 });
 
+test('CPU timeline PNG export reads the rendered filtered canvas and localizes its action',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.equal(translate('导出 PNG','en-US'),'Export PNG');assert.match(app,/canvas\.toBlob\(value=>value\?resolve\(value\)/);assert.match(app,/cpu-stack-timeline-\$\{Date\.now\(\)\}\.png/);assert.match(app,/button\('export-cpu-stack-timeline'/);
+});
+
 test('settings capability summary reflects implemented modules and documented limits in English',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const settings=app.slice(app.indexOf('function renderSettings()'),app.indexOf('\nconst $$ =',app.indexOf('function renderSettings()')));

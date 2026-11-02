@@ -18,15 +18,20 @@ test('Battery Historian export endpoint returns raw checkin as downloadable text
  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'text/csv; charset=utf-8');assert.match(response.headers.get('content-disposition'),/batterystats-checkin\.csv/);assert.equal(await response.text(),raw);
 });
 
-test('benchmark API runs the selected instrumentation and rejects invalid arguments',async t=>{
- const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0;
- const adb=new Adb('/fake',async(_path,args)=>{calls++;return {stdout:args.includes("'head'")?'{"benchmarks":[]}':'OK (1 test)\n'};});
+test('benchmark API runs instrumentation, auto-loads only a freshly updated report and rejects invalid arguments',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0,statCalls=0;const now=Math.floor(Date.now()/1000);
+ const adb=new Adb('/fake',async(_path,args)=>{calls++;if(args.includes("'stat'")){statCalls++;return {stdout:statCalls===1?`${now-2} 12\n`:`${now} 20\n`};}return {stdout:args.includes("'head'")?'{"benchmarks":[]}':'OK (1 test)\n'};});
  const app=createApp({adb,dataDir:dir,token:'test'});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
  const url=`http://127.0.0.1:${app.address().port}/api/benchmark/run`,headers={'Content-Type':'application/json','X-Workbench-Token':'test'};
  const post=body=>fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
- const response=await post({serial:'ABC',component:'com.example.test/.Runner',testClass:'com.example.Bench#startup'});assert.equal(response.status,200);assert.equal((await response.json()).status,'completed');assert.equal(calls,1);
- const rejected=await post({serial:'ABC',component:'com.example.test/.Runner;reboot'});assert.notEqual(rejected.status,200);assert.equal(calls,1);
- const report=await fetch(`http://127.0.0.1:${app.address().port}/api/benchmark/report`,{method:'POST',headers,body:JSON.stringify({serial:'ABC',path:'/sdcard/Android/media/com.example.test/result.json'})});assert.equal(report.status,200);assert.deepEqual((await report.json()).report,{benchmarks:[]});assert.equal(calls,2);
+ const response=await post({serial:'ABC',component:'com.example.test/.Runner',testClass:'com.example.Bench#startup'});assert.equal(response.status,200);const run=await response.json();assert.equal(run.status,'completed');assert.equal(run.reportStatus,'updated');assert.deepEqual(run.report,{benchmarks:[]});assert.match(run.reportPath,/com\.example\.test-benchmarkData\.json$/);assert.equal(calls,4);
+ const rejected=await post({serial:'ABC',component:'com.example.test/.Runner;reboot'});assert.notEqual(rejected.status,200);assert.equal(calls,4);
+ const report=await fetch(`http://127.0.0.1:${app.address().port}/api/benchmark/report`,{method:'POST',headers,body:JSON.stringify({serial:'ABC',path:'/sdcard/Android/media/com.example.test/result.json'})});assert.equal(report.status,200);assert.deepEqual((await report.json()).report,{benchmarks:[]});assert.equal(calls,5);
+});
+
+test('benchmark run does not attach an unchanged historic report',async()=>{
+ let stats=0,reads=0;const now=Math.floor(Date.now()/1000),adb=new Adb('/fake',async(_path,args)=>{if(args.includes("'stat'")){stats++;return {stdout:`${now-10} 512\n`};}if(args.includes("'head'")){reads++;return {stdout:'{}'};}return {stdout:'OK (1 test)\n'};});
+ const result=await adb.runBenchmark('ABC','com.example.test/.Runner');assert.equal(result.status,'completed');assert.equal(result.reportStatus,'unchanged');assert.equal(result.report,null);assert.equal(reads,0);
 });
 
 test('local HTTP API, origin protection, frames import and persistent session round-trip',async t=>{

@@ -13,7 +13,7 @@
 | 电池 | batterystats UID 网络、唤醒锁、唤醒闹钟、作业、同步和传感器累计值、可用时展示系统 UID mAh 估计、双快照资源计数差值、可停止的 2–50 次间隔采样、样本时间线、实验归档及 JSON 报告导出、Battery Historian 原始 checkin 导入与导出、历史快照载入；API 25 真机双样本采集、归档回读及 JSON 导出验证 | 更多 Android 版本验证、设备差异和能耗估计校验、设备当前 checkin 导出与历史原文件的区别说明 |
 | 网络 | HAR 离线分析、请求活动时间线、域名级连接、TLS、等待和读取阶段汇总、按方法与域名路径的 P50/P95 统计；OkHttp 监听器、源码下载、按 UID 轮询 logcat，新版请求标识去重累积、旧版快照兼容；真实 JVM 请求、模拟 ADB、连续读取、HAR 统计及保存界面验证 | Android 真机、系统权限及真实应用接入验证、独立依赖发布 |
 | GPU | 本机产物索引、SHA-256 完整性校验、追踪分析交接，桌面端选择与启动 AGI、校验后交接帧捕获、读取设备声明的 Vulkan/OpenGL ES 能力；复制与模拟 ADB 验证 | AGI 实际打开产物、真机捕获、兼容性与完整关联验证 |
-| Benchmark | AndroidX JSON 参数与指标类型匹配、重复标识保护、设备及运行环境差异提示、预热与重复次数和热降频等待信息、样本分布、sampledMetrics 迭代分组、历史运行和 JSON 报告；已安装的 benchmark instrumentation 运行、输出和按用户指定路径读取设备报告，AndroidX 官方 Macro/Micro 报告和模拟 ADB 验证 | 真机 benchmark 执行、自动获取和校验本次结果及追踪、独立实验级统计检验及不确定性分析、完整 Macrobenchmark 编排 |
+| Benchmark | AndroidX JSON 参数与指标类型匹配、重复标识保护、设备及运行环境差异提示、预热与重复次数和热降频等待信息、样本分布、sampledMetrics 迭代分组、历史运行和 JSON 报告；已安装的 benchmark instrumentation 运行、标准报告更新时间和大小检查、仅在本次报告更新后自动读取及按路径回读，AndroidX 官方 Macro/Micro 报告和模拟 ADB 验证 | 真机 benchmark 执行、自动获取和校验追踪、独立实验级统计检验及不确定性分析、完整 Macrobenchmark 编排 |
 | 源码工作区 | 本地及 GitHub/AOSP 只读快照、提交标识、校验、文本检索和查看，CPU 和布局类的 Java/Kotlin 声明候选关联；公开仓库及 API 验证，本地服务界面验证创建快照、声明定位及上下文查看 | 原生桌面界面与目录选择验证、更多远程版本与网络环境验证、精确符号解析和更多证据关联 |
 | 界面与发布 | 中文；系统/浅色/深色主题、90–120% 界面缩放并保存到 Electron 本机配置；macOS arm64 已验证 | 英文、Windows/Linux 和 macOS x64 安装包验证 |
 | APK | 分析单个 APK | 保留现有功能 |

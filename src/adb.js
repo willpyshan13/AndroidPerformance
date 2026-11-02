@@ -59,22 +59,39 @@ export class Adb {
     if(typeof component!=='string'||component.length>400||!/^([a-zA-Z][\w]*(?:\.[\w]+)+)\/(?:\.?[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)$/.test(component))throw new Error('测试包和 instrumentation runner 格式无效');
     if(typeof testClass!=='string'||testClass.length>300||(testClass&&!/^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*(?:#[a-zA-Z_$][\w$]*)?$/.test(testClass)))throw new Error('测试类或方法格式无效');
     return this.exclusive(serial,async()=>{
+      const testPackage=component.split('/')[0],reportPath=`/sdcard/Android/media/${testPackage}/${testPackage}-benchmarkData.json`;
+      const beforeReport=await this.benchmarkReportMetadata(serial,reportPath);
       const startedAt=Date.now(),args=['am','instrument','-w','-r'];
       if(testClass)args.push('-e','class',testClass);
       args.push(component);
       const output=await this.shell(serial,args,{timeout:600000,maxBuffer:4*1024*1024});
       const failed=/^FAILURES!!!|^INSTRUMENTATION_FAILED:|^INSTRUMENTATION_ABORTED:|^INSTRUMENTATION_RESULT:\s*shortMsg=|^Error:/m.test(output);
       const ok=output.match(/^OK \((\d+) tests?\)/m),count=ok?Number(ok[1]):null;
-      return {source:'adb',serial,component,testClass,startedAt,finishedAt:Date.now(),status:failed?'failed':count!==null&&count>0?'completed':'unknown',testCount:count,output};
+      const finishedAt=Date.now(),afterReport=await this.benchmarkReportMetadata(serial,reportPath),status=failed?'failed':count!==null&&count>0?'completed':'unknown';
+      let report=null,reportStatus=status==='failed'?'test-failed':status==='unknown'?'test-unknown':'unavailable';
+      if(status==='completed'&&afterReport&&afterReport.modifiedAt>=startedAt-1000&&(!beforeReport||beforeReport.modifiedAt!==afterReport.modifiedAt||beforeReport.size!==afterReport.size)){
+        try{report=await this.readBenchmarkReportFile(serial,reportPath);reportStatus='updated';}catch(error){reportStatus='invalid';}
+      }else if(status==='completed'&&afterReport)reportStatus='unchanged';
+      return {source:'adb',serial,component,testClass,startedAt,finishedAt,status,testCount:count,output,reportPath,report,reportStatus};
     });
+  }
+  async benchmarkReportMetadata(serial,path){
+    try{
+      const output=await this.shell(serial,['stat','-c','%Y %s',path],{timeout:10000,maxBuffer:1024});
+      const match=output.trim().match(/^(\d{1,12})\s+(\d{1,12})$/);if(!match)return null;
+      return {modifiedAt:Number(match[1])*1000,size:Number(match[2])};
+    }catch{return null;}
+  }
+  async readBenchmarkReportFile(serial,path){
+    const limit=12*1024*1024,text=await this.shell(serial,['head','-c',String(limit+1),path],{timeout:30000,maxBuffer:limit+1024});
+    if(Buffer.byteLength(text,'utf8')>limit)throw new Error('Benchmark 报告超过 12 MiB');
+    try{return JSON.parse(text);}catch{throw new Error('设备上的报告不是有效 JSON，或读取不完整');}
   }
   async readBenchmarkReport(serial,path) {
     validateTarget(serial);
     if(typeof path!=='string'||path.length>500||!/^\/(?:sdcard|storage\/emulated\/0)\/Android\/media\/[a-zA-Z][\w]*(?:\.[\w]+)+\/[a-zA-Z0-9_][\w.-]*\.json$/.test(path)||path.split('/').some(part=>part==='..'))throw new Error('报告路径必须是测试包 Android/media 目录下的 JSON 文件');
     return this.exclusive(serial,async()=>{
-      const limit=12*1024*1024,text=await this.shell(serial,['head','-c',String(limit+1),path],{timeout:30000,maxBuffer:limit+1024});
-      if(Buffer.byteLength(text,'utf8')>limit)throw new Error('Benchmark 报告超过 12 MiB');
-      let report;try{report=JSON.parse(text);}catch{throw new Error('设备上的报告不是有效 JSON，或读取不完整');}
+      const report=await this.readBenchmarkReportFile(serial,path);
       return {report,serial,path,timestamp:Date.now()};
     });
   }

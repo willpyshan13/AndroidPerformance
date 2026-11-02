@@ -14,14 +14,14 @@ test('remote shell arguments are quoted, including nested Activity dollar signs'
   assert.deepEqual(received,['-s','ABC','shell',"'am'","'start'","'-n'","'com.app/.Main$Nested'"]);
 });
 test('benchmark instrumentation validates selection, locks device and preserves actual result',async()=>{
- let call;const adb=new Adb('adb',async(_path,args,options)=>{call={args,options};return {stdout:'INSTRUMENTATION_STATUS_CODE: 0\nOK (2 tests)\nINSTRUMENTATION_CODE: -1\n'};});
+ let call;const adb=new Adb('adb',async(_path,args,options)=>{if(args.includes("'stat'"))return {stdout:''};call={args,options};return {stdout:'INSTRUMENTATION_STATUS_CODE: 0\nOK (2 tests)\nINSTRUMENTATION_CODE: -1\n'};});
  const result=await adb.runBenchmark('ABC','com.example.benchmark/androidx.test.runner.AndroidJUnitRunner','com.example.Startup#cold');
  assert.equal(result.status,'completed');assert.equal(result.testCount,2);assert.equal(call.options.timeout,600000);
  assert.ok(call.args.includes("'com.example.Startup#cold'"));assert.ok(call.args.includes("'com.example.benchmark/androidx.test.runner.AndroidJUnitRunner'"));
  for(const input of ['com.example.test/runner;reboot','com.example.test/--bad'])await assert.rejects(adb.runBenchmark('ABC',input),/格式无效/);
  await assert.rejects(adb.runBenchmark('ABC','com.example.test/.Runner','com.Test#run;reboot'),/格式无效/);
- const failed=new Adb('adb',async()=>({stdout:'FAILURES!!!\nTests run: 1, Failures: 1\n'}));assert.equal((await failed.runBenchmark('ABC','com.example.test/.Runner')).status,'failed');
- const unknown=new Adb('adb',async()=>({stdout:'INSTRUMENTATION_CODE: -1\n'}));assert.equal((await unknown.runBenchmark('ABC','com.example.test/.Runner')).status,'unknown');
+ const failed=new Adb('adb',async(_path,args)=>({stdout:args.includes("'stat'")?'':'FAILURES!!!\nTests run: 1, Failures: 1\n'}));assert.equal((await failed.runBenchmark('ABC','com.example.test/.Runner')).status,'failed');
+ const unknown=new Adb('adb',async(_path,args)=>({stdout:args.includes("'stat'")?'':'INSTRUMENTATION_CODE: -1\n'}));assert.equal((await unknown.runBenchmark('ABC','com.example.test/.Runner')).status,'unknown');
  await assert.rejects(adb.exclusive('ABC',()=>adb.runBenchmark('ABC','com.example.test/.Runner')),/已有采集任务/);assert.equal(adb.busy.size,0);
 });
 test('benchmark report reads only explicit media JSON paths with a bounded device command',async()=>{

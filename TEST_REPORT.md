@@ -1,5 +1,13 @@
 # 当前验证记录（2026-11-02）
 
+## Benchmark 自动回读增量
+
+- `npm test`：186 项，171 通过、0 失败、15 项因未配置外部官方样本而跳过；`npm run check` 和 `git diff --check` 通过。
+- AndroidX instrumentation 运行前后查询标准 `Android/media/<test-package>/<test-package>-benchmarkData.json` 的修改时间和大小；仅在成功运行且确认文件新鲜更新时读取报告。
+- 设备不支持 `stat` 元数据查询、文件未变化、JSON 无效或超过 12 MiB 时不会把报告自动挂到本次运行；仍可在页面输入路径手动读取。
+- 单元/API 回归覆盖新报告自动读取、历史文件不回读、测试参数拒绝和手动路径回读。
+- 当前环境 ADB 可执行文件被系统以 SIGKILL 终止（退出码 137），因此本增量未做真实设备 instrumentation 验证。
+
 ## CPU 调用树交互增量
 
 - 导入 `fixtures/cpu-folded.txt`，确认调用树展示每个节点相对当前范围的权重条和比例。

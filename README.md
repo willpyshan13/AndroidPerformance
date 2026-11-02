@@ -23,7 +23,7 @@
 
 CI artifact 保存 14 天。安装包包含 Electron、平台原生 ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。Windows 首次启动会把 Java runtime 解压到应用数据目录，以供 Shark 和 Compose Inspector 使用。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
-Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装包构建和上传，尚未在 Windows/macOS/Linux 桌面上逐一安装启动。macOS 使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。
+Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装包构建和上传。当前环境已对 macOS arm64 桌面包执行 headless 启动冒烟，并确认本机首页及 JavaScript 返回 HTTP 200；尚未在可见桌面逐项检查窗口，也未在 Windows/Linux 上逐一安装启动。macOS 使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。
 
 ### 连接 Android 设备
 

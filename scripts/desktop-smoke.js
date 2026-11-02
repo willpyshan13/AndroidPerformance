@@ -69,6 +69,9 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
     const missingQuickActions=requiredQuickActions.filter(route=>!rendererState.quickActionRoutes?.includes(route));
     if(missingQuickActions.length)throw new Error(`${label}: desktop home is missing quick actions: ${missingQuickActions.join(', ')}`);
+    const brokenRoutes=rendererState.routeChecks?.filter((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
+    if(rendererState.routeChecks?.length!==16||brokenRoutes?.length)throw new Error(`${label}: desktop route smoke failed: ${JSON.stringify(rendererState.routeChecks)}`);
+    if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
     if (!page.ok) throw new Error(`${label}: main page returned HTTP ${page.status}`);

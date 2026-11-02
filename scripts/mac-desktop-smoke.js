@@ -60,6 +60,9 @@ try {
   const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
   const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
   if(missingQuickActions.length)throw new Error(`Packaged macOS home is missing quick actions: ${missingQuickActions.join(', ')}`);
+  const brokenRoutes=ready.rendererState.routeChecks?.filter((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
+  if(ready.rendererState.routeChecks?.length!==16||brokenRoutes?.length)throw new Error(`Packaged macOS route smoke failed: ${JSON.stringify(ready.rendererState.routeChecks)}`);
+  if(childOutput.includes('Renderer console error:'))throw new Error(`Packaged macOS renderer logged an error:\n${childOutput}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);

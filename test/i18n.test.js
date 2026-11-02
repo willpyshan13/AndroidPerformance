@@ -20,6 +20,12 @@ test('CPU and FrameTimeline correlation labels describe the PID and time-overlap
  assert.equal(translate('没有 CPU 采样点匹配帧进程和区间','en-US'),'No CPU samples match a frame process and interval');
 });
 
+test('CPU capture configuration has English names and evidence limits',()=>{
+ assert.equal(translate('采样频率','en-US'),'Sampling frequency');
+ assert.equal(translate('调用栈展开','en-US'),'Call stack unwinding');
+ assert.match(translate('频率越高，采样开销和数据量通常越大；FP 依赖帧指针，ARM 32 位上可能不完整。DWARF 开销更高，原生栈还受调试信息影响。','en-US'),/higher frequencies.*FP.*32-bit ARM.*DWARF.*debug information/i);
+});
+
 test('settings capability summary reflects implemented modules and documented limits in English',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const settings=app.slice(app.indexOf('function renderSettings()'),app.indexOf('\nconst $$ =',app.indexOf('function renderSettings()')));

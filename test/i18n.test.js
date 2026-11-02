@@ -70,3 +70,11 @@ test('literal toast messages and dialog titles have English translations',async(
   const untranslated=[...new Set([...messages,...titles])].filter(text=>/[\u3400-\u9fff]/.test(translate(text,'en-US')));
   assert.deepEqual(untranslated,[]);
 });
+
+test('English translations cover literal state-dependent UI labels without rewriting embedded HTML samples',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const branches=[...app.matchAll(/\?\s*'([^'`]*[\u3400-\u9fff][^'`]*)'\s*:\s*'([^'`]*[\u3400-\u9fff][^'`]*)'/g)].flatMap(match=>[match[1],match[2]]);
+  const labels=[...new Set(branches)].filter(label=>!/[<>]/.test(label)&&/[\u3400-\u9fff]/.test(label));
+  const untranslated=labels.filter(label=>/[\u3400-\u9fff]/.test(translate(label,'en-US')));
+  assert.deepEqual(untranslated,[]);
+});

@@ -172,6 +172,8 @@ export function compareHeaps(baseline, current) {
     return {name,ambiguous,baseline:ambiguous?null:previous?.count??0,current:ambiguous?null:next?.count??0,
       countDelta:ambiguous?null:(next?.count??0)-(previous?.count??0),
       bytesDelta:ambiguous||!bytesComparable?null:(next?.payloadBytes??0)-(previous?.payloadBytes??0),
+      countDeltaPercent:ambiguous||!previous?.count?null:((next?.count??0)-previous.count)/previous.count*100,
+      bytesDeltaPercent:ambiguous||!bytesComparable||!previous?.payloadBytes?null:((next?.payloadBytes??0)-previous.payloadBytes)/previous.payloadBytes*100,
       currentId:ambiguous?null:next?.id??null};
   }).sort((a,b)=>a.ambiguous-b.ambiguous||Math.abs(b.bytesDelta??0)-Math.abs(a.bytesDelta??0)||a.name.localeCompare(b.name));
 }

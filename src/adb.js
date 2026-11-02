@@ -232,15 +232,20 @@ export class Adb {
         await this.shell(serial, ['uiautomator', 'dump', remote], { timeout: 35000 });
         const xml = await this.shell(serial, ['cat', remote]);
         if (!xml.includes('<hierarchy')) throw new Error('设备未返回有效的 UI 层级');
-        let screenshot = null, imageSize = null, warning = null;
+        let screenshot = null, imageSize = null, densityDpi = null, warning = null;const warnings=[];
         try {
           const png = await this.run(['-s', serial, 'exec-out', 'screencap', '-p'], { encoding: 'buffer' });
           if (png.length < 24 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('设备截图不是有效 PNG');
           imageSize = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
           screenshot = png.toString('base64');
         }
-        catch (error) { warning = error.message; }
-        return { xml, screenshot, imageSize, warning, source: 'adb', timestamp: Date.now(), serial,
+        catch (error) { warnings.push(`截图不可用：${error.message}`); }
+        try {
+          const density=await this.shell(serial,['wm','density']),values=[...density.matchAll(/(?:Physical|Override)\s+density:\s*(\d+)/g)].map(match=>Number(match[1]));
+          const candidate=values.at(-1);if(Number.isSafeInteger(candidate)&&candidate>=72&&candidate<=1000)densityDpi=candidate;else warnings.push('设备未报告可识别的显示密度');
+        } catch(error) { warnings.push(`显示密度不可用：${error.message}`); }
+        warning=warnings.length?warnings.join('；'):null;
+        return { xml, screenshot, imageSize, densityDpi, warning, source: 'adb', timestamp: Date.now(), serial,
           note: 'UIAutomator 可访问性层级快照；不是完整 View/Compose 树。截图与层级为顺序采集，动画期间可能不一致。' };
       } finally { await this.shell(serial, ['rm', '-f', remote]).catch(() => {}); }
     });

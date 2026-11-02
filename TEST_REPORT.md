@@ -1,5 +1,12 @@
 # 当前验证记录（2026-11-02）
 
+## 布局触控尺寸候选检查
+
+- UIAutomator 布局采集新增 `wm density` 读取，优先采用 Android 报告的 override density；密度查询不可用时保留截图/层级采集并显示警告，不进行 dp 判断。
+- 节点线索新增可点击、长按或可勾选节点的可见 bounds 换算；任一边小于 48 dp 时显示复核候选和换算尺寸。48 dp 来自 [Android 官方可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。结果只代表 UIAutomator 返回的可见边界，不能观察 padding、TouchDelegate 或 Compose 最小触控区域，不能据此确认真实触控目标过小。
+- 合成层级覆盖 override density、48 dp 阈值、长按节点、禁用节点、缺失 bounds、未知密度回退；ADB 测试覆盖截图/层级可用但密度读取缺失的降级路径。
+- `APW_SHARK_SAMPLE=/private/tmp/android-studio-valid-leak.hprof APW_SHARK_MAPPING=/private/tmp/apw-shark-test.mapping npm test`：199 项，184 通过、0 失败、15 项因未配置其他外部样本而跳过。`npm run check`、`git diff --check` 通过。`adb devices -l` 当前无设备，本轮没有真机验证。
+
 ## LeakCanary Shark 桌面分析器接入
 
 - 桌面端新增当前 HPROF 会话的 Shark 2.14 分析 API 和报告对话框；使用官方 CLI 的 Android reference matchers、object inspectors、leak signatures 与 retained-size 分析。HPROF 保留在本机临时目录，替换会话或关闭服务时清理。

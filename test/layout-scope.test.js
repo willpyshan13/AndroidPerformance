@@ -14,6 +14,16 @@ test('layout findings respect descendant labels, unknown fields, disabled nodes 
  const nodes=[n(0,0),n(1,1,{clickable:'true'}),n(2,2,{text:'Child label'}),n(3,1,{clickable:'true'}),n(4,1,{clickable:'true','content-desc':undefined}),n(5,1,{clickable:'true',enabled:'false'},[0,0,0,10]),n(6,1,{clickable:'true',text:'  '},[1,2,1,20]),n(7,1,{clickable:'true',text:'Known'},[0,0,0,1]),n(8,1,{clickable:'true'}),n(9,2,{'content-desc':undefined})];
  assert.deepEqual(inspectLayout(nodes),[{id:3,kind:'unlabelled'},{id:6,kind:'unlabelled'},{id:6,kind:'emptyBounds'},{id:7,kind:'emptyBounds'}]);
 });
+test('touch target findings use device density and skip disabled or incomplete dimensions',()=>{
+ const node=(id,bounds,extra={})=>({id,depth:0,bounds,attributes:{text:'Button','content-desc':'',clickable:'true',...extra}});
+ const nodes=[node(0,[0,0,120,180]),node(1,[0,0,144,144]),node(2,[0,0,80,80],{enabled:'false'}),node(3,null),node(4,[0,0,120,180],{'long-clickable':'true',clickable:'false'})];
+ assert.deepEqual(inspectLayout(nodes,{densityDpi:480}).filter(x=>x.kind==='smallTouchTarget'),[
+  {id:0,kind:'smallTouchTarget',widthDp:40,heightDp:60},
+  {id:4,kind:'smallTouchTarget',widthDp:40,heightDp:60}
+ ]);
+ assert.equal(inspectLayout([node(0,[0,0,120,180])]).some(x=>x.kind==='smallTouchTarget'),false);
+ assert.equal(inspectLayout([node(0,[0,0,120,180])],{densityDpi:NaN}).some(x=>x.kind==='smallTouchTarget'),false);
+});
 test('layout isolation keeps exactly the selected subtree and its original IDs',()=>{
  const nodes=[{id:0,depth:0},{id:1,depth:1},{id:2,depth:2},{id:3,depth:2},{id:4,depth:1},{id:5,depth:2}];
  assert.deepEqual(layoutScope(nodes,1).map(n=>n.id),[1,2,3]);

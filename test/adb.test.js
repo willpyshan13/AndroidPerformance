@@ -76,13 +76,13 @@ test('unsupported Perfetto fails clearly before creating any temporary files',as
 });
 test('layout retains actual screenshot dimensions and cleans temporary device XML',async()=>{
   const calls=[];const png=Buffer.alloc(24);Buffer.from('89504e470d0a1a0a','hex').copy(png);png.writeUInt32BE(1080,16);png.writeUInt32BE(1920,20);
-  const adb=new Adb('adb',async(_path,args)=>{calls.push(args.join(' '));if(args.includes('exec-out'))return {stdout:png};return {stdout:args.join(' ').includes("'cat'")?'<hierarchy><node bounds="[0,0][1080,1848]"/></hierarchy>':''};});
-  const layout=await adb.layout('ABC');assert.deepEqual(layout.imageSize,{width:1080,height:1920});assert.equal(layout.screenshot,png.toString('base64'));
+  const adb=new Adb('adb',async(_path,args)=>{calls.push(args.join(' '));if(args.includes('exec-out'))return {stdout:png};if(args.join(' ').includes("'wm' 'density'"))return {stdout:'Physical density: 420\nOverride density: 440\n'};return {stdout:args.join(' ').includes("'cat'")?'<hierarchy><node bounds="[0,0][1080,1848]"/></hierarchy>':''};});
+  const layout=await adb.layout('ABC');assert.deepEqual(layout.imageSize,{width:1080,height:1920});assert.equal(layout.screenshot,png.toString('base64'));assert.equal(layout.densityDpi,440);assert.equal(layout.warning,null);
   assert.match(calls.at(-1),/'rm' '-f' '\/data\/local\/tmp\/apw-/);assert.equal(adb.busy.size,0);
 });
 test('invalid screenshot does not discard usable XML or leak a capture lock',async()=>{
   const adb=new Adb('adb',async(_path,args)=>({stdout:args.includes('exec-out')?Buffer.from('invalid'):args.join(' ').includes("'cat'")?'<hierarchy/>':''}));
-  const layout=await adb.layout('ABC');assert.equal(layout.screenshot,null);assert.match(layout.warning,/PNG/);assert.equal(adb.busy.size,0);
+  const layout=await adb.layout('ABC');assert.equal(layout.screenshot,null);assert.equal(layout.densityDpi,null);assert.match(layout.warning,/PNG/);assert.match(layout.warning,/显示密度/);assert.equal(adb.busy.size,0);
 });
 test('system-killed ADB gives an actionable signature error instead of an empty command failure',async()=>{
   const adb=new Adb('/sdk/adb',async()=>{throw Object.assign(new Error('Command failed'),{signal:'SIGKILL'});});

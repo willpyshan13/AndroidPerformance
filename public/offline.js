@@ -298,13 +298,19 @@ export function layoutScope(nodes, rootId = null) {
 
 // Accessibility snapshots may omit fields or descendants. Report candidates
 // only when the recorded subtree has explicit, empty label fields throughout.
-export function inspectLayout(nodes){
+export function inspectLayout(nodes,{densityDpi=null}={}){
  if(!Array.isArray(nodes))throw new Error('层级节点无效');
+ const densityScale=Number.isFinite(densityDpi)&&densityDpi>0&&densityDpi<=1000?densityDpi/160:null;
  const findings=[],stack=[];
  const flush=()=>{const item=stack.pop(),a=item.node.attributes||{};
-  if(a.clickable==='true'&&a.enabled!=='false'){
+  const interactive=a.clickable==='true'||a['long-clickable']==='true'||a.checkable==='true';
+  if(interactive&&a.enabled!=='false'){
    if(item.complete&&!item.label)findings.push({id:item.node.id,kind:'unlabelled'});
-   const b=item.node.bounds;if(Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[2]>=b[0]&&b[3]>=b[1]&&(b[2]===b[0]||b[3]===b[1]))findings.push({id:item.node.id,kind:'emptyBounds'});
+   const b=item.node.bounds;if(Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[2]>=b[0]&&b[3]>=b[1]){
+    const width=b[2]-b[0],height=b[3]-b[1];
+    if(width===0||height===0)findings.push({id:item.node.id,kind:'emptyBounds'});
+    else if(densityScale&&(width/densityScale<48||height/densityScale<48))findings.push({id:item.node.id,kind:'smallTouchTarget',widthDp:width/densityScale,heightDp:height/densityScale});
+   }
   }
   if(stack.length){stack.at(-1).label||=item.label;stack.at(-1).complete&&=item.complete;}
  };

@@ -43,7 +43,7 @@
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
-| 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、高亮 UIAutomator 暴露的可访问性节点、按透明度叠加参考设计图、在当前截图叠加新增和变化节点边界、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签与零尺寸线索；支持导入 XML | UIAutomator |
+| 布局检查 | 查看截图、层级和节点属性，搜索或隔离节点子树、高亮 UIAutomator 暴露的可访问性节点、按透明度叠加参考设计图、在当前截图叠加新增和变化节点边界、汇总全部历史快照的相邻变化并查看详情，检查待核对的标签、零尺寸和按设备密度换算的小触控边界线索；支持导入 XML | UIAutomator |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
@@ -147,7 +147,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告不能替代 AGI 自身的设备兼容性验证。
 
-布局检查支持按保存时间浏览本地快照、汇总每一版相对上一版的新增/移除/变化与未消歧 ID，并可一键载入任意相邻版本查看详情；也可分别载入任意快照作为当前版本和基线，并在差异列表中定位当前节点。全量摘要仅读取层级 XML，不下载历史截图。优先按唯一包名与资源 ID 匹配；重复 ID 可在共同唯一祖先内进行有限的候选匹配，不能确认控件身份；无 resource-id 节点不参与摘要计数。
+布局检查支持按保存时间浏览本地快照、汇总每一版相对上一版的新增/移除/变化与未消歧 ID，并可一键载入任意相邻版本查看详情；也可分别载入任意快照作为当前版本和基线，并在差异列表中定位当前节点。全量摘要仅读取层级 XML，不下载历史截图。布局线索仅基于 UIAutomator 已读节点；设备报告显示密度时会把可交互节点边界换算为 dp，并将小于 48 dp 的结果标作人工复核候选。48 dp 是 Android 对触控目标的建议值；UIAutomator 可见边界不是实际触控区域，padding、TouchDelegate 或 Compose 最小触控语义可能扩展它。[Android 可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。优先按唯一包名与资源 ID 匹配；重复 ID 可在共同唯一祖先内进行有限的候选匹配，不能确认控件身份；无 resource-id 节点不参与摘要计数。
 
 启动页面可对已导入的 Perfetto 追踪查询启动区间和 TTID/TTFD，也可按里程碑窗口分别查看已记录的 GC、JIT、类加载、类验证、类初始化及 dex2oat 切片重叠；需要追踪包含相关 Android 事件，TTFD 还依赖应用的 fully drawn 报告。ART 切片时长不是线程 CPU 时间，事件间可能重叠，缺失不代表耗时为零。启动数据不会自动与启动实验逐次配对，已用 Perfetto 官方 Android 12 冷启动样本验证；本机设备采集仍待验证。
 

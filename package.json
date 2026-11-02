@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "main": "desktop/main.js",
-  "author": "Android Performance Workbench",
+  "author": {
+    "name": "Android Performance Workbench",
+    "email": "willpyshan13@users.noreply.github.com",
+    "url": "https://github.com/willpyshan13/AndroidPerformance"
+  },
   "description": "Local-first Android performance workbench powered by ADB",
   "engines": {
     "node": ">=22"

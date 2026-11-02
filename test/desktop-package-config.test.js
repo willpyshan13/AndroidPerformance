@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 
 test('native desktop package targets stage platform-matched SDK and Trace Processor tools',async()=>{
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+ assert.equal(pkg.author.name,'Android Performance Workbench');assert.match(pkg.author.email,/^[^@]+@users\.noreply\.github\.com$/);
  assert.equal(pkg.scripts['package:dmg:x64'],'electron-builder --mac dmg --x64 --publish never');
  assert.equal(pkg.scripts['package:mac:installers'],'electron-builder --mac dmg pkg --arm64 --publish never');
  assert.equal(pkg.scripts['package:mac:installers:x64'],'electron-builder --mac dmg pkg --x64 --publish never');

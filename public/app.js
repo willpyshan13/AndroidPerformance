@@ -201,11 +201,11 @@ function layoutTree() {
   return nodes.map(node=>`<button class="tree-node ${node.id===state.selectedNode?'active':''}" data-node="${node.id}" style="padding-left:${8+Math.min(node.depth-(state.layoutRoot===null?0:state.nodes[state.layoutRoot]?.depth||0),12)*13}px" title="${esc(node.attributes['resource-id']||node.className)}"><span style="color:#a8b6bd">${node.depth?'⌞':'◇'}</span><span>${esc(node.className)}</span>${node.attributes.text?`<small>${esc(node.attributes.text)}</small>`:''}</button>`).join('');
 }
 function renderLayout() {
-  const layout = state.layout,history=state.sessions.filter(s=>s.kind==='layout');
+  const layout = state.layout,history=state.sessions.filter(s=>s.kind==='layout').sort((a,b)=>a.timestamp-b.timestamp);
   return pageHeader('布局检查','从可访问性层级到屏幕，检查可见界面的结构。',button('layout-baseline','设为对比基线','layers',false,!layout)+button('import-layout','导入 XML','upload')+button('save-layout','保存快照','download',false,!layout)+button('capture-layout','采集当前界面','layers',true,state.busy.has('layout'))) +
     note(layout?.note || '采集设备当前前台窗口的 UIAutomator 可访问性层级，不保证属于所选应用，也不是完整 View/Compose 树。安全窗口可能没有截图；没有可访问性语义的节点可能缺失。') +
     (state.busy.has('layout')?`<div class="toolbar">${loading('正在获取层级与屏幕快照…')}</div>`:'') +
-    `<div class="panel"><div class="panel-head"><h2>历史快照</h2>${button('refresh-sessions','刷新','refresh')}</div><div class="panel-body"><div class="toolbar"><label>保存的层级 <select id="layout-history"><option value="">选择快照</option>${history.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} · ${date(s.timestamp)} · ${esc(s.source)}</option>`).join('')}</select></label>${button('layout-load-current','载入当前快照','folder',false,!history.length||state.busy.has('layout'))}${button('layout-load-baseline','载入为基线','layers',false,!history.length||state.busy.has('layout'))}</div><p class="hint">历史快照保存于本机；加载基线不会替换当前快照。可以跨时间选择两条记录，但不同界面或设备的节点未必可比。</p></div></div><div style="height:20px"></div>`+
+    `<div class="panel"><div class="panel-head"><h2>历史快照</h2>${button('refresh-sessions','刷新','refresh')}</div><div class="panel-body"><div class="toolbar"><label>保存的层级 <select id="layout-history"><option value="">选择快照</option>${history.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} · ${date(s.timestamp)} · ${esc(s.source)}</option>`).join('')}</select></label>${button('layout-load-current','载入当前快照','folder',false,!history.length||state.busy.has('layout'))}${button('layout-load-baseline','载入为基线','layers',false,!history.length||state.busy.has('layout'))}</div><p class="hint">按保存时间从早到晚排列。选择“与上一版比较”会将相邻两份记录载入差异视图；也可以分别载入任意快照作为当前版本或基线。</p>${history.length>1?`<div class="table-wrap"><table><thead><tr><th>时间</th><th>快照</th><th>来源</th><th>时间线</th></tr></thead><tbody>${history.map((s,i)=>`<tr><td>${date(s.timestamp)}</td><td>${esc(s.name)}</td><td>${esc(s.source)}</td><td>${i?`<button class="button small" data-layout-timeline-compare="${esc(s.id)}">与上一版比较</button>`:'— 起点'}</td></tr>`).join('')}</tbody></table></div>`:''}</div></div><div style="height:20px"></div>`+
     `<div class="panel inspector"><section><div class="panel-head"><h2>界面层级</h2><span class="tag">${state.nodes.length} 节点</span></div><div style="padding:10px"><div class="toolbar">${button('layout-isolate','隔离选中节点','search',false,state.selectedNode===null)}${button('layout-reset','显示全部','refresh',false,state.layoutRoot===null)}</div><p class="hint">${state.layoutRoot===null?'显示完整层级':`已隔离 ${esc(state.nodes[state.layoutRoot]?.className||'节点')} 及其子节点`}</p><input id="layout-search" class="search" style="width:100%;min-width:0" placeholder="搜索类名、文本或属性" aria-label="搜索布局节点" value="${esc(state.layoutFilter)}"></div><div class="tree" id="layout-tree">${layoutTree()}</div></section><section class="canvas-pane"><div class="panel-head"><h2>屏幕快照</h2>${layout?sourceTag(layout.source):'<span class="tag">未采集</span>'}</div>${layout?phonePreview():empty('暂无屏幕快照','采集后可点击屏幕选中节点','phone')}</section><section><div class="panel-head"><h2>节点属性</h2>${icon('info',14)}</div><div id="properties">${properties()}</div></section></div><div class="hint">${esc(layout?.warning || '')}</div>`+layoutFindings()+layoutDiff();
 }
 function layoutFindings(){
@@ -326,6 +326,18 @@ async function loadLayoutHistory(asBaseline){
     if(asBaseline)state.layoutBaseline={timestamp,nodes,name:record.name,source:record.payload.source};
     else {state.layout=record.payload;state.nodes=nodes;state.selectedNode=nodes.length?0:null;state.layoutRoot=null;state.replay=true;}
     toast(asBaseline?'历史快照已设为基线':'历史快照已载入');
+  });
+}
+async function compareLayoutTimeline(id){
+  const history=state.sessions.filter(s=>s.kind==='layout').sort((a,b)=>a.timestamp-b.timestamp),index=history.findIndex(s=>s.id===id);
+  if(index<1)throw new Error('时间线需要至少两份相邻布局快照');
+  return task('layout',async()=>{
+    const [before,after]=await Promise.all([api(`/sessions/${history[index-1].id}`),api(`/sessions/${history[index].id}`)]);
+    if(before.kind!=='layout'||after.kind!=='layout'||!before.payload?.xml||!after.payload?.xml)throw new Error('历史记录缺少可比较的布局 XML');
+    const beforeNodes=buildNodes(before.payload.xml),afterNodes=buildNodes(after.payload.xml);
+    state.layoutBaseline={timestamp:before.payload.timestamp??before.timestamp,source:before.payload.source,name:before.name,nodes:beforeNodes};
+    state.layout=after.payload;state.nodes=afterNodes;state.selectedNode=afterNodes.length?0:null;state.layoutRoot=null;state.layoutFilter='';state.replay=true;
+    toast('已载入相邻快照差异');
   });
 }
 async function browseHeapClass(classId,offset) {
@@ -873,6 +885,7 @@ document.addEventListener('click',async event=>{
   const apkTab=event.target.closest('[data-apk-tab]');if(apkTab){state.apkTab=apkTab.dataset.apkTab;render();return;}
   const apkCategory=event.target.closest('[data-apk-category]');if(apkCategory){state.apkCategory=apkCategory.dataset.apkCategory;state.apkTab='files';state.apkFilter='';render();return;}
   const apkFile=event.target.closest('[data-apk-file]');if(apkFile){const file=state.apk.files[Number(apkFile.dataset.apkFile)];showDialog(file.path,`<pre>${esc(JSON.stringify(file,null,2))}</pre>`);return;}
+  const layoutTimeline=event.target.closest('[data-layout-timeline-compare]');if(layoutTimeline){try{await compareLayoutTimeline(layoutTimeline.dataset.layoutTimelineCompare);}catch(error){toast(error.message,true);}return;}
   const apkComponent=event.target.closest('[data-apk-component]');if(apkComponent){const c=state.apk.manifest.components[Number(apkComponent.dataset.apkComponent)];showDialog(c.name,`<pre>${esc(JSON.stringify(c,null,2))}</pre>`);return;}
   const gpuOpenAgi=event.target.closest('[data-gpu-open-agi]');if(gpuOpenAgi){try{await task('gpu',async()=>{await window.desktop.openAgiArtifact(gpuOpenAgi.dataset.gpuOpenAgi);toast('已请求 AGI 打开校验后的副本；请在 AGI 中确认');});}catch(error){toast(error.message,true);}return;}
   const gpuVerify=event.target.closest('[data-gpu-verify]');if(gpuVerify){try{await task('gpu',async()=>{const r=await api('/gpu/verify',{id:gpuVerify.dataset.gpuVerify});state.gpuChecks[r.meta.id]=r.ok;toast(r.ok?'文件与导入时的 SHA-256 一致':`校验失败：${r.reason}`,!r.ok);});}catch(error){toast(error.message,true);}return;}

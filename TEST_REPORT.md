@@ -16,7 +16,7 @@
 - 5 项集成测试覆盖转发/清理、令牌拒绝、截图不可用与截断标记、受令牌保护的 API 和源码 ZIP 内容。Java 源码以 Android 31 `android.jar` 编译通过。
 - API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
 - Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。另以独立临时 debug APK 运行真实 Compose Runtime 页面验证 probe 的重组计数；目标 Compose 应用仍须接入 Agent/probe 后验证。
-- Compose Runtime 检查增量：Agent 反射读取 `AbstractComposeView` 的 `CompositionData` 组合组树，并从 `observations.asMap()` 统计各 `RecomposeScope` 关联的已观察 State 数量；不输出 State 实例或值。Compose 1.7.6 临时 fixture 在 API 25 真机返回 30 个组合组、7 条 State-scope 关联，4 个组带非零关联，兼容性警告为 0；节点嵌入同一布局 XML 并可在界面层级中查看。该树仍不是完整 Composable 函数调用树，源码标签可能因目标 Composer 未启用 source markers 而为空，也没有帧关联。`View.draw` 对 Surface 等硬件层可能不完整。
+- Compose Runtime 检查增量：Agent 反射读取 `AbstractComposeView` 的 `CompositionData` 组合组树，并从 `observations.asMap()` 统计各 `RecomposeScope` 关联的已观察 State 数量；不输出 State 实例或值。Compose 1.7.6 临时 fixture 在 API 25 真机返回 30 个组合组、7 条 State-scope 关联，4 个组带非零关联，兼容性警告为 0；节点嵌入同一布局 XML 并可在界面层级中查看。该树仍不是完整 Composable 函数调用树，源码标签在三次自然状态更新后仍为空，因此 Agent 不会强制重组来触发应用副作用；也没有帧关联。`View.draw` 对 Surface 等硬件层可能不完整。
 - 完整回归：218 项，202 通过、0 失败、16 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
 
 ## Compose Runtime probe（显式插桩）

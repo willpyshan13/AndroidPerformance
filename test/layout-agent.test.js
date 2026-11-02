@@ -36,7 +36,7 @@ test('layout agent reports runtime group and per-scope state-read relationship c
  const xml='<hierarchy><node class="ComposeRuntimeTree"><node class="ComposeRuntimeGroup" compose-key="-1" compose-state-read-count="2"/></node></hierarchy>';
  const h=await harness(t,{ok:true,xml,screenshot:png.toString('base64'),composeHosts:1,composeNodes:4,composeRuntimeGroups:30,composeStateReads:7,composeStateReadsAvailable:true,composeRuntimeWarning:false});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
- assert.equal(result.composeRuntimeGroups,30);assert.equal(result.composeStateReads,7);assert.equal(result.composeStateReadsAvailable,true);assert.match(result.note,/30 个组合组和 7 条 State 读取关联/);assert.equal(result.warning,null);assert.match(result.xml,/compose-state-read-count="2"/);
+ assert.equal(result.composeRuntimeGroups,30);assert.equal(result.composeStateReads,7);assert.equal(result.composeStateReadsAvailable,true);assert.match(result.note,/30 个组合组和 7 条 State 读取关联/);assert.match(result.note,/不会通过强制重组/);assert.equal(result.warning,null);assert.match(result.xml,/compose-state-read-count="2"/);
 });
 
 test('layout agent reports unavailable State observations instead of zero',async t=>{

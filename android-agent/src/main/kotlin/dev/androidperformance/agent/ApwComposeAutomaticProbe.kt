@@ -20,13 +20,13 @@ private val invocationStack = object : ThreadLocal<ArrayDeque<InvocationFrame>>(
 
 /** Called at each compiled composable entry so automatic records can retain their parent function. */
 fun apwComposeAutomaticEnter(name: String) {
-    val stack = invocationStack.get()
+    val stack = invocationStack.get() ?: return
     stack.addLast(InvocationFrame(name.take(300), stack.peekLast()?.name))
 }
 
 /** Called after the compiled composable body to close its invocation frame. */
 fun apwComposeAutomaticExit() {
-    val stack = invocationStack.get()
+    val stack = invocationStack.get() ?: return
     if (stack.isNotEmpty()) stack.removeLast()
     if (stack.isEmpty()) invocationStack.remove()
 }
@@ -43,7 +43,7 @@ fun apwComposeAutomaticSkip(name: String) {
 
 private fun recordAutomaticEvent(prefix: String, name: String, counters: ConcurrentHashMap<String, AtomicLong>) {
     if (name.isBlank() || name.length > 300) return
-    val frame = invocationStack.get().peekLast()?.takeIf { it.name == name }
+    val frame = invocationStack.get()?.peekLast()?.takeIf { it.name == name }
     val parent = frame?.parent
     val edgeKey = "$prefix\u0000${parent ?: ""}\u0000$name"
     val edgeCount = edgeCounts.computeIfAbsent(edgeKey) { AtomicLong() }.incrementAndGet()

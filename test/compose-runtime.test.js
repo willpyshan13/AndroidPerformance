@@ -17,11 +17,20 @@ test('automatic Compose execution records aggregate by function without inventin
  const automatic=(time,name=name64,session='9'.repeat(32))=>`APW2|${session}|${name}|${time}`;
  const result=parseComposeRecompositionLog([automatic(100),automatic(200),automatic(300,Buffer.from('Card').toString('base64url'))].join('\n'));
  assert.deepEqual(result.composables,[
-  {name:'FeedScreen',measurement:'automatic-invocation',invocations:2,instances:null,lastElapsedNs:'200'},
-  {name:'Card',measurement:'automatic-invocation',invocations:1,instances:null,lastElapsedNs:'300'}
+  {name:'FeedScreen',measurement:'automatic-execution',executions:2,skips:0,instances:null,lastElapsedNs:'200'},
+  {name:'Card',measurement:'automatic-execution',executions:1,skips:0,instances:null,lastElapsedNs:'300'}
  ]);
- assert.equal(result.events[0].measurement,'automatic-invocation');assert.equal(result.events[0].instanceId,null);
- assert.match(result.note,/可能包含随后被 Composer 跳过/);
+ assert.equal(result.events[0].measurement,'automatic-execution');assert.equal(result.events[0].instanceId,null);
+ assert.match(result.note,/非跳过分支/);
+});
+
+test('automatic Compose parser keeps cumulative execution and skip counts distinct',()=>{
+ const exec=(count,time)=>`APW2|${'a'.repeat(32)}|${name64}|${count}|${time}`;
+ const skip=(count,time)=>`APW3|${'a'.repeat(32)}|${name64}|${count}|${time}`;
+ const result=parseComposeRecompositionLog([exec(1,100),skip(1,150),exec(4,300),skip(3,350)].join('\n'));
+ assert.deepEqual(result.composables,[{name:'FeedScreen',measurement:'automatic-execution',executions:4,skips:3,instances:null,lastElapsedNs:'350'}]);
+ assert.deepEqual(result.events.map(x=>x.measurement),['automatic-execution','automatic-skip','automatic-execution','automatic-skip']);
+ assert.equal(result.events[3].count,3);assert.equal(result.invalidRecords,0);
 });
 
 test('Compose probe parser rejects malformed records and bounds event details',()=>{

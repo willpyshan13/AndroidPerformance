@@ -11,7 +11,10 @@ import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
+import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.expressions.IrWhen
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
 import org.jetbrains.kotlin.ir.util.parentAsClass
@@ -34,7 +37,10 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
     @OptIn(UnsafeDuringIrConstructionAPI::class)
     override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
         val record = pluginContext.referenceFunctions(
-            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticInvocation"))
+            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticExecution"))
+        ).singleOrNull() ?: return
+        val recordSkip = pluginContext.referenceFunctions(
+            CallableId(FqName("dev.androidperformance.agent"), Name.identifier("apwComposeAutomaticSkip"))
         ).singleOrNull() ?: return
         val composable = FqName("androidx.compose.runtime.Composable")
         moduleFragment.transformChildrenVoid(object : IrElementTransformerVoid() {
@@ -51,11 +57,47 @@ private class ApwComposeInstrumentationExtension : IrGenerationExtension {
                     declaration.startOffset, declaration.endOffset,
                     pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, record, signature
                 )
-                // The Compose compiler lowers its skip branch after this extension runs. This records
-                // function invocation, so a call that the Composer skips later is included.
-                body.statements.add(0, call)
+                var skipGate: IrWhen? = null
+                body.transform(object : IrElementTransformerVoid() {
+                    override fun visitWhen(expression: IrWhen): IrExpression {
+                        if (expression.branches.any { containsSkipCall(it.result) }) skipGate = expression
+                        return super.visitWhen(expression)
+                    }
+                }, null)
+                if (skipGate == null) {
+                    body.statements.add(0, call)
+                } else {
+                    val skipBranches = skipGate!!.branches.filter { containsSkipCall(it.result) }
+                    val normalBranches = skipGate!!.branches.filterNot { containsSkipCall(it.result) }
+                    normalBranches.forEachIndexed { index, branch ->
+                        val branchCall = if (index == normalBranches.lastIndex) call else IrCalls.stringCall(
+                            declaration.startOffset, declaration.endOffset,
+                            pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, record, signature
+                        )
+                        IrCalls.prependToBranch(branch, branchCall)
+                    }
+                    skipBranches.forEach { branch ->
+                        val skipCall = IrCalls.stringCall(
+                            declaration.startOffset, declaration.endOffset,
+                            pluginContext.irBuiltIns.unitType, pluginContext.irBuiltIns.stringType, recordSkip, signature
+                        )
+                        IrCalls.prependToBranch(branch, skipCall)
+                    }
+                }
                 return transformed
             }
         })
+    }
+
+    @OptIn(UnsafeDuringIrConstructionAPI::class)
+    private fun containsSkipCall(element: IrElement): Boolean {
+        var found = false
+        element.transform(object : IrElementTransformerVoid() {
+            override fun visitCall(expression: IrCall): IrExpression {
+                if (expression.symbol.owner.name.asString() == "skipToGroupEnd") found = true
+                return super.visitCall(expression)
+            }
+        }, null)
+        return found
     }
 }

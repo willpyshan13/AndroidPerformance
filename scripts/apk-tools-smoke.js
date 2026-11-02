@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { execFile } from 'node:child_process';
+import { analyzeApk, locateAapt2 } from '../src/apk.js';
+
+const run = promisify(execFile);
+const sdkRoots = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join(homedir(), 'Library/Android/sdk'), join(homedir(), 'Android/Sdk')].filter(Boolean);
+let androidJar;
+for (const root of sdkRoots) {
+  try {
+    const platforms = await readdir(join(root, 'platforms'));
+    const versions = platforms.filter(name => /^android-\d+$/.test(name)).sort((a, b) => Number(b.slice(8)) - Number(a.slice(8)));
+    if (versions.length) { androidJar = join(root, 'platforms', versions[0], 'android.jar'); await access(androidJar); break; }
+  } catch {}
+}
+if (!androidJar) throw new Error('Android SDK platform android.jar is required for the packaged AAPT2 smoke');
+const aapt2Path = process.env.AAPT2_PATH || await locateAapt2();
+if (!aapt2Path) throw new Error('AAPT2 is not available');
+const temp = await mkdtemp(join(tmpdir(), 'apw-aapt2-smoke-'));
+const manifestPath = join(temp, 'AndroidManifest.xml');
+const apkPath = join(temp, 'sample.apk');
+try {
+  await writeFile(manifestPath, '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.apw.smoke"><uses-sdk android:minSdkVersion="21"/><application android:label="AAPT2 smoke"/></manifest>');
+  await run(aapt2Path, ['link', '--manifest', manifestPath, '-I', androidJar, '-o', apkPath], { timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
+  const result = await analyzeApk(apkPath, { fileName: 'sample.apk', aapt2Path });
+  assert.equal(result.packageName, 'dev.apw.smoke');
+  assert.equal(result.manifest.label, 'AAPT2 smoke');
+  assert.equal(result.manifest.minSdk, 21);
+  assert.ok(result.files.some(file => file.path === 'AndroidManifest.xml'));
+  console.log(`Real AAPT2 APK analysis smoke passed: ${result.packageName}, minSdk ${result.manifest.minSdk}, ${result.fileCount} ZIP entries`);
+} finally {
+  await rm(temp, { recursive: true, force: true });
+}

@@ -11,6 +11,11 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  assert.equal(pkg.scripts['package:win:installers'],'electron-builder --win nsis msi --x64 --publish never');
  assert.equal(pkg.scripts['package:linux:installers'],'electron-builder --linux AppImage deb rpm --publish never');
  assert.equal(pkg.scripts['package:linux:arm64'],'electron-builder --linux AppImage --arm64 --publish never');
+ assert.equal(pkg.scripts['package:linux:arm64:deb'],'electron-builder --linux deb --arm64 --publish never');
+ assert.equal(pkg.scripts['prepare:linux:arm64-tools'],'node scripts/prepare-linux-arm64-tools.js');
+ assert.equal(pkg.scripts['smoke:apk-tools'],'node scripts/apk-tools-smoke.js');
+ assert.equal(pkg.scripts['smoke:linux:arm64:deb'],'node scripts/linux-arm64-package-smoke.js');
+ assert.equal(pkg.scripts['prepare:linux:arm64:deb-metadata'],'node scripts/floor-linux-arm64-deb-glibc.js');
  const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
  for(const target of ['dist/v*/*.pkg','dist/v*/*.msi','dist/v*/*.deb','dist/v*/*.rpm'])assert.ok(workflow.includes(target),`missing CI artifact pattern ${target}`);
  const smoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
@@ -18,6 +23,7 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
  assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/cpuLargeTimeline/);assert.match(macSmoke,/50k CPU timeline raster/);assert.match(macSmoke,/heapCsvExport/);assert.match(macSmoke,/HPROF CSV export/);assert.match(macSmoke,/layoutFindings/);assert.match(macSmoke,/structured layout findings/);assert.match(macSmoke,/menuLabels/);assert.match(macSmoke,/quickActionRoutes/);assert.match(macSmoke,/routeChecks/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
  const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);
+ assert.match(workflow,/runner: ubuntu-24\.04-arm[\s\S]*?label: linux-arm64[\s\S]*?package:linux:arm64:deb/);assert.match(workflow,/Install Ubuntu arm64 Android command-line tools/);assert.match(workflow,/Analyze a generated APK with the staged AAPT2/);assert.match(workflow,/Set Linux arm64 package runtime floor to Ubuntu 24\.04 glibc/);assert.match(workflow,/Inspect extracted Linux arm64 DEB tools and analyze a generated APK/);
  assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);assert.match(smoke,/menuLabels/);assert.match(smoke,/quickActionRoutes/);assert.match(smoke,/routeChecks/);
  assert.ok(pkg.build.files.includes('desktop/menu.js'),'the localized native menu module must be packaged');
  assert.ok(pkg.build.files.includes('desktop/locale.js'),'the native dialog localization module must be packaged');

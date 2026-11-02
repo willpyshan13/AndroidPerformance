@@ -220,6 +220,12 @@ const POWER_RAILS_QUERY=`INCLUDE PERFETTO MODULE android.power_rails;
  COALESCE(CAST(c.average_power AS TEXT),'') AS average_power_mw
  FROM android_power_rails_counters c LEFT JOIN android_power_rails_metadata m USING(track_id)
  WHERE c.dur>=0 ORDER BY c.ts LIMIT 2001`;
+const BATTERY_COUNTERS_QUERY=`INCLUDE PERFETTO MODULE android.battery;
+ SELECT CAST(ts AS TEXT) AS ts_ns,COALESCE(CAST(capacity_percent AS TEXT),'') AS capacity_percent,
+ COALESCE(CAST(charge_uah AS TEXT),'') AS charge_uah,COALESCE(CAST(current_ua AS TEXT),'') AS current_ua,
+ COALESCE(CAST(current_avg_ua AS TEXT),'') AS current_avg_ua,COALESCE(CAST(voltage_uv AS TEXT),'') AS voltage_uv,
+ COALESCE(CAST(energy_counter_uwh AS TEXT),'') AS energy_counter_uwh,COALESCE(CAST(power_mw AS TEXT),'') AS power_mw
+ FROM android_battery_charge ORDER BY ts LIMIT 2001`;
 function parseGpuTraceRows(csv,kind){
  const rows=parseCsv(csv),headers={stage:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid',frequency:'ts_ns,dur_ns,gpu_id,frequency',memory:'ts_ns,dur_ns,upid,process_hex,bytes'};
  if(!rows[0]||rows.shift().join(',')!==headers[kind])throw new Error('GPU 追踪返回列无效');
@@ -250,22 +256,23 @@ export async function queryGpuTraceDiagnostics(path,{locator=locateTraceProcesso
 }
 export async function queryPowerRailDiagnostics(path,{locator=locateTraceProcessor,runner=exec}={}){
  const binary=await locator();
- try{
-  const result=await runner(binary,['--no-agent','--quiet','query',path,POWER_RAILS_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});
-  const rows=parseCsv(result.stdout);const expected='ts_ns,dur_ns,rail_hex,subsystem_hex,raw_name_hex,energy_delta_uws,average_power_mw';
+ const run=async query=>{const result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});return parseCsv(result.stdout);};
+ const decimal=(value,label)=>{if(value==='')return null;if(!/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value))throw new Error(`${label} 数值无效`);const number=Number(value);if(!Number.isFinite(number))throw new Error(`${label} 数值超出范围`);return number;};
+ const rails=await (async()=>{try{
+  const rows=await run(POWER_RAILS_QUERY),expected='ts_ns,dur_ns,rail_hex,subsystem_hex,raw_name_hex,energy_delta_uws,average_power_mw';
   if(!rows[0]||rows.shift().join(',')!==expected)throw new Error('功耗轨道查询返回列无效');
   const decode=value=>{if(!/^(?:[0-9a-f]{2})*$/i.test(value))throw new Error('功耗轨道名称编码无效');return Buffer.from(value,'hex').toString('utf8');};
-  const decimal=value=>{if(value==='')return null;if(!/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value))throw new Error('功耗轨道数值无效');const number=Number(value);if(!Number.isFinite(number))throw new Error('功耗轨道数值超出范围');return number;};
-  if(rows.length>2001)throw new Error('功耗轨道结果超过查询上限');
-  let truncated=rows.length>2000;if(truncated)rows.pop();
-  const parsed=rows.map(row=>{
-   if(row.length!==7||!/^\d{1,19}$/.test(row[0])||!/^\d{1,19}$/.test(row[1])||BigInt(row[1])<0n)throw new Error('功耗轨道时间无效');
-   return {tsNs:row[0],durationNs:row[1],rail:decode(row[2]),subsystem:decode(row[3]),rawName:decode(row[4]),energyDeltaUws:decimal(row[5]),averagePowerMw:decimal(row[6])};
-  });
-  return {available:true,rows:parsed,truncated,note:'功耗轨道由设备 IPowerStats HAL 与专用硬件提供，通常表示整机中的硬件子系统或部件；能量差单位为 µJ，平均功率单位为 mW。电池计数为整机指标。轨道是否存在、命名和采样分辨率由设备决定；这些值不能归因到单个应用。'};
- }catch(error){
-  return {available:false,rows:[],truncated:false,reason:`功耗轨道数据不可用：${String(error.stderr||error.message).slice(0,600)}`,note:'需要追踪包含 android.power 数据源，并且设备的 IPowerStats HAL 与功耗轨道硬件受支持。'};
- }
+  if(rows.length>2001)throw new Error('功耗轨道结果超过查询上限');let truncated=rows.length>2000;if(truncated)rows.pop();
+  const parsed=rows.map(row=>{if(row.length!==7||!/^\d{1,19}$/.test(row[0])||!/^\d{1,19}$/.test(row[1])||BigInt(row[1])<0n)throw new Error('功耗轨道时间无效');return {tsNs:row[0],durationNs:row[1],rail:decode(row[2]),subsystem:decode(row[3]),rawName:decode(row[4]),energyDeltaUws:decimal(row[5],'功耗轨道'),averagePowerMw:decimal(row[6],'功耗轨道')};});
+  return {available:true,rows:parsed,truncated};
+ }catch(error){return {available:false,rows:[],truncated:false,reason:`功耗轨道数据不可用：${String(error.stderr||error.message).slice(0,600)}`};}})();
+ const battery=await (async()=>{try{
+  const rows=await run(BATTERY_COUNTERS_QUERY),expected='ts_ns,capacity_percent,charge_uah,current_ua,current_avg_ua,voltage_uv,energy_counter_uwh,power_mw';
+  if(!rows[0]||rows.shift().join(',')!==expected)throw new Error('电池计数查询返回列无效');if(rows.length>2001)throw new Error('电池计数结果超过查询上限');let truncated=rows.length>2000;if(truncated)rows.pop();
+  const parsed=rows.map(row=>{if(row.length!==8||!/^\d{1,19}$/.test(row[0]))throw new Error('电池计数时间无效');return {tsNs:row[0],capacityPercent:decimal(row[1],'电池计数'),chargeUah:decimal(row[2],'电池计数'),currentUa:decimal(row[3],'电池计数'),currentAvgUa:decimal(row[4],'电池计数'),voltageUv:decimal(row[5],'电池计数'),energyCounterUwh:decimal(row[6],'电池计数'),powerMw:decimal(row[7],'电池计数')};});
+  return {available:true,rows:parsed,truncated};
+ }catch(error){return {available:false,rows:[],truncated:false,reason:`设备电池计数不可用：${String(error.stderr||error.message).slice(0,600)}`};}})();
+ return {...rails,batteryCounters:battery,note:'电池计数由整机电池计量硬件提供：电荷单位 µAh，电流 µA，电压 µV，能量 µWh，功率 mW。正负电流方向依设备报告的充放电状态解释。硬件功耗轨道由 IPowerStats HAL 与专用硬件提供，能量差单位 µJ、平均功率 mW，通常表示整机中的硬件子系统或部件。轨道和电池计数均不能归因到单个应用；可用性、命名和采样分辨率由设备决定。'};
 }
 
 const MONOTONIC_CLOCK_QUERY=`SELECT CAST(machine_id AS TEXT) AS machine_id,CAST(snapshot_id AS TEXT) AS snapshot_id,

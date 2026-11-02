@@ -174,7 +174,7 @@ test('Battery analysis page has English labels, history errors, and sampling gui
   const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>]/.test(text)))];
   const guidance=[
     '先采集基线，在设备上重现操作后采集结束快照。也可导入 dumpsys batterystats --checkin 文本。',
-    '表中网络计数和 UID 耗电估计是累计读数，不是电池电量消耗；系统窗口重置或设备切换后不可直接对比。',
+    '温度、电压和充电状态来自设备电池接口；网络与 UID 耗电估计是系统累计读数，不是电池电量消耗。计数在系统窗口重置或切换设备后不可直接对比。',
     '数据来自 Android batterystats 的 since-charged 累计记录，属于 UID；共享 UID 的应用无法单独归因。资源计数差值不是耗电量；系统若提供 UID mAh 则显示累计估计，缺失值和重置后的计数不按零计算。',
     '来自 batterystats 的 pwi UID 项，是系统基于设备数据和模型给出的累计估计；同一统计窗口内可显示两次累计值的区间差，可能包括共享 UID 应用且存在取整。区间差仍是估计值，不是实测电量或精确应用耗电；缺失或下降的读数不按零计算。',
   ];

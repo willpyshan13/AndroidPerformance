@@ -6,8 +6,8 @@ import {Adb} from '../src/adb.js';
 import {validateRecord} from '../src/records.js';
 const raw=await readFile(new URL('../fixtures/battery-checkin.txt',import.meta.url),'utf8');
 test('battery checkin identifies shared UID and parses only UID-scoped evidence',()=>{
- const x=parseBatteryStats(raw,'com.example.demo',{serial:'ABC',batteryRaw:'level: 50\nscale: 100\ntemperature: 320',source:'adb'});
- assert.equal(x.uid,10123);assert.deepEqual(x.packages,['com.example.demo','com.example.shared']);assert.equal(x.sessionStart,1700000000000);assert.equal(x.battery.level,50);assert.equal(x.network.wifiRxBytes,400);assert.equal(x.wakelocks[0].partial.timeMs,100);assert.equal(x.jobs[0].count,3);assert.equal(x.alarms[0].count,7);assert.equal(x.alarms[0].timeMs,null);
+ const x=parseBatteryStats(raw,'com.example.demo',{serial:'ABC',batteryRaw:'level: 50\nscale: 100\ntemperature: 320\nvoltage: 4200\nstatus: 2',source:'adb'});
+ assert.equal(x.uid,10123);assert.deepEqual(x.packages,['com.example.demo','com.example.shared']);assert.equal(x.sessionStart,1700000000000);assert.equal(x.battery.level,50);assert.equal(x.battery.temperatureC,32);assert.equal(x.battery.voltageMv,4200);assert.equal(x.battery.status,2);assert.equal(x.network.wifiRxBytes,400);assert.equal(x.wakelocks[0].partial.timeMs,100);assert.equal(x.jobs[0].count,3);assert.equal(x.alarms[0].count,7);assert.equal(x.alarms[0].timeMs,null);
 });
 test('battery comparison returns only evidenced monotonic deltas and detects reset',()=>{
  const a=parseBatteryStats(raw,'com.example.demo',{serial:'ABC'}),b=structuredClone(a);b.timestamp=a.timestamp+100;b.network.wifiRxBytes=450;b.network.mobileRxBytes=20;b.jobs[0].timeMs=280;b.alarms[0].count=9;b.jobs.push({name:'new',timeMs:50,count:1});

@@ -425,6 +425,10 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/layout') return json(await adb.layout(body.serial));
         if (path === '/api/layout/agent') return json(await adb.layoutAgent(body.serial,body.packageName,body.token));
         if (path === '/api/compose/recompositions') return json(await adb.composeRecompositionSnapshot(body.serial,body.packageName));
+        if(path==='/api/cpu-profile/art-trace'){
+          const data=await adb.captureArtMethodTrace(body.serial,body.packageName,body.seconds??10,body.samplingIntervalUs??1000);
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="art-method.trace"','X-Content-Type-Options':'nosniff'});return res.end(data);
+        }
         if (path === '/api/cpu-profile') {
           const capture=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp',traceOffCpu:body.traceOffCpu??false});
           const data=Buffer.isBuffer(capture)?capture:capture.data;

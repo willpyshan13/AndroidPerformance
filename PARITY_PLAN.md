@@ -36,4 +36,4 @@ CPU Stack Chart 本轮增加了最多 2,000 个等距样本、每样本最多 32
 
 ## ART 方法跟踪
 
-CPU 页面支持单独导入 Android ART `.trace/.dmtrace`，在 Worker 内解析 v1/v2/v3 与支持的 streaming trace，展示每线程方法区间和 inclusive/self 汇总。文件大小、事件、方法、线程与保留区间均有上限；插桩耗时只适合相对参考。解析用例覆盖标准和 streaming 格式、thread-cpu 尾部时钟声明、嵌套调用、v1 unroll、损坏输入与安全上限。待用真实设备导出的 ART trace 样本核对版本兼容性；设备端 `am profile` 自动采集尚未接入。
+CPU 页面支持单独导入 Android ART `.trace/.dmtrace`，在 Worker 内解析 v1/v2/v3 与支持的 streaming trace，展示每线程方法区间和 inclusive/self 汇总。也可在已运行的目标应用上通过 `am profile` 启停采样并拉取结果，设置 3–30 秒与 100 µs–1 s 采样间隔；大小、事件、方法、线程与保留区间均有限制，插桩耗时只适合相对参考。解析用例覆盖标准和 streaming 格式、thread-cpu 尾部时钟声明、嵌套调用、v1 unroll、损坏输入与安全上限；模拟 ADB 用例覆盖命令参数、停止、文件校验与远端 / 本地清理。待用真实设备导出的 ART trace 样本核对版本兼容性和系统权限。

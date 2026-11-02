@@ -15,6 +15,15 @@ test('folded stacks accumulate event period weights and preserve call order',()=
 test('folded stacks reject malformed values and unsafe weights',()=>{
  for(const s of ['x; 5','x -2','x 9007199254740992','x y'])assert.throws(()=>parseFoldedStacks(s));
 });
+test('ART method trace capture starts sampling, stops, validates the file, and cleans remote and local copies',async()=>{
+ const {writeFile,access}=await import('node:fs/promises');let local;const calls=[],trace=Buffer.from('SLOW\x03\x00\x20\x00');
+ const adb=new Adb('adb',async(_path,args)=>{calls.push(args);const command=args.join(' ');if(command.includes("'wc'"))return {stdout:`${trace.length} /data/local/tmp/art.trace`};if(args.includes('pull')){local=args.at(-1);await writeFile(local,trace);}return {stdout:''};});
+ const data=await adb.captureArtMethodTrace('ABC','com.example.app',5,5000,async()=>{});assert.deepEqual(data,trace);assert.ok(calls.some(args=>args.join(' ').includes("'profile' 'start' '--sampling' '5000' 'com.example.app'")));assert.ok(calls.some(args=>args.join(' ').includes("'profile' 'stop' 'com.example.app'")));assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));await assert.rejects(access(local));assert.equal(adb.busy.size,0);
+});
+test('ART method trace capture rejects bad duration and removes a partial remote trace after start failure',async()=>{
+ const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.join(' ').includes("'profile' 'start'"))throw new Error('not debuggable');return {stdout:''};});
+ await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',2),/3–30 秒/);assert.equal(calls.length,0);await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',5,1000,async()=>{}),/not debuggable/);assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
+});
 test('CPU profile capture releases device lock and removes temporary files on device failure',async()=>{
  const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.join(' ').includes('getprop'))return {stdout:'arm64-v8a'};if(args.join(' ').includes('record'))throw new Error('not debuggable');return {stdout:''};});
  await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf'),/not debuggable/);

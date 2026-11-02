@@ -59,6 +59,14 @@ test('CPU profile API forwards validated sampling configuration and multi-event 
  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.deepEqual(JSON.parse(Buffer.from(response.headers.get('x-cpu-capture-diagnostics'),'base64url').toString()),{samplesRecorded:12,samplesCut:null,samplesLost:2,kernelSamplesLost:1,userSamplesLost:1,truncatedStacks:null,available:true});assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events,options:{frequencyHz:499,callGraph:'dwarf',traceOffCpu:true}});
 });
 
+test('ART method trace API forwards capture settings and returns the trace bytes',async t=>{
+ let received;const adb={captureArtMethodTrace:async(...args)=>{received=args;return Buffer.from('SLOW\x03\x00\x20\x00');}};
+ const dir=await mkdtemp(join(tmpdir(),'apw-art-trace-api-')),app=createApp({adb,dataDir:dir,token:'art-trace-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile/art-trace`,{method:'POST',headers:{'X-Workbench-Token':'art-trace-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:10,samplingIntervalUs:5000})});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-disposition'),'attachment; filename="art-method.trace"');assert.deepEqual(Buffer.from(await response.arrayBuffer()),Buffer.from('SLOW\x03\x00\x20\x00'));assert.deepEqual(received,['ABC','com.example.demo',10,5000]);
+});
+
 test('CPU events API queries the requested device and returns supported events',async t=>{
  const adb={listCpuEvents:async serial=>{assert.equal(serial,'ABC');return {events:['cpu-clock','cpu-cycles'],source:'simpleperf list',traceOffCpuAvailable:true};}};
  const dir=await mkdtemp(join(tmpdir(),'apw-cpu-events-api-'));const app=createApp({adb,dataDir:dir,token:'cpu-events-api'});app.listen(0,'127.0.0.1');await once(app,'listening');

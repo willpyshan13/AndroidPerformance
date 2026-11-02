@@ -587,7 +587,12 @@ const stateEn={
  '完整调用区间超过保留上限；顶部汇总仍统计全部已解析调用。':'The interval retention limit was reached; method totals still include all parsed calls.',
  '方法汇总':'Method summary','调用次数':'Calls','包含时间 ms':'Inclusive ms','自身时间 ms':'Self ms',
  'ART trace 文件不能超过 256 MiB':'ART trace files must not exceed 256 MiB','ART trace 解析超时':'ART trace parsing timed out','ART trace worker 启动失败':'Could not start the ART trace worker','ART trace 解析失败':'ART trace parsing failed','ART trace 不是受支持的 ART method trace（缺少 SLOW magic 或 *version 区）':'File is not a supported ART method trace (missing SLOW magic or *version section)',
- 'ART 方法轨迹已载入（':'ART method trace loaded (',' 次完整调用）': ' completed calls)'
+ 'ART 方法轨迹已载入（':'ART method trace loaded (',' 次完整调用）': ' completed calls)',
+ '采集 ART trace':'Capture ART trace','ART 跟踪时长':'ART trace duration','ART 采样间隔':'ART sampling interval','目标应用需正在运行且允许调试或性能分析；方法插桩会增加明显开销。':'The target app must be running and debuggable or profileable. Method instrumentation adds substantial overhead.',
+ 'ART trace 采集失败':'ART trace capture failed','ART 方法跟踪时长须为 3–30 秒':'ART method trace duration must be 3–30 seconds','ART 方法采样间隔须为 100–1,000,000 微秒':'ART sampling interval must be 100–1,000,000 microseconds',
+ 'ART 方法跟踪失败：':'ART method trace failed: ','设备拒绝启动 ART 方法跟踪':'The device refused to start ART method tracing','设备拒绝停止 ART 方法跟踪':'The device refused to stop ART method tracing',
+ 'ART trace 文件为空或超过 256 MiB 上限':'ART trace is empty or exceeds the 256 MiB limit','设备未返回有效的 ART method trace':'The device did not return a valid ART method trace',
+ '目标应用通常需要 debuggable 或 profileable，且必须处于运行状态。':'The target app usually needs to be debuggable or profileable and must already be running.'
 };
 
 export const supportedLanguages=['zh-CN','en-US'];

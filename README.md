@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
-| CPU 采样 | 采集和导入 simpleperf 数据，查看正向调用树、热点调用方、火焰图、采样点时间线与函数汇总 | Android NDK simpleperf |
+| CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、采样点时间线与函数汇总 | Android NDK simpleperf |
 | 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |

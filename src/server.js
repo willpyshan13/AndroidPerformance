@@ -75,7 +75,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           }catch{return json({error:'Perfetto UI 尚未准备，请运行 npm run prepare:perfetto-ui'},404);}
         }
         if(path==='/perfetto-ui'||path==='/perfetto-ui/') {res.writeHead(302,{Location:'/perfetto-ui/index.html#!/?mode=embedded'});return res.end();}
-        const files = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/demo.js': 'demo.js', '/offline.js': 'offline.js', '/favicon.svg': 'favicon.svg' };
+        const files = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/demo.js': 'demo.js', '/offline.js': 'offline.js', '/i18n.js': 'i18n.js', '/favicon.svg': 'favicon.svg' };
         if (!files[path]) return json({ error: '页面不存在' }, 404);
         let content = await readFile(join(root, 'public', files[path]));
         if (path === '/') content = Buffer.from(content.toString().replace('__API_TOKEN__', token));

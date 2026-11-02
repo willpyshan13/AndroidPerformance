@@ -18,6 +18,20 @@ test('Battery Historian export endpoint returns raw checkin as downloadable text
  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'text/csv; charset=utf-8');assert.match(response.headers.get('content-disposition'),/batterystats-checkin\.csv/);assert.equal(await response.text(),raw);
 });
 
+test('local workbench serves every static module imported by its browser entry point',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-static-modules-'));
+ const app=createApp({adb:{},dataDir:dir,token:'static-modules'});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const base=`http://127.0.0.1:${app.address().port}`;
+ for(const path of ['/app.js','/demo.js','/offline.js','/i18n.js']){
+  const response=await fetch(new URL(path,base));
+  assert.equal(response.status,200,`${path} should load`);
+  assert.match(response.headers.get('content-type'),/javascript/);
+ }
+ const appJs=await (await fetch(new URL('/app.js',base))).text();
+ assert.match(appJs,/from '\.\/i18n\.js'/);
+});
+
 test('Macrobenchmark HTTP route forwards the selected Gradle project and prevents overlapping builds',async t=>{
  let releaseRun,calls=0;
  const dir=await mkdtemp(join(tmpdir(),'apw-macrobenchmark-api-'));

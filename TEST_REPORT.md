@@ -421,4 +421,4 @@ npm run test:device -- \
 
 - Electron Builder CI 矩阵新增 macOS arm64/x64 PKG、Windows x64 MSI、Linux x64 DEB 与 RPM，并与现有 DMG、NSIS EXE、AppImage 同次上传。新增各格式打包脚本；配置回归检查脚本目标和 artifact 通配路径。
 - 本机 Apple Silicon 成功执行 `npm run package:mac:installers`，生成 230 MiB arm64 PKG 和 DMG；`pkgutil --check-signature` 显示 PKG 无签名，`hdiutil verify` 验证 DMG checksum 有效。未运行 PKG 安装器；当前没有 Apple Developer Installer 证书。
-- Windows MSI 与 Linux DEB/RPM 需在各自原生 CI runner 验证；Linux arm64 仍因未准备原生 AAPT2 而未加入。完整测试结果见本次后续验证，变更后会重跑配置单测与语法检查。
+- 第一轮 Linux 构建因 RPM 缺少 `author.email` 失败；添加公开 GitHub noreply 作者元数据后重跑成功。GitHub Actions 运行 [41503926815](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815) 的测试和四个原生平台打包 job 全部成功，上传 macOS arm64/x64、Windows x64、Linux x64 artifacts，包含新增 PKG/MSI/DEB/RPM 格式。Linux arm64 仍因未准备原生 AAPT2 而未加入。完整自动测试：291 项，275 通过、0 失败、16 个可选样本跳过。

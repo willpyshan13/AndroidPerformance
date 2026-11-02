@@ -12,15 +12,16 @@
 
 ### 安装桌面版
 
-桌面打包矩阵覆盖以下原生安装格式；新增 PKG、MSI、DEB、RPM 目标已配置进入 GitHub Actions，需等待下一次 CI 构建确认对应 artifact：
+GitHub Actions 原生 runner 已构建并上传以下安装包（artifact 保留 14 天）：
 
-| 平台 | 安装包 | 构建状态 |
+| 平台 | 安装包 | CI 产物 |
 | --- | --- | --- |
-| macOS Apple Silicon | DMG、PKG | 本机 arm64 两种格式均已构建；CI 矩阵已加入 |
-| macOS Intel | DMG、PKG | CI 矩阵已加入，待 runner 验证 |
-| Windows x64 | NSIS EXE、MSI | CI 矩阵已加入，待 runner 验证 |
-| Linux x64 | AppImage、DEB、RPM | CI 矩阵已加入，待 runner 验证 |
+| macOS Apple Silicon | DMG、PKG | `android-performance-macos-arm64` |
+| macOS Intel | DMG、PKG | `android-performance-macos-x64` |
+| Windows x64 | NSIS EXE、MSI | `android-performance-windows-x64` |
+| Linux x64 | AppImage、DEB、RPM | `android-performance-linux-x64` |
 
+[查看本轮跨平台构建结果](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS PKG 目前未签名；应用使用 ad-hoc 签名，未使用 Apple Developer 证书或公证。
 安装包包含 Electron、平台原生 ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。Windows 首次启动会把 Java runtime 解压到应用数据目录，以供 Shark 和 Compose Inspector 使用。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
 Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装包构建和上传。当前环境已对 macOS arm64 桌面包执行 headless 启动冒烟，并确认本机首页及 JavaScript 返回 HTTP 200；尚未在可见桌面逐项检查窗口，也未在 Windows/Linux 上逐一安装启动。macOS 使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。
@@ -94,7 +95,7 @@ npm run package:win:installers      # Windows x64 NSIS + MSI
 npm run package:linux:installers   # Linux x64 AppImage + DEB + RPM
 ```
 
-原生安装格式构建目标已配置在 GitHub Actions 矩阵中；macOS arm64 的 DMG / PKG 已在本机成功构建并验证 DMG 校验和，PKG 当前无签名。Windows MSI 与 Linux DEB / RPM 尚待 CI runner 实际构建验证。Linux arm64 尚未进入打包矩阵（缺少可用的原生 ARM64 AAPT2）；Windows runtime 解压仍需安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
+GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 尚未进入打包矩阵（缺少可用的原生 ARM64 AAPT2）；Windows runtime 解压仍需安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
 
 ## 数据与隐私
 

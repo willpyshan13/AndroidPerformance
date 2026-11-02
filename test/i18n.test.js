@@ -224,6 +224,7 @@ test('Network analysis localizes filter states and explains timing, grouping, an
     '各列为筛选后有数据的请求阶段平均耗时（毫秒），括号内为样本数。TLS 是连接耗时的一部分，不能相加；Agent 的接收阶段包含应用读取间隔，缺失值不代表零耗时。',
     '按方法、域名和路径分组；HAR 查询参数已丢弃，Agent 不记录路径。P50 / P95 使用最近秩，仅统计有效耗时；样本少时百分位可能就是最大值，不能代表总体性能。统计使用当前筛选结果。',
     '展示当前筛选中开始时间和总耗时均可用的最早 200 条请求；重叠仅表示记录的时间重合，不证明因果关系。',
+    '读取 Android batterystats 按 UID 累计的网络字节数。可比较基线和结束快照；共享同一 UID 的应用可能混入，缺失和已重置的计数不按零计算。只显示移动网络与 Wi-Fi 总量，不提供域名、请求内容或请求时间线。',
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });

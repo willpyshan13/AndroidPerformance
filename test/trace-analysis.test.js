@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
 import {access,readFile} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
-import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,locateTraceProcessor} from '../src/trace-analysis.js';
+import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,queryPowerRailDiagnostics,locateTraceProcessor} from '../src/trace-analysis.js';
 const req=(chunks,headers={})=>{const r=Readable.from(chunks);r.headers=headers;return r;};
 test('CSV handles escaped quotes and embedded newlines',()=>{
  assert.deepEqual(parseCsv('"a","b"\r\n"x, y","z""q\nq"\n'),[['a','b'],['x, y','z"q\nq']]);
@@ -41,6 +41,17 @@ test('bundled Trace Processor exposes GPU diagnostics tables on traces without G
  const {session}=await analyzeTraceUpload(stream,{retain:true});
  try{const result=await queryGpuTraceDiagnostics(session.path);assert.equal(result.renderStages.available,true);assert.equal(result.frequencies.available,true);assert.equal(result.memory.available,true);assert.deepEqual(result.renderStages.rows,[]);assert.deepEqual(result.frequencies.rows,[]);assert.deepEqual(result.memory.rows,[]);}
  finally{await session.cleanup();}
+});
+test('power rail diagnostics decode subsystem measurements without assigning them to an app',async()=>{
+ const queries=[];const result=await queryPowerRailDiagnostics('/trace',{locator:async()=>'/tp',runner:async(_bin,args)=>{queries.push(args.at(-1));return {stdout:'"ts_ns","dur_ns","rail_hex","subsystem_hex","raw_name_hex","energy_delta_uws","average_power_mw"\n"1000000000","250000000","435055","736f63","534f435f5241494c","1250.5","5.002"\n'};}});
+ assert.equal(result.available,true);assert.deepEqual(result.rows,[{tsNs:'1000000000',durationNs:'250000000',rail:'CPU',subsystem:'soc',rawName:'SOC_RAIL',energyDeltaUws:1250.5,averagePowerMw:5.002}]);assert.match(result.note,/不能归因到单个应用/);assert.match(queries[0],/android_power_rails_counters/);assert.match(queries[0],/android_power_rails_metadata/);
+ const absent=await queryPowerRailDiagnostics('/trace',{locator:async()=>'/tp',runner:async()=>{throw new Error('no power rail table');}});assert.equal(absent.available,false);assert.deepEqual(absent.rows,[]);assert.match(absent.reason,/功耗轨道数据不可用/);
+ const malformed=await queryPowerRailDiagnostics('/trace',{locator:async()=>'/tp',runner:async()=>({stdout:'"ts_ns","dur_ns","rail_hex","subsystem_hex","raw_name_hex","energy_delta_uws","average_power_mw"\n"1;DROP","0","","","","0","0"\n'})});assert.equal(malformed.available,false);assert.match(malformed.reason,/时间无效/);
+});
+test('bundled Trace Processor supports power rail analysis on traces without power data',async()=>{
+ try{await locateTraceProcessor();}catch{ return; }
+ const input=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));const path=`/tmp/apw-power-rail-${process.pid}.pftrace`;const {writeFile,unlink}=await import('node:fs/promises');await writeFile(path,input);
+ try{const result=await queryPowerRailDiagnostics(path);assert.equal(result.available,true);assert.deepEqual(result.rows,[]);assert.match(result.note,/µJ/);}finally{await unlink(path).catch(()=>{});}
 });
 test('heap allocation profile parser preserves signed samples and callsite metadata',async()=>{
  const {parseHeapProfileSummary,queryHeapProfile}=await import('../src/trace-analysis.js');

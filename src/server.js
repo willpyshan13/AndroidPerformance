@@ -13,7 +13,7 @@ import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryComposeFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -345,6 +345,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
           traceBusy=true;try{return json(await queryGpuTraceDiagnostics(traceSession.path));}finally{traceBusy=false;}
         }
+        if(path==='/api/trace/power-rails'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryPowerRailDiagnostics(traceSession.path));}finally{traceBusy=false;}
+        }
         if(path==='/api/trace/compose-frame-correlation'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
@@ -432,7 +437,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           return res.end(data);
         }
         if (path === '/api/trace') {
-          const data = await adb.trace(body.serial, body.seconds ?? 10, body.mode ?? 'standard',body.packageName??null);
+          const data = await adb.trace(body.serial, body.seconds ?? 10, body.mode ?? 'standard',body.packageName??null,body.includePowerRails??false);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="capture.perfetto-trace"' });
           return res.end(data);
         }

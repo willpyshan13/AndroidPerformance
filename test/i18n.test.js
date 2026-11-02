@@ -250,6 +250,7 @@ test('System trace page translates trace-window, Binder, SQL, and thread-state g
     '查询针对当前本机追踪运行；支持一个 SELECT / WITH，可选前置 INCLUDE PERFETTO MODULE ...;。注释及写入、外部文件语句会被拒绝。查询结果不会改写原始追踪或工作台汇总。',
     '绿色为切片，橙色为 CPU 调度片段，灰色为 CPU 空闲线程。切片按追踪记录的嵌套深度分行；同深度重叠事件仍可能遮挡，点击事件查看时间。可按轨道、线程或切片名称筛选；切片名称筛选仅影响切片，CPU 调度仍保留。汇总覆盖完整追踪。每类最多载入最早 3,000 条、显示最多 30 条轨道。',
     '事件按窗口裁剪，统计基于已记录线程状态。相同 TID 可能被复用，内部线程标识 UTID 用于区分生命周期；状态由 Perfetto 原样提供，缺失不表示零。',
+    '电池与功耗轨道需要 Android 10+，且硬件 / HAL 支持时才有数据；这些轨道反映整机或硬件子系统，不归属到单个应用。勾选应用 ATrace 会记录所选应用提供的追踪标记。',
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });

@@ -373,10 +373,11 @@ export class Adb {
       }
     });
   }
-  async trace(serial, seconds = 10, mode = 'standard', packageName = null) {
+  async trace(serial, seconds = 10, mode = 'standard', packageName = null, includePowerRails = false) {
     validateTarget(serial,packageName===null?undefined:packageName);
     if (!Number.isInteger(seconds) || seconds < 3 || seconds > 30) throw new Error('采集时长须为 3–30 秒');
     if (!['standard', 'frame-timeline'].includes(mode)) throw new Error('追踪采集模式无效');
+    if (typeof includePowerRails !== 'boolean') throw new Error('功耗轨道选项无效');
     return this.exclusive(serial, async () => {
       let available = false;
       try { available = !!(await this.shell(serial, ['which', 'perfetto'])).trim(); } catch {}
@@ -387,10 +388,12 @@ export class Adb {
       const configRemote = `/data/misc/perfetto-configs/apw-${id}.pbtxt`;
       const configLocal = join(tmpdir(), `apw-${id}.pbtxt`);
       try {
-        if (mode === 'frame-timeline') {
+        if (mode === 'frame-timeline' || includePowerRails) {
           const sdk=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim();
-          if(!/^\d+$/.test(sdk)||Number(sdk)<31)throw new Error('FrameTimeline 录制需要 Android 12（API 31）或更高版本');
-          const config=`duration_ms: ${seconds*1000}\nbuffers { size_kb: 32768 }\ndata_sources { config { name: "linux.ftrace" ftrace_config { ftrace_events: "sched/sched_switch" ftrace_events: "sched/sched_waking" ftrace_events: "power/cpu_frequency" ftrace_events: "power/cpu_idle" atrace_categories: "am" atrace_categories: "wm" atrace_categories: "gfx" atrace_categories: "view" atrace_categories: "binder_driver" ${packageName?`atrace_apps: "${packageName}"`:''} } } }\ndata_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }\ndata_sources { config { name: "android.surfaceflinger.frametimeline" } }\n`;
+          if(!/^\d+$/.test(sdk))throw new Error('无法确认设备 Android 版本，不能配置所请求的 Perfetto 数据源');
+          if(mode==='frame-timeline'&&Number(sdk)<31)throw new Error('FrameTimeline 录制需要 Android 12（API 31）或更高版本');
+          if(includePowerRails&&Number(sdk)<29)throw new Error('Perfetto 电池与功耗轨道采集需要 Android 10（API 29）或更高版本');
+          const config=`duration_ms: ${seconds*1000}\nbuffers { size_kb: 32768 }\ndata_sources { config { name: "linux.ftrace" ftrace_config { ftrace_events: "sched/sched_switch" ftrace_events: "sched/sched_waking" ftrace_events: "power/cpu_frequency" ftrace_events: "power/cpu_idle" atrace_categories: "am" atrace_categories: "wm" atrace_categories: "gfx" atrace_categories: "view" atrace_categories: "binder_driver" ${packageName?`atrace_apps: "${packageName}"`:''} } } }\ndata_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }\n${mode==='frame-timeline'?'data_sources { config { name: "android.surfaceflinger.frametimeline" } }\n':''}${includePowerRails?'data_sources { config { name: "android.power" android_power_config { battery_poll_ms: 250 battery_counters: BATTERY_COUNTER_CAPACITY_PERCENT battery_counters: BATTERY_COUNTER_CHARGE battery_counters: BATTERY_COUNTER_CURRENT battery_counters: BATTERY_COUNTER_CURRENT_AVG battery_counters: BATTERY_COUNTER_VOLTAGE collect_power_rails: true } } }\n':''}`;
           await writeFile(configLocal,config,{flag:'wx',mode:0o600});
           await this.run(['-s',serial,'push',configLocal,configRemote],{timeout:30000});
           await this.shell(serial,['perfetto','--txt','-c',configRemote,'-o',remote],{timeout:(seconds+30)*1000});

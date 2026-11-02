@@ -141,6 +141,14 @@ test('standard Perfetto capture passes the optional validated target app to atra
  await adb.trace('ABC',3,'standard','com.example.app');const perfetto=calls.find(a=>a.includes("'perfetto'")&&a.includes("'-o'"));assert.ok(perfetto.includes("'-a'"));assert.ok(perfetto.includes("'com.example.app'"));
 });
 
+test('Perfetto power rail capture is explicit, Android 10 gated and combined with normal diagnostics',async()=>{
+ const {readFile,writeFile,access}=await import('node:fs/promises');let configLocal,traceLocal,config;const calls=[];
+ const adb=new Adb('adb',async(_p,args)=>{calls.push(args);const command=args.join(' ');if(command.includes("'which'"))return {stdout:'/system/bin/perfetto'};if(command.includes('getprop'))return {stdout:'29'};if(args.includes('push')){configLocal=args.at(-2);config=await readFile(configLocal,'utf8');return {stdout:''};}if(args.includes('pull')){traceLocal=args.at(-1);await writeFile(traceLocal,'trace power');}return {stdout:''};});
+ assert.equal((await adb.trace('ABC',8,'standard','com.example.app',true)).toString(),'trace power');assert.match(config,/name: "android\.power"/);assert.match(config,/battery_poll_ms: 250/);assert.match(config,/battery_counters: BATTERY_COUNTER_CURRENT/);assert.match(config,/collect_power_rails: true/);assert.match(config,/name: "linux\.ftrace"/);assert.match(config,/atrace_apps: "com\.example\.app"/);assert.ok(calls.some(args=>args.join(' ').includes("'--txt' '-c'")));assert.ok(calls.some(args=>args.join(' ').includes("'rm'")));await assert.rejects(access(configLocal));await assert.rejects(access(traceLocal));assert.equal(adb.busy.size,0);
+ const old=new Adb('adb',async(_p,args)=>({stdout:args.join(' ').includes('which')?'/system/bin/perfetto':args.join(' ').includes('getprop')?'28':''}));await assert.rejects(old.trace('ABC',5,'standard',null,true),/Android 10/);assert.equal(old.busy.size,0);
+ await assert.rejects(adb.trace('ABC',5,'standard',null,'yes'),/选项无效/);
+});
+
 test('native and ART allocation profiles use gated heapprofd configs and clean temporary files',async()=>{
  const {readFile,writeFile,access}=await import('node:fs/promises');let configLocal,traceLocal,config;const calls=[];
  const adb=new Adb('adb',async(_p,args)=>{calls.push(args);const command=args.join(' ');if(command.includes('getprop'))return {stdout:'31'};if(command.includes('which'))return {stdout:'/system/bin/perfetto'};if(args.includes('push')){configLocal=args.at(-2);config=await readFile(configLocal,'utf8');return {stdout:''};}if(args.includes('pull')){traceLocal=args.at(-1);await writeFile(traceLocal,'trace profile');}return {stdout:''};});

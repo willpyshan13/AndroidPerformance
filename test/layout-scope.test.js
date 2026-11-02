@@ -24,15 +24,20 @@ test('layout extraction rejects partial node counts and depths at their exact bo
 test('layout findings respect descendant labels, unknown fields, disabled nodes and empty bounds',()=>{
  const n=(id,depth,extra={},bounds=[0,0,100,100])=>({id,depth,bounds,attributes:{text:'','content-desc':'',...extra}});
  const nodes=[n(0,0),n(1,1,{clickable:'true'}),n(2,2,{text:'Child label'}),n(3,1,{clickable:'true'}),n(4,1,{clickable:'true','content-desc':undefined}),n(5,1,{clickable:'true',enabled:'false'},[0,0,0,10]),n(6,1,{clickable:'true',text:'  '},[1,2,1,20]),n(7,1,{clickable:'true',text:'Known'},[0,0,0,1]),n(8,1,{clickable:'true'}),n(9,2,{'content-desc':undefined})];
- assert.deepEqual(inspectLayout(nodes),[{id:3,kind:'unlabelled'},{id:6,kind:'unlabelled'},{id:6,kind:'emptyBounds'},{id:7,kind:'emptyBounds'}]);
+ const findings=inspectLayout(nodes);assert.deepEqual(findings.map(({id,kind})=>({id,kind})),[{id:3,kind:'unlabelled'},{id:6,kind:'unlabelled'},{id:6,kind:'emptyBounds'},{id:7,kind:'emptyBounds'}]);
+ assert.deepEqual(findings[0],{id:3,nodeId:3,kind:'unlabelled',ruleId:'UIA_UNLABELLED',severity:'warning',confidence:'high',evidence:{emptyLabelFields:['text','content-desc'],checkedSubtree:true}});
+ assert.deepEqual(findings[2].evidence,{bounds:[1,2,1,20],widthPx:0,heightPx:18});
 });
 test('touch target findings use device density and skip disabled or incomplete dimensions',()=>{
  const node=(id,bounds,extra={})=>({id,depth:0,bounds,attributes:{text:'Button','content-desc':'',clickable:'true',...extra}});
  const nodes=[node(0,[0,0,120,180]),node(1,[0,0,144,144]),node(2,[0,0,80,80],{enabled:'false'}),node(3,null),node(4,[0,0,120,180],{'long-clickable':'true',clickable:'false'})];
- assert.deepEqual(inspectLayout(nodes,{densityDpi:480}).filter(x=>x.kind==='smallTouchTarget'),[
+ const findings=inspectLayout(nodes,{densityDpi:480}).filter(x=>x.kind==='smallTouchTarget');
+ assert.deepEqual(findings.map(({id,kind,widthDp,heightDp})=>({id,kind,widthDp,heightDp})),[
   {id:0,kind:'smallTouchTarget',widthDp:40,heightDp:60},
   {id:4,kind:'smallTouchTarget',widthDp:40,heightDp:60}
  ]);
+ assert.equal(findings[0].ruleId,'UIA_SMALL_TOUCH_TARGET');assert.equal(findings[0].severity,'warning');assert.equal(findings[0].confidence,'medium');
+ assert.deepEqual(findings[0].evidence,{bounds:[0,0,120,180],densityDpi:480,widthDp:40,heightDp:60,minimumDp:48});
  assert.equal(inspectLayout([node(0,[0,0,120,180])]).some(x=>x.kind==='smallTouchTarget'),false);
  assert.equal(inspectLayout([node(0,[0,0,120,180])],{densityDpi:NaN}).some(x=>x.kind==='smallTouchTarget'),false);
 });

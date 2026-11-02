@@ -538,3 +538,8 @@ npm run test:device -- \
 - 堆分析页新增 CSV 导出，当前视图中的搜索词和对象数变化筛选会作用于完整匹配结果，不受表格每页最多显示 1,000 行的限制。当前类统计和基线对比使用各自列；不兼容类匹配会标记为不可比。导出含 UTF-8 BOM、CSV 双引号转义和表格公式前缀防护，并明确字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小。
 - 两项 `heap-export` 单元回归覆盖 CSV 头、字节解释、逗号 / 引号转义、公式注入防护和不可比行。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
 - 重建 macOS arm64 `.app` 并运行打包 smoke。首次 smoke 暴露新 ES module 未加入静态资源路由；加入路由后重建，renderer、16 个页面状态、Java、Trace Processor、Perfetto UI 及现有 CPU PNG 导出 smoke 均通过。CSV 序列化通过定向测试，打包页面静态模块路由通过 smoke；未在打包 smoke 内加载真实 HPROF 点击导出。
+
+## 布局检查线索的结构化证据（2026-11-03）
+
+- UIAutomator 可交互节点线索新增稳定规则 ID、warning/info 严重级别、high/medium 置信度、节点 ID 和证据字段。无标签仅在当前读取子树字段完整且确实为空时提示；小触控区域记录原始边界、密度、dp 尺寸和 48 dp 阈值，并标为中置信度；页面直接展示规则、严重级别、置信度和证据，中英文标签已接入。
+- `test/layout-scope.test.js` 覆盖原有识别边界及结构化字段、rule ID、证据和置信度；定向测试 12 项通过。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。重建 macOS arm64 `.app` 后打包 smoke 通过，renderer、16 个页面状态及桌面资源检查正常。当前 ADB 设备列表为空，无法用真机布局采集确认不同 Android / UIAutomator 实现的字段差异。

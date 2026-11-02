@@ -708,14 +708,15 @@ export function inspectLayout(nodes,{densityDpi=null}={}){
  if(!Array.isArray(nodes))throw new Error('层级节点无效');
  const densityScale=Number.isFinite(densityDpi)&&densityDpi>0&&densityDpi<=1000?densityDpi/160:null;
  const findings=[],stack=[];
+ const finding=(node,kind,confidence,evidence,extra={})=>({id:node.id,nodeId:node.id,kind,ruleId:`UIA_${kind.replace(/[A-Z]/g,letter=>`_${letter}`).toUpperCase()}`,severity:kind==='smallTouchTarget'?'warning':kind==='unlabelled'?'warning':'info',confidence,evidence,...extra});
  const flush=()=>{const item=stack.pop(),a=item.node.attributes||{};
   const interactive=a.clickable==='true'||a['long-clickable']==='true'||a.checkable==='true';
   if(interactive&&a.enabled!=='false'){
-   if(item.complete&&!item.label)findings.push({id:item.node.id,kind:'unlabelled'});
+   if(item.complete&&!item.label)findings.push(finding(item.node,'unlabelled','high',{emptyLabelFields:['text','content-desc'],checkedSubtree:true}));
    const b=item.node.bounds;if(Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[2]>=b[0]&&b[3]>=b[1]){
     const width=b[2]-b[0],height=b[3]-b[1];
-    if(width===0||height===0)findings.push({id:item.node.id,kind:'emptyBounds'});
-    else if(densityScale&&(width/densityScale<48||height/densityScale<48))findings.push({id:item.node.id,kind:'smallTouchTarget',widthDp:width/densityScale,heightDp:height/densityScale});
+    if(width===0||height===0)findings.push(finding(item.node,'emptyBounds','high',{bounds:b,widthPx:width,heightPx:height}));
+    else if(densityScale&&(width/densityScale<48||height/densityScale<48))findings.push(finding(item.node,'smallTouchTarget','medium',{bounds:b,densityDpi,widthDp:width/densityScale,heightDp:height/densityScale,minimumDp:48},{widthDp:width/densityScale,heightDp:height/densityScale}));
    }
   }
   if(stack.length){stack.at(-1).label||=item.label;stack.at(-1).complete&&=item.complete;}

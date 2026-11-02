@@ -5,6 +5,7 @@
 - 新增可选 Kotlin 2.2.21 Compose 编译器插件和 `ApwComposeAutomaticProbe.kt` 运行时入口。插件识别目标模块编译的 `@Composable` 函数，将记录调用放入 Compose 编译器生成的非跳过分支；自动模式不需要在各个 Composable 手写 probe。
 - 事件采用独立 `APW2`（函数体执行）与 `APW3`（Composer 跳过）格式，记录进程会话、函数名、父函数、累计函数/边计数和设备单调时钟。解析器在新版事件中构建 Logcat 窗口内的聚合调用树；旧版 APW2 和 `APW1` 显式 probe 仍兼容解析。
 - 新版事件同时记录 Compose Compiler 从 `startRestartGroup` 读取的组 key；调用树显示该 key，可与 Agent 的 `CompositionData` 组合组节点 `compose-key` 对照。API 25 / Compose 1.7.6 真机结果中，`InstrumentedScreen` 的 `-345845228` 与 Agent 运行时组一致，`StaticChild` 的 `-981513431` 也一致。该关联验证的是函数调用节点到运行时组身份的匹配；它不把相邻 State 读取关系推断为因果，State Reads 仍按 RecomposeScope 单独计数。
+- 界面会按相同 key 将当前 Agent 布局快照中 State-scope 关联总数显示到调用树；重复 key 显示组数，缺失或不可用状态会明确标记。此关联方便对照，不代表 State 读取由该函数直接触发。
 - 插件 `gradle jar` 构建成功；真实 Compose 1.7.6 页面在 API 25 设备触发三次状态更新后，桌面 ADB snapshot 读回 16 条 APW2/APW3 记录、0 条无效，并构建三层关系 `onCreate.<anonymous> → InstrumentedScreen → StaticChild`；父项执行 4 次，静态子项执行 1 次、跳过 3 次。`javap` 确认进入/退出钩子按父子顺序嵌入字节码，正常与 skip 分支分别记录。验证使用临时 smoke APK，不代表用户目标应用已接入插件。
 - 插件目前只支持匹配 Kotlin 2.2.21 编译器 API，且只插桩本次编译的目标模块，不覆盖未重编译依赖；调用树按函数名和可用组 key 聚合 Logcat 窗口内记录，不能区分同名 Composable 的多个实例，也不是完整运行时组树，不提供 State Reads 或 Jank 因果。部分 lambda 没有 restart-group key；环形日志也可能截断调用边。每次执行写一条 debug 日志，正式测量前应移除。
 - 该计数和聚合调用树不提供完整 Composable 运行时实例树、State Reads 因果或 Jank 因果，也不代替完整 Compose Runtime Inspector。临时 smoke APK 在验证完成后卸载，并恢复用户原 Activity。

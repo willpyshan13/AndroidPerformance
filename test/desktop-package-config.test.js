@@ -13,6 +13,8 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  assert.equal(pkg.scripts['package:linux:arm64'],'electron-builder --linux AppImage --arm64 --publish never');
  const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
  for(const target of ['dist/v*/*.pkg','dist/v*/*.msi','dist/v*/*.deb','dist/v*/*.rpm'])assert.ok(workflow.includes(target),`missing CI artifact pattern ${target}`);
+ const smoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
+ assert.match(smoke,/msiexec\.exe/);assert.match(smoke,/APPLICATIONFOLDER=/);assert.match(smoke,/\['\/x', installer/);assert.match(smoke,/Installed desktop smoke passed/);
  assert.doesNotMatch(pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n'),/tools\/java-runtime=>java-runtime/);
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const mac=resources('mac').join('\n'),win=resources('win').join('\n'),linux=resources('linux').join('\n');

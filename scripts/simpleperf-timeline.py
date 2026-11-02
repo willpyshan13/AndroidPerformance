@@ -12,6 +12,7 @@ lib = ReportLib()
 samples = []
 frames_total = 0
 first_event = None
+clock_id = None
 selected_event = sys.argv[3] if len(sys.argv) > 3 else None
 symfs = sys.argv[4] if len(sys.argv) > 4 else None
 event_counts = {}
@@ -21,6 +22,8 @@ try:
     if symfs:
         lib.SetSymfs(symfs)
     lib.SetRecordFile(record)
+    meta_info = getattr(lib, 'MetaInfo', lambda: {})()
+    clock_id = meta_info.get('clockid') or None
     while True:
         sample = lib.GetNextSample()
         if sample is None:
@@ -49,4 +52,4 @@ try:
                         'thread': encode_frame(sample.thread_comm), 'period': str(sample.period), 'frames': frames})
 finally:
     lib.Close()
-print(json.dumps({'event': selected_event or first_event, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))
+print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))

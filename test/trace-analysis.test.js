@@ -107,7 +107,7 @@ test('retained trace files stay private until synchronous cleanup',async()=>{
 });
 test('FrameTimeline preserves exact timestamps and platform classifications',async()=>{
  const {parseFrameTimeline}=await import('../src/trace-analysis.js');
- const csv='"ts","dur","process_hex","layer_hex","jank_hex","present_hex","surface_token","display_token","on_time_finish","expected_ts","expected_dur","expected_matches","actual_matches","process_id","track_id"\n"9007199254740993","16666667","617070","6C61796572","41707020446561646C696E65204D6973736564","4C6174652050726573656E74","12","13","0","9007199254740990","10000000","1","1","8","12"\n';
+ const csv='"ts","dur","process_hex","layer_hex","jank_hex","present_hex","process_pid","surface_token","display_token","on_time_finish","expected_ts","expected_dur","expected_matches","actual_matches","process_id","track_id"\n"9007199254740993","16666667","617070","6C61796572","41707020446561646C696E65204D6973736564","4C6174652050726573656E74","42","12","13","0","9007199254740990","10000000","1","1","8","12"\n';
  const r=parseFrameTimeline(csv);assert.equal(r.frames[0].tsNs,'9007199254740993');assert.equal(r.frames[0].jankType,'App Deadline Missed');assert.equal(r.frames[0].onTimeFinish,false);assert.equal(r.frames[0].completionDeltaNs,'6666670');assert.equal(r.truncated,false);
  const ambiguous=parseFrameTimeline(csv.replace('"9007199254740990","10000000","1","1"','"","","2","1"'));assert.equal(ambiguous.frames[0].expectedMatches,2);assert.equal(ambiguous.frames[0].completionDeltaNs,null);
  assert.throws(()=>parseFrameTimeline('bad\n'),/列无效/);
@@ -128,9 +128,9 @@ test('official Trace Processor reads actual synthetic FrameTimeline packets',asy
 });
 test('FrameTimeline process filter is restricted and applied before result limit',async()=>{
  const {queryFrameTimeline}=await import('../src/trace-analysis.js');let sql='';
- const runner=async(_binary,args)=>{sql=args.at(-1);return {stdout:'"ts","dur","process_hex","layer_hex","jank_hex","present_hex","surface_token","display_token","on_time_finish","expected_ts","expected_dur","expected_matches","actual_matches","process_id","track_id"\n'};};
+ const runner=async(_binary,args)=>{sql=args.at(-1);return {stdout:'"ts","dur","process_hex","layer_hex","jank_hex","present_hex","process_pid","surface_token","display_token","on_time_finish","expected_ts","expected_dur","expected_matches","actual_matches","process_id","track_id"\n'};};
  await queryFrameTimeline('/trace',{packageName:'com.example.app',locator:async()=>'/tp',runner});
- assert.match(sql,/hex\(CAST\(p.name AS BLOB\)\)/);assert.match(sql,/636F6D2E6578616D706C652E6170703A/);assert.ok(sql.indexOf('substr(')<sql.indexOf('LIMIT 2001'));assert.match(sql,/e\.n=1 AND ac\.n=1/);
+ assert.match(sql,/hex\(CAST\(p.name AS BLOB\)\)/);assert.match(sql,/636F6D2E6578616D706C652E6170703A/);assert.ok(sql.indexOf('substr(')<sql.indexOf('LIMIT 2001'));assert.match(sql,/e\.n=1 AND ac\.n=1/);assert.match(sql,/p\.pid/);
  await assert.rejects(queryFrameTimeline('/trace',{packageName:"com.example.app' OR 1=1--",locator:async()=>'/tp',runner}),/包名无效/);
 });
 
@@ -143,7 +143,7 @@ test('Compose uptime maps through monotonic clock snapshots without extrapolatio
 });
 
 test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline frames',async(t)=>{
- const {queryComposeFrameCorrelation}=await import('../src/trace-analysis.js');
+ const {queryComposeFrameCorrelation,queryCpuFrameCorrelation,queryFrameTimeline}=await import('../src/trace-analysis.js');
  const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const v=n=>{n=BigInt(n);const b=[];do{let x=Number(n&127n);n>>=7n;if(n)x|=128;b.push(x);}while(n);return Buffer.from(b);};
@@ -161,6 +161,10 @@ test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline fram
  ]);
  const dir=await mkdtemp(join(tmpdir(),'compose-frame-correlation-')),path=join(dir,'sample.trace');try{
   await writeFile(path,data);const result=await queryComposeFrameCorrelation(path,{events:[{elapsedNs:'515000000',clock:'uptime',name:'HomeScreen',measurement:'side-effect'}]});assert.equal(result.available,true,JSON.stringify(result));assert.equal(result.clockSnapshots,2);assert.equal(result.mappedEvents,1);assert.equal(result.uniqueMatchedEvents,1);assert.equal(result.matchedEventFramePairs,1);assert.equal(result.frames.length,1);assert.equal(result.frames[0].composeEvents[0].traceNs,'1015000000');
+  const cpu=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:1000,tid:43,weight:'123',name:'MainActivity.draw'}]});assert.equal(cpu.available,true,JSON.stringify(cpu));assert.equal(cpu.mappedSamples,1);assert.equal(cpu.matchedSamples,1);assert.equal(cpu.frames.length,1);assert.equal(cpu.frames[0].sampleWeight,'123');assert.deepEqual(cpu.frames[0].functions,[{name:'MainActivity.draw',count:1,weight:'123'}]);
+  const wrongPid=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:99,tid:100,weight:'123',name:'Other.draw'}]});assert.equal(wrongPid.available,true);assert.equal(wrongPid.mappedSamples,1);assert.equal(wrongPid.matchedSamples,0);assert.equal(wrongPid.frames.length,0);
+  const unknown=await queryCpuFrameCorrelation(path,{clockId:null,samples:[]});assert.equal(unknown.available,false);assert.match(unknown.reason,/CLOCK_MONOTONIC/);
+  await assert.rejects(queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'bad'}]}),/CPU 采样关联数据无效/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 

@@ -162,6 +162,7 @@ export const FRAME_TIMELINE_QUERY=`WITH expected AS (
  hex(CAST(COALESCE(a.layer_name,'') AS BLOB)) AS layer_hex,
  hex(CAST(COALESCE(a.jank_type,'') AS BLOB)) AS jank_hex,
  hex(CAST(COALESCE(a.present_type,'') AS BLOB)) AS present_hex,
+ COALESCE(CAST(p.pid AS TEXT),'') AS process_pid,
  COALESCE(CAST(a.surface_frame_token AS TEXT),'') AS surface_token,
  COALESCE(CAST(a.display_frame_token AS TEXT),'') AS display_token,
  COALESCE(CAST(a.on_time_finish AS TEXT),'') AS on_time_finish,
@@ -177,13 +178,13 @@ export const FRAME_TIMELINE_QUERY=`WITH expected AS (
  WHERE a.dur >= 0 ORDER BY a.ts LIMIT 2001`;
 export function parseFrameTimeline(csv){
  const rows=parseCsv(csv),header=rows.shift();
- if(!header||header.join(',')!=='ts,dur,process_hex,layer_hex,jank_hex,present_hex,surface_token,display_token,on_time_finish,expected_ts,expected_dur,expected_matches,actual_matches,process_id,track_id')throw new Error('FrameTimeline 返回列无效');
+ if(!header||header.join(',')!=='ts,dur,process_hex,layer_hex,jank_hex,present_hex,process_pid,surface_token,display_token,on_time_finish,expected_ts,expected_dur,expected_matches,actual_matches,process_id,track_id')throw new Error('FrameTimeline 返回列无效');
  const decode=hex=>{if(!/^(?:[0-9A-Fa-f]{2})*$/.test(hex))throw new Error('FrameTimeline 文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
  const frames=rows.slice(0,2000).map(r=>{
-  if(r.length!==15||!/^\-?\d+$/.test(r[0])||!/^\d+$/.test(r[1])||!/^\d+$/.test(r[11])||!/^\d+$/.test(r[12]))throw new Error('FrameTimeline 时间或匹配数无效');
-  const expectedTs=/^-?\d+$/.test(r[9])?r[9]:null,expectedDur=/^\d+$/.test(r[10])?r[10]:null;
+  if(r.length!==16||!/^\-?\d+$/.test(r[0])||!/^\d+$/.test(r[1])||!/^\d+$/.test(r[12])||!/^\d+$/.test(r[13]))throw new Error('FrameTimeline 时间或匹配数无效');
+  const expectedTs=/^-?\d+$/.test(r[10])?r[10]:null,expectedDur=/^\d+$/.test(r[11])?r[11]:null;
   const delta=expectedTs!==null&&expectedDur!==null?(BigInt(r[0])+BigInt(r[1])-BigInt(expectedTs)-BigInt(expectedDur)).toString():null;
-  return {tsNs:r[0],durationNs:r[1],process:decode(r[2]),layer:decode(r[3]),jankType:decode(r[4]),presentType:decode(r[5]),surfaceToken:r[6]||null,displayToken:r[7]||null,onTimeFinish:r[8]==='1'?true:r[8]==='0'?false:null,expectedTsNs:expectedTs,expectedDurationNs:expectedDur,completionDeltaNs:delta,expectedMatches:Number(r[11]),actualMatches:Number(r[12]),processId:/^\d+$/.test(r[13])?r[13]:null,trackId:/^\d+$/.test(r[14])?r[14]:null};
+  return {tsNs:r[0],durationNs:r[1],process:decode(r[2]),layer:decode(r[3]),jankType:decode(r[4]),presentType:decode(r[5]),pid:/^\d+$/.test(r[6])?Number(r[6]):null,surfaceToken:r[7]||null,displayToken:r[8]||null,onTimeFinish:r[9]==='1'?true:r[9]==='0'?false:null,expectedTsNs:expectedTs,expectedDurationNs:expectedDur,completionDeltaNs:delta,expectedMatches:Number(r[12]),actualMatches:Number(r[13]),processId:/^\d+$/.test(r[14])?r[14]:null,trackId:/^\d+$/.test(r[15])?r[15]:null};
  });
  return {frames,truncated:rows.length>2000};
 }
@@ -251,6 +252,38 @@ export async function queryComposeFrameCorrelation(path,{events,packageName=null
   for(const frame of frames){const start=BigInt(frame.tsNs),end=start+BigInt(frame.durationNs);if(time<start||time>end)continue;frame.composeEvents.push({...event,traceNs});matchedEventFramePairs++;uniqueMatched.add(eventIndex);}
  }
  return {available:true,frames:frames.filter(frame=>frame.composeEvents.length),frameCount:frames.length,clockSnapshots:snapshots.length,mappedEvents,unmappedEvents,clockMismatchCount,matchedEventFramePairs,uniqueMatchedEvents:uniqueMatched.size,truncated:timeline.truncated,note:'Compose uptime 时间通过追踪内置 CLOCK_MONOTONIC 快照映射至 Perfetto 时间轴；只表示时间区间重合，不证明 State 更新导致该帧或 Jank。'};
+}
+
+export async function queryCpuFrameCorrelation(path,{samples,clockId,packageName=null,locator=locateTraceProcessor,runner=exec}={}){
+ if(!Array.isArray(samples)||samples.length>20000)throw new Error('CPU 关联最多支持 20,000 个采样点');
+ if(clockId!=='monotonic')return {available:false,reason:'perf.data 未证明采样时间使用 CLOCK_MONOTONIC；当前时钟不能安全映射到 Perfetto。',clockId:typeof clockId==='string'?clockId:null};
+ const selected=samples.map(sample=>{
+  if(!sample||typeof sample!=='object'||typeof sample.timeNs!=='string'||!/^[1-9]\d{0,18}$/.test(sample.timeNs)||!Number.isSafeInteger(sample.pid)||sample.pid<1||!Number.isSafeInteger(sample.tid)||sample.tid<1||typeof sample.weight!=='string'||!/^[1-9]\d{0,19}$/.test(sample.weight)||BigInt(sample.weight)>(1n<<64n)-1n||typeof sample.name!=='string'||!sample.name||sample.name.length>1000||/[\r\n\0]/.test(sample.name))throw new Error('CPU 采样关联数据无效');
+  return {timeNs:sample.timeNs,pid:sample.pid,tid:sample.tid,weight:BigInt(sample.weight),name:sample.name};
+ });
+ const [timeline,snapshots]=await Promise.all([
+  queryFrameTimeline(path,{packageName,locator,runner}),
+  (async()=>{const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,MONOTONIC_CLOCK_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Monotonic 时钟查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseMonotonicClockSnapshots(result.stdout);})()
+ ]);
+ if(snapshots.length<2)return {available:false,reason:'追踪没有足够的 CLOCK_MONOTONIC 快照，不能映射 CPU 采样时间。',clockId,clockSnapshots:snapshots.length};
+ const frames=timeline.frames.map(frame=>({...frame,start:BigInt(frame.tsNs),end:BigInt(frame.tsNs)+BigInt(frame.durationNs),functions:new Map(),sampleCount:0,sampleWeight:0n}));
+ let mappedSamples=0,unmappedSamples=0,matchedSamples=0,pairs=0,truncated=timeline.truncated;
+ const MAX_PAIRS=500000;
+ for(const sample of selected){
+  const traceNs=mapMonotonicToTraceNs(sample.timeNs,snapshots);if(traceNs===null){unmappedSamples++;continue;}mappedSamples++;
+  const time=BigInt(traceNs);let matched=false;
+  for(const frame of frames){
+   if(frame.pid!==sample.pid||time<frame.start||time>frame.end)continue;
+   if(pairs>=MAX_PAIRS){truncated=true;break;}
+   pairs++;matched=true;frame.sampleCount++;frame.sampleWeight+=sample.weight;
+   const value=frame.functions.get(sample.name)||{name:sample.name,count:0,weight:0n};value.count++;value.weight+=sample.weight;frame.functions.set(sample.name,value);
+  }
+  if(matched)matchedSamples++;
+  if(truncated&&pairs>=MAX_PAIRS)break;
+ }
+ return {available:true,clockId,clockSnapshots:snapshots.length,sampleCount:selected.length,mappedSamples,unmappedSamples,matchedSamples,unmatchedMappedSamples:mappedSamples-matchedSamples,matchedFramePairs:pairs,truncated,
+  frames:frames.filter(frame=>frame.sampleCount).map(frame=>({tsNs:frame.tsNs,durationNs:frame.durationNs,process:frame.process,layer:frame.layer,jankType:frame.jankType,sampleCount:frame.sampleCount,sampleWeight:frame.sampleWeight.toString(),functions:[...frame.functions.values()].sort((a,b)=>a.weight===b.weight?a.name.localeCompare(b.name):a.weight>b.weight?-1:1).slice(0,10).map(value=>({...value,weight:value.weight.toString()}))})),
+  note:'Simpleperf CLOCK_MONOTONIC 样本经追踪内时钟快照映射到 FrameTimeline，并按设备 PID 与帧所属进程匹配；时间重合不代表函数耗时、因果关系或该函数导致卡顿。需人工确认 perf.data 与追踪来自同一设备和同一段采集。'};
 }
 
 export function parseStartupTrace(csv){

@@ -361,14 +361,14 @@ export function buildSampleTimeline(input, bins=60) {
       valid.push({time,weight,frames:s.frames,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
     }catch{skipped++;}
   }
-  if(!valid.length)return {available:false,skipped,truncated:!!input.truncated,event:input.event||'未知事件'};
+  if(!valid.length)return {available:false,skipped,truncated:!!input.truncated,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null};
   const span=last-origin;if(span>604800000000000n)throw new Error('时间线超过 7 天范围');
   const groups=new Map();
   for(const s of valid){s.bin=span===0n?0:Math.min(bins-1,Number((s.time-origin)*BigInt(bins)/span));
     let g=groups.get(s.thread);if(!g){g={thread:s.thread,pid:s.pid,tid:s.tid,counts:Array(bins).fill(0),weights:Array(bins).fill(0),total:0};groups.set(s.thread,g);}
     g.counts[s.bin]++;g.weights[s.bin]+=s.weight;g.total+=s.weight;if(!Number.isSafeInteger(g.total))throw new Error('时间线权重超出安全范围');
   }
-  return {available:true,event:input.event||'未知事件',durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,skipped,truncated:!!input.truncated};
+  return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,skipped,truncated:!!input.truncated};
 }
 // Count observed sample records only, not inferred lost samples or CPU time.
 export function sampleQuality(timeline){

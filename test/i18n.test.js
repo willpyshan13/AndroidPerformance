@@ -14,6 +14,12 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });
 
+test('CPU and FrameTimeline correlation labels describe the PID and time-overlap boundary',()=>{
+ assert.equal(translate('CPU 采样与 FrameTimeline 关联','en-US'),'CPU samples and FrameTimeline correlation');
+ assert.match(translate('仅在 perf.data 明确记录 CLOCK_MONOTONIC 时启用。请人工确认两份文件来自同一设备和同一段交互；采样按 PID 与帧进程匹配，落入帧区间只表示时间重合，不代表函数耗时或因果。','en-US'),/CLOCK_MONOTONIC.*PID.*temporal overlap.*causation/);
+ assert.equal(translate('没有 CPU 采样点匹配帧进程和区间','en-US'),'No CPU samples match a frame process and interval');
+});
+
 test('settings capability summary reflects implemented modules and documented limits in English',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const settings=app.slice(app.indexOf('function renderSettings()'),app.indexOf('\nconst $$ =',app.indexOf('function renderSettings()')));

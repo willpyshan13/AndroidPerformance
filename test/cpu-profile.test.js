@@ -37,8 +37,9 @@ test('flame layout uses normalized event weights and preserves stack ancestry',(
 });
 test('sample timeline preserves large nanosecond timestamps and filters by sample time',async()=>{
  const {buildSampleTimeline,profileForTimeBin}=await import('../public/offline.js');
- const input={event:'cpu-clock:u',truncated:false,samples:[{timeNs:'1700000000000000000',pid:1,tid:2,thread:'t',period:'10',frames:['main','a']},{timeNs:'1700000001000000000',pid:1,tid:2,thread:'t',period:'20',frames:['main','b']}]};
+ const input={event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:[{timeNs:'1700000000000000000',pid:1,tid:2,thread:'t',period:'10',frames:['main','a']},{timeNs:'1700000001000000000',pid:1,tid:2,thread:'t',period:'20',frames:['main','b']}]};
  const grouped=buildSampleTimeline(input);assert.equal(grouped.groups[0].pid,1);assert.equal(grouped.groups[0].tid,2);
+ assert.equal(grouped.clockId,'monotonic');
  const t=buildSampleTimeline(input,2);assert.equal(t.durationMs,1000);assert.deepEqual(t.groups[0].counts,[1,1]);
  const p=profileForTimeBin(t,1);assert.equal(p.root.weight,20);assert.equal(p.symbols.find(x=>x.name==='b').self,20);
 });

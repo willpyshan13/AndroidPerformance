@@ -1,4 +1,5 @@
 const en={
+ '运行 Macrobenchmark 工程':'Run Macrobenchmark project','构建并运行':'Build and run','导入追踪分析':'Import trace for analysis','Macrobenchmark trace 已导入追踪分析':'Macrobenchmark trace imported for analysis','Macrobenchmark 已完成，本次报告已载入':'Macrobenchmark completed and the new report was loaded','Gradle 测试已结束；设备选择已更改，结果未载入当前界面':'Gradle run finished; the selected device changed, so its results were not loaded','Gradle 测试完成，但未找到新的 Benchmark JSON':'Gradle run completed, but no new Benchmark JSON was found','Gradle 测试完成，但没有可载入的新 Benchmark 报告':'Gradle run completed, but there is no new Benchmark report to load','Gradle Benchmark 运行失败，请检查输出':'Gradle Benchmark failed; check the output',
  '概览':'Overview',
  '实时监控':'Live Monitor',
  'CPU 采样':'CPU Sampling',

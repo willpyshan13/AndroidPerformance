@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, writeFile, mkdir, readdir, access, stat, open, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, access, stat, realpath, open, rename, rm } from 'node:fs/promises';
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -19,6 +19,7 @@ import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
 import {createRemoteSourceSnapshot} from './source-git.js';
 import {buildAgentPackage,buildLayoutAgentPackage} from './agent-package.js';
+import { runMacrobenchmark } from './macrobenchmark.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export const VERSION = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
@@ -34,13 +35,13 @@ async function readBody(req) {
   catch { throw Object.assign(new Error('JSON 格式错误'), { status: 400 }); }
 }
 
-export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath, composeInspectorDir, composeInspectorJavaPath }) {
+export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath, composeInspectorDir, composeInspectorJavaPath, macrobenchmarkRunner = runMacrobenchmark, javaPath }) {
   const gpuDir=join(dataDir,'gpu-artifacts');
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
   const perfettoUiRoot=perfettoUiDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'perfetto-ui'):join(root,'tools','perfetto-ui'));
   const sourceDir=join(dataDir,'source-workspaces');
-  let sourceBusy=false;
+  let sourceBusy=false, macrobenchmarkBusy=false, macrobenchmarkArtifacts=new Map();
   let gpuBusy=false;
   let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
@@ -86,6 +87,13 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const serial = url.searchParams.get('serial');
       const pkg = url.searchParams.get('package');
       if (req.method === 'GET') {
+        const macroArtifact=path.match(/^\/api\/benchmark\/gradle\/artifacts\/([\da-f-]{36})$/);
+        if(macroArtifact){
+          const artifact=macrobenchmarkArtifacts.get(macroArtifact[1]);if(!artifact)return json({error:'Macrobenchmark 追踪文件已失效，请重新运行任务'},404);
+          const resolved=await realpath(artifact.path).catch(()=>null);if(resolved!==artifact.path)return json({error:'Macrobenchmark 追踪文件已更改或不可用'},404);
+          const info=await stat(resolved).catch(()=>null);if(!info||!info.isFile()||info.size!==artifact.size||info.mtimeMs!==artifact.modifiedAt)return json({error:'Macrobenchmark 追踪文件已更改或不可用'},404);
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':info.size,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(artifact.name)}`,'Cache-Control':'no-store'});const stream=createReadStream(resolved);stream.on('error',()=>res.destroy());return stream.pipe(res);
+        }
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
         if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
@@ -381,6 +389,22 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/frames/reset') return json({ message: await adb.resetFrames(body.serial, body.packageName) });
         if (path === '/api/startup') return json(await adb.startup(body.serial, body.packageName, body));
         if (path === '/api/benchmark/run') return json(await adb.runBenchmark(body.serial,body.component,body.testClass??''));
+        if (path === '/api/benchmark/gradle/run') {
+          if (macrobenchmarkBusy) return json({ error: '已有 Gradle Benchmark 任务正在运行，请等待完成' }, 409);
+          macrobenchmarkBusy = true;
+          macrobenchmarkArtifacts.clear();
+          try {
+            const runtimeJava = javaPath || sharkJavaPath || (desktop && process.resourcesPath ? join(process.resourcesPath, 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : join(root, 'tools', 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java'));
+            const result=await macrobenchmarkRunner({ javaPath: runtimeJava, projectPath: body.projectPath, task: body.task, serial: body.serial || '' });
+            const artifacts=[];
+            for(const artifact of result.artifacts||[]){
+              if(artifact.kind!=='trace'||artifact.size>256*1024*1024){artifacts.push(artifact);continue;}
+              const canonicalPath=await realpath(artifact.path).catch(()=>null);if(!canonicalPath){artifacts.push(artifact);continue;}
+              const id=randomUUID(),record={...artifact,path:canonicalPath};macrobenchmarkArtifacts.set(id,record);artifacts.push({...record,id});
+            }
+            return json({...result,artifacts});
+          } finally { macrobenchmarkBusy = false; }
+        }
         if (path === '/api/benchmark/report') return json(await adb.readBenchmarkReport(body.serial,body.path));
         if (path === '/api/layout') return json(await adb.layout(body.serial));
         if (path === '/api/layout/agent') return json(await adb.layoutAgent(body.serial,body.packageName,body.token));

@@ -128,7 +128,7 @@ if (singleInstance) {
     let adbPath = await locateAdb();
     try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath; } catch {}
     runtimeAdb = new Adb(adbPath);
-    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath: javaPath });
+    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath: javaPath, javaPath });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     origin = `http://127.0.0.1:${server.address().port}`;
     installMenu(); createWindow();

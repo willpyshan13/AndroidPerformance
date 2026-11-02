@@ -49,7 +49,7 @@ Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装�
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
-| 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；运行已安装的 instrumentation 后，确认标准报告更新时自动载入 | AndroidX Benchmark JSON / ADB |
+| 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；可运行已安装的 instrumentation，或选择带 Gradle Wrapper 的 Macrobenchmark 工程执行 connected Android Test，并载入本次生成的 JSON、直接将本次 trace 导入分析 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
 | 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 函数及布局类名定位 Java/Kotlin 声明候选 | 本机目录或公开 Git 仓库 |
 | APK 分析 | 查看包信息、权限、组件、文件大小、DEX、原生库、证书和 Manifest | 本地 APK、AAPT2 |
 | 外观设置 | 跟随系统或切换浅色/深色主题，设置 90%–120% 缩放；桌面偏好退出后保留 | 系统外观与本机设置 |
@@ -177,6 +177,8 @@ CPU 采样提供按叶函数汇总的时间分布图，点击时间段可查看�
 桌面 GPU 页面可将已导入的 `.gfxtrace` 校验后交给已配置的 AGI。交接会在应用数据目录 `gpu-open/` 保留私有副本，便于 AGI 异步读取；可在不再需要时手动清理。当前环境未安装 AGI，实际打开行为仍待验证。
 
 Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围；新导入的 sampledMetrics 保留迭代分组，旧记录可能没有分组。这些描述性统计不能证明显著性。
+
+在“基准对比”页可以选择 Macrobenchmark 工程目录，默认任务为 `:macrobenchmark:connectedBenchmarkReleaseAndroidTest`，也可按项目修改为实际的模块和变体任务。工程需包含 `gradlew` 使用的 Gradle Wrapper 文件及 Android Benchmark 模块，设备需已连接并可被 Android Gradle Plugin 识别；应用会通过本机 Java Runtime 调用 Wrapper，不经 Shell。Gradle 按工程配置构建、安装测试 APK 并执行测试，首次运行可能下载 Gradle 和项目依赖。运行结束后仅自动读取本次更新的 `connected_android_test_additional_output` 中 `benchmarkData*.json`；发现 trace 文件后，可从结果区选择并安全导入追踪分析。若工程使用自定义报告目录或输出名称，请手动导入 JSON。运行前请确认所选工程及 Gradle 脚本可信，因为 Gradle 构建会执行工程代码。
 
 电池页面在系统提供 `pwi` UID 数据时展示累计 mAh 估计及原始精度；该值可能包含共享 UID，依赖系统模型和取整，不作为两次快照之间的精确实验耗电。
 

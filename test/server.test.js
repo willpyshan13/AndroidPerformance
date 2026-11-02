@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -16,6 +16,24 @@ test('Battery Historian export endpoint returns raw checkin as downloadable text
  t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
  const response=await fetch(`http://127.0.0.1:${app.address().port}/api/battery/checkin`,{method:'POST',headers:{'X-Workbench-Token':'battery-export','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo'})});
  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'text/csv; charset=utf-8');assert.match(response.headers.get('content-disposition'),/batterystats-checkin\.csv/);assert.equal(await response.text(),raw);
+});
+
+test('Macrobenchmark HTTP route forwards the selected Gradle project and prevents overlapping builds',async t=>{
+ let releaseRun,calls=0;
+ const dir=await mkdtemp(join(tmpdir(),'apw-macrobenchmark-api-'));
+ const artifactPath=join(dir,'benchmark.trace');
+ const macrobenchmarkRunner=async options=>{calls++;assert.equal(options.projectPath,'/tmp/demo-app');assert.equal(options.task,':macrobenchmark:connectedBenchmarkReleaseAndroidTest');assert.equal(options.serial,'DEVICE-1');await writeFile(artifactPath,'trace');const info=await stat(artifactPath);return new Promise(resolve=>{releaseRun=()=>resolve({status:'completed',task:options.task,report:null,artifacts:[{kind:'trace',path:artifactPath,name:'benchmark.trace',size:info.size,modifiedAt:info.mtimeMs}]});});};
+ const app=createApp({adb:{},dataDir:dir,token:'macrobenchmark-api',macrobenchmarkRunner});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{releaseRun?.();await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const url=`http://127.0.0.1:${app.address().port}/api/benchmark/gradle/run`,headers={'Content-Type':'application/json','X-Workbench-Token':'macrobenchmark-api'},body=JSON.stringify({serial:'DEVICE-1',projectPath:'/tmp/demo-app',task:':macrobenchmark:connectedBenchmarkReleaseAndroidTest'});
+ const first=fetch(url,{method:'POST',headers,body});
+ for(let i=0;i<20&&!releaseRun;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(calls,1);
+ const second=await fetch(url,{method:'POST',headers,body});assert.equal(second.status,409);assert.match((await second.json()).error,/已有 Gradle Benchmark/);
+ releaseRun();const result=await (await first).json();assert.equal(result.status,'completed');assert.equal(result.task,':macrobenchmark:connectedBenchmarkReleaseAndroidTest');assert.match(result.artifacts[0].id,/^[\da-f-]{36}$/);
+ const artifactUrl=`http://127.0.0.1:${app.address().port}/api/benchmark/gradle/artifacts/${result.artifacts[0].id}`;
+ assert.equal((await fetch(artifactUrl)).status,403);const artifact=await fetch(artifactUrl,{headers:{'X-Workbench-Token':'macrobenchmark-api'}});assert.equal(artifact.status,200);assert.equal(await artifact.text(),'trace');
+ await writeFile(artifactPath,'changed');assert.equal((await fetch(artifactUrl,{headers:{'X-Workbench-Token':'macrobenchmark-api'}})).status,404);
 });
 
 test('CPU profile API forwards validated multi-event selection',async t=>{

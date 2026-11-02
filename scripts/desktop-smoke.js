@@ -47,6 +47,10 @@ try {
   const java = join(profileDir, 'runtime', 'java-runtime', 'bin', 'java.exe');
   await stat(java);
   console.log(`Desktop smoke passed: ${origin}, app shell and Java runtime ready`);
+} catch (error) {
+  const detail = (error.stack || error.message || String(error)).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.log(`::error title=Desktop startup smoke::${detail}`);
+  throw error;
 } finally {
   if (child.exitCode === null && child.signalCode === null) child.kill();
   if (child.exitCode === null && child.signalCode === null) {

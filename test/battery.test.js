@@ -22,6 +22,10 @@ test('device battery snapshot uses quoted arguments and releases lock',async()=>
  const calls=[];const adb=new Adb('adb',async(_p,args)=>{calls.push(args.join(' '));return {stdout:args.join(' ').includes('batterystats')?raw:'level: 50\nscale: 100'};});
  const snap=await adb.batterySnapshot('ABC','com.example.demo');assert.equal(snap.uid,10123);assert.ok(calls.some(s=>s.includes("'--checkin'")));assert.equal(adb.busy.size,0);
 });
+test('Battery Historian checkin export preserves the device CSV and releases the device lock',async()=>{
+ const calls=[];const adb=new Adb('adb',async(_p,args)=>{calls.push(args.join(' '));return {stdout:raw};});
+ assert.equal(await adb.batteryCheckin('ABC','com.example.demo'),raw);assert.ok(calls[0].includes("'dumpsys' 'batterystats' '--checkin'"));assert.equal(adb.busy.size,0);
+});
 
 test('battery snapshot archive validates and rejects malformed resource entries',()=>{
  const snapshot=parseBatteryStats(raw,'com.example.demo');

@@ -9,6 +9,15 @@ import { createApp } from '../src/server.js';
 import { Adb } from '../src/adb.js';
 import { parseBenchmark } from '../public/offline.js';
 
+test('Battery Historian export endpoint returns raw checkin as downloadable text',async t=>{
+ const raw='1,0,i,vers,20\n1,0,i,uid,10123,com.example.demo\n';
+ const adb={batteryCheckin:async(serial,packageName)=>{assert.equal(serial,'ABC');assert.equal(packageName,'com.example.demo');return raw;}};
+ const dir=await mkdtemp(join(tmpdir(),'apw-battery-export-'));const app=createApp({adb,dataDir:dir,token:'battery-export'});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/battery/checkin`,{method:'POST',headers:{'X-Workbench-Token':'battery-export','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo'})});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'text/csv; charset=utf-8');assert.match(response.headers.get('content-disposition'),/batterystats-checkin\.csv/);assert.equal(await response.text(),raw);
+});
+
 test('benchmark API runs the selected instrumentation and rejects invalid arguments',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0;
  const adb=new Adb('/fake',async(_path,args)=>{calls++;return {stdout:args.includes("'head'")?'{"benchmarks":[]}':'OK (1 test)\n'};});

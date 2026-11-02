@@ -160,6 +160,10 @@ export class Adb {
       return parseBatteryStats(raw,packageName,{serial,batteryRaw,source:'adb'});
     });
   }
+  async batteryCheckin(serial,packageName) {
+    validateTarget(serial,packageName);
+    return this.exclusive(serial,()=>this.shell(serial,['dumpsys','batterystats','--checkin'],{timeout:60000}));
+  }
   async frames(serial, packageName, budgetMs) {
     validateTarget(serial, packageName);
     const raw = await this.shell(serial, ['dumpsys', 'gfxinfo', packageName, 'framestats']);

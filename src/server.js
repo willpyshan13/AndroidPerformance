@@ -278,6 +278,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           }finally{traceBusy=false;}
         }
         if(path==='/api/battery/snapshot')return json(await adb.batterySnapshot(body.serial,body.packageName));
+        if(path==='/api/battery/checkin'){
+          const raw=await adb.batteryCheckin(body.serial,body.packageName);
+          res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="batterystats-checkin.csv"'});
+          return res.end(raw);
+        }
         if(path==='/api/battery/import')return json(parseBatteryStats(body.text,body.packageName));
         if(path==='/api/battery/compare')return json(compareBatteryStats(body.before,body.after));
         if(path==='/api/network/agent')return json(await adb.networkAgentSnapshot(body.serial,body.packageName));

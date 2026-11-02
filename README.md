@@ -126,7 +126,7 @@ GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 316 项，300 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
+| 自动测试 | 318 项，302 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 

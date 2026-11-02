@@ -523,6 +523,16 @@ export function sampleQuality(timeline){
  }
  return {samples:timeline.samples.length,unknownLeaf,noCallers,unknownLeafWeight,skipped:timeline.skipped||0,truncated:!!timeline.truncated};
 }
+export function createCpuAnalysisReport({profile=null,timeline=null,methodTrace=null,captureDiagnostics=null,fileName='cpu-profile',generatedAt=new Date().toISOString()}={}){
+  if(methodTrace){
+    if(methodTrace.format!=='ART method trace'||!Array.isArray(methodTrace.methods)||!Array.isArray(methodTrace.threads)||!Array.isArray(methodTrace.intervals))throw new Error('ART 方法报告数据无效');
+    const sampleRows=(rows,limit)=>rows.length<=limit?rows:Array.from({length:limit},(_,index)=>rows[Math.floor(index*rows.length/limit)]),threads=sampleRows(methodTrace.threads,1000),methods=sampleRows(methodTrace.methods,1000),intervals=sampleRows(methodTrace.intervals,2000);
+    return {schema:'android-performance-cpu-report',schemaVersion:1,generatedAt,fileName,profileType:'art-method-trace',summary:{version:methodTrace.version,streaming:methodTrace.streaming,clock:methodTrace.clock,durationUs:methodTrace.durationUs,eventCount:methodTrace.eventCount,threadCount:methodTrace.threadCount,methodCount:methodTrace.methodCount,completedCalls:methodTrace.completedCalls,incompleteCalls:methodTrace.incompleteCalls,unmatchedExits:methodTrace.unmatchedExits,intervalsTruncated:methodTrace.intervalsTruncated},threads,methods,intervals,captureDiagnostics,limits:{methodsReported:methods.length,threadsReported:threads.length,intervalsReported:intervals.length}};
+  }
+  if(!profile?.root||!Array.isArray(profile.symbols))throw new Error('CPU 报告没有可导出的采样数据');
+  const quality=sampleQuality(timeline),threadTotals=timeline?.available?timeline.groups.slice(0,100).map(row=>({thread:row.thread,pid:row.pid,tid:row.tid,samples:row.counts.reduce((sum,count)=>sum+count,0),weight:row.total})):[];
+  return {schema:'android-performance-cpu-report',schemaVersion:1,generatedAt,fileName,profileType:'sampled-call-stacks',source:profile.source||'import',weightMeaning:'sampling event period; not direct CPU time or CPU percentage',summary:{stacks:profile.stacks,totalWeight:profile.root.weight,symbolCount:profile.symbols.length,event:timeline?.event||'unknown',sampleQuality:quality,timeline:timeline?{available:!!timeline.available,clockId:timeline.clockId||null,durationMs:timeline.durationMs??null,sampleCount:timeline.samples?.length||0,skipped:timeline.skipped||0,truncated:!!timeline.truncated}:null},topFunctions:profile.symbols.slice(0,1000),threads:threadTotals,captureDiagnostics,limits:{topFunctionsReported:Math.min(1000,profile.symbols.length),threadsReported:threadTotals.length}};
+}
 // Summarize observed leaf-frame weights per time bin. This is a sampled trend,
 // not CPU time or an estimate of inclusive function cost.
 export function sampleStackChart(timeline, limit=8) {

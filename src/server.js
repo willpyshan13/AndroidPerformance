@@ -334,7 +334,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/benchmark/report') return json(await adb.readBenchmarkReport(body.serial,body.path));
         if (path === '/api/layout') return json(await adb.layout(body.serial));
         if (path === '/api/cpu-profile') {
-          const data=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds);
+          const data=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u']);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' });
           return res.end(data);
         }

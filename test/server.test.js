@@ -18,6 +18,15 @@ test('Battery Historian export endpoint returns raw checkin as downloadable text
  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'text/csv; charset=utf-8');assert.match(response.headers.get('content-disposition'),/batterystats-checkin\.csv/);assert.equal(await response.text(),raw);
 });
 
+test('CPU profile API forwards validated multi-event selection',async t=>{
+ const events=['cpu-clock:u','cpu-cycles:u','instructions:u'];let received;
+ const adb={captureCpuProfile:async(serial,packageName,seconds,locator,selected)=>{received={serial,packageName,seconds,locator,selected};return Buffer.from('PERFILE2test');}};
+ const dir=await mkdtemp(join(tmpdir(),'apw-cpu-profile-api-'));const app=createApp({adb,dataDir:dir,token:'cpu-profile-api'});app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/cpu-profile`,{method:'POST',headers:{'X-Workbench-Token':'cpu-profile-api','Content-Type':'application/json'},body:JSON.stringify({serial:'ABC',packageName:'com.example.demo',seconds:5,events})});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/octet-stream');assert.equal(Buffer.from(await response.arrayBuffer()).toString(),'PERFILE2test');assert.deepEqual(received,{serial:'ABC',packageName:'com.example.demo',seconds:5,locator:undefined,selected:events});
+});
+
 test('benchmark API runs instrumentation, auto-loads only a freshly updated report and rejects invalid arguments',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'apw-benchmark-api-'));let calls=0,statCalls=0;const now=Math.floor(Date.now()/1000);
  const adb=new Adb('/fake',async(_path,args)=>{calls++;if(args.includes("'stat'")){statCalls++;return {stdout:statCalls===1?`${now-2} 12\n`:`${now} 20\n`};}return {stdout:args.includes("'head'")?'{"benchmarks":[]}':'OK (1 test)\n'};});

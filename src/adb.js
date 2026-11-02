@@ -245,16 +245,17 @@ export class Adb {
       } finally { await this.shell(serial, ['rm', '-f', remote]).catch(() => {}); }
     });
   }
-  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf) {
+  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u']) {
     validateTarget(serial,packageName);
     if(!Number.isInteger(seconds)||seconds<3||seconds>30)throw new Error('采样时长须为 3–30 秒');
+    if(!Array.isArray(events)||events.length<1||events.length>8||events.some(event=>typeof event!=='string'||event.length>160||!/^[A-Za-z0-9_./:-]+$/.test(event))||new Set(events).size!==events.length)throw new Error('采样事件须为 1–8 个有效且不重复的 simpleperf 事件名');
     return this.exclusive(serial,async()=>{
       const abi=(await this.shell(serial,['getprop','ro.product.cpu.abi'])).trim(),api=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim(),binary=await locator(abi,api),id=randomUUID();
       const remoteBinary=`/data/local/tmp/apw-simpleperf-${id}`,remoteData=`/data/local/tmp/apw-profile-${id}.data`,local=join(tmpdir(),`apw-profile-${id}.data`);
       try {
         await this.run(['-s',serial,'push',binary,remoteBinary],{timeout:30000});
         await this.shell(serial,['chmod','755',remoteBinary]);
-        await this.shell(serial,[remoteBinary,'record','--app',packageName,'-e','cpu-clock:u','-f','99','--duration',String(seconds),'--call-graph','fp','-o',remoteData],{timeout:(seconds+45)*1000});
+        await this.shell(serial,[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f','99','--duration',String(seconds),'--call-graph','fp','-o',remoteData],{timeout:(seconds+45)*1000});
         const raw=(await this.shell(serial,['wc','-c',remoteData])).trim(),match=raw.match(/^(\d+)(?:\s|$)/),size=match?Number(match[1]):NaN;
         if(!Number.isSafeInteger(size)||size<8||size>256*1024*1024)throw new Error('采样文件为空或超过 256 MiB 上限');
         await this.run(['-s',serial,'pull',remoteData,local],{timeout:120000});

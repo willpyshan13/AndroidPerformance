@@ -532,3 +532,9 @@ npm run test:device -- \
 
 - CPU 调用栈时间图增加 PNG 导出，直接读取当前 Canvas，因此保留已经应用的动态库和线程筛选以及现有的绘制抽样边界；原始采样与 JSON 分析报告仍独立提供。
 - 回归检查 PNG 导出按钮、Canvas 编码路径、命名和英文标签。全量套件 324 项，308 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。重建 macOS arm64 `.app` 并启动实际 Electron renderer；smoke 触发 PNG 导出按钮、拦截保存动作并校验返回数据的 PNG 文件签名、类型和非零图像尺寸；全部空状态 / 演示状态 16 个路由及现有桌面资源检查通过。
+
+## HPROF 类统计与快照对比 CSV（2026-11-03）
+
+- 堆分析页新增 CSV 导出，当前视图中的搜索词和对象数变化筛选会作用于完整匹配结果，不受表格每页最多显示 1,000 行的限制。当前类统计和基线对比使用各自列；不兼容类匹配会标记为不可比。导出含 UTF-8 BOM、CSV 双引号转义和表格公式前缀防护，并明确字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小。
+- 两项 `heap-export` 单元回归覆盖 CSV 头、字节解释、逗号 / 引号转义、公式注入防护和不可比行。全量套件：326 项，310 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
+- 重建 macOS arm64 `.app` 并运行打包 smoke。首次 smoke 暴露新 ES module 未加入静态资源路由；加入路由后重建，renderer、16 个页面状态、Java、Trace Processor、Perfetto UI 及现有 CPU PNG 导出 smoke 均通过。CSV 序列化通过定向测试，打包页面静态模块路由通过 smoke；未在打包 smoke 内加载真实 HPROF 点击导出。

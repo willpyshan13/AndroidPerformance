@@ -81,7 +81,7 @@ try {
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);
   const html = await page.text();
   if (!html.includes('<main id="main"') || !html.includes('/app.js')) throw new Error('Packaged macOS main page is missing the application shell');
-  for (const path of ['/app.js', '/demo.js', '/offline.js', '/i18n.js']) {
+  for (const path of ['/app.js', '/demo.js', '/offline.js', '/heap-export.js', '/i18n.js']) {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }

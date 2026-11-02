@@ -357,17 +357,18 @@ export function reverseCallTree(scope, symbol) {
 // Positions are normalized to the selected root's event-period weight.
 export function layoutFlame(root,{maxDepth=40,maxNodes=3000}={}) {
   if(!root||!Number.isFinite(root.weight)||root.weight<=0)throw new Error('火焰图缺少有效权重');
-  const frames=[],pending=[{node:root,x:0,width:1,depth:0,path:[]}];let truncated=false,depth=0;
-  while(pending.length){
+ const rootFrame={node:root,x:0,width:1,depth:0,path:[]},frames=[rootFrame],stack=[{...rootFrame,next:0,cursor:0}];let truncated=false,depth=0;
+ if(!Number.isInteger(maxDepth)||maxDepth<0||maxDepth>128||!Number.isInteger(maxNodes)||maxNodes<1||maxNodes>100000)throw new Error('火焰图绘制上限无效');
+ while(stack.length){
+    const parent=stack.at(-1);
+    if(!Array.isArray(parent.node.children))throw new Error('火焰图调用树无效');
+    if(parent.depth>=maxDepth){if(parent.node.children.length)truncated=true;stack.pop();continue;}
+    if(parent.next>=parent.node.children.length){stack.pop();continue;}
+    const index=parent.next++,node=parent.node.children[index];
+    if(!node||!Number.isFinite(node.weight)||node.weight<=0)throw new Error('火焰图调用树无效');
     if(frames.length>=maxNodes){truncated=true;break;}
-    const frame=pending.pop();frames.push(frame);depth=Math.max(depth,frame.depth);
-    if(frame.depth>=maxDepth){if(frame.node.children.length)truncated=true;continue;}
-    let cursor=frame.x;const children=[];
-    for(let i=0;i<frame.node.children.length;i++){
-      const node=frame.node.children[i],width=frame.width*node.weight/frame.node.weight;
-      children.push({node,x:cursor,width,depth:frame.depth+1,path:[...frame.path,i]});cursor+=width;
-    }
-    for(let i=children.length-1;i>=0;i--)pending.push(children[i]);
+    const width=parent.width*node.weight/parent.node.weight,frame={node,x:parent.cursor,width,depth:parent.depth+1,path:[...parent.path,index]};parent.cursor+=width;
+    frames.push(frame);depth=Math.max(depth,frame.depth);stack.push({...frame,next:0,cursor:frame.x});
   }
   return {frames,depth,truncated};
 }

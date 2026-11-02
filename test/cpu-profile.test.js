@@ -35,6 +35,13 @@ test('flame layout uses normalized event weights and preserves stack ancestry',(
  assert.equal(a.width,.6);assert.equal(b.width,.4);assert.equal(a.x,0);assert.equal(b.x,.6);assert.deepEqual(a.path,[0,0,0]);
  assert.equal(layoutFlame(p.root,{maxNodes:2}).truncated,true);assert.equal(layoutFlame(p.root,{maxDepth:1}).truncated,true);
 });
+test('flame layout visits broad trees lazily and bounds deep and invalid render requests',()=>{
+ const children=Array.from({length:20000},(_,i)=>({name:`leaf-${i}`,weight:1,children:[]})),root={name:'root',weight:children.length,children};
+ const broad=layoutFlame(root,{maxNodes:3});assert.equal(broad.frames.length,3);assert.equal(broad.frames[1].node.name,'leaf-0');assert.equal(broad.frames[2].node.name,'leaf-1');assert.equal(broad.frames[1].width,1/20000);assert.equal(broad.frames[2].x,1/20000);assert.equal(broad.truncated,true);
+ let deep={name:'leaf',weight:1,children:[]};for(let i=0;i<50;i++)deep={name:`node-${i}`,weight:1,children:[deep]};
+ const limited=layoutFlame(deep,{maxDepth:10});assert.equal(limited.depth,10);assert.equal(limited.frames.length,11);assert.equal(limited.truncated,true);
+ assert.throws(()=>layoutFlame(root,{maxNodes:0}),/上限无效/);assert.throws(()=>layoutFlame(root,{maxDepth:129}),/上限无效/);
+});
 test('sample timeline preserves large nanosecond timestamps and filters by sample time',async()=>{
  const {buildSampleTimeline,profileForTimeBin}=await import('../public/offline.js');
  const input={event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:[{timeNs:'1700000000000000000',pid:1,tid:2,thread:'t',period:'10',frames:['main','a']},{timeNs:'1700000001000000000',pid:1,tid:2,thread:'t',period:'20',frames:['main','b']}]};

@@ -16,4 +16,4 @@ OkHttpClient client = new OkHttpClient.Builder()
 
 使用已有客户端时，基于它的 `newBuilder()` 配置，并注意该设置替换原来的 listener factory。选择设备与应用包名后在桌面网络页面开始读取，操作应用发出请求并关闭响应体。页面显示的是全调用汇总，不包含路径或单次重定向详情。
 
-组件目前以源码接入，尚未发布独立依赖包，也尚未完成 Android 真机验证；权限、系统版本和目标应用接入情况会影响可用性。
+组件目前以源码接入，尚未发布独立依赖包。API 25 / rk3399-all 真机使用临时 OkHttp 4.12 debug 应用验证了本机 HTTP 请求、Logcat Agent 记录、桌面端 PID 回退读取和路径脱敏；这只证明已接入该 Agent 的 OkHttp 客户端，不会捕获未配置的客户端、WebView、Cronet 或原生 socket。设备日志权限、Android 版本和应用接入方式会影响可用性。

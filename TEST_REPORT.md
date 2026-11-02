@@ -11,6 +11,12 @@
 - 该计数和聚合调用树不提供完整 Composable 运行时实例树、State Reads 因果或 Jank 因果，也不代替完整 Compose Runtime Inspector。临时 smoke APK 在验证完成后卸载，并恢复用户原 Activity。
 - 本轮完整回归：224 项，208 通过、0 失败、16 项因未配置可选外部样本而跳过；`npm run check` 与 `git diff --check` 通过。测试期间修正了 Benchmark API 测试的整秒时间夹具，避免跨秒时序造成偶发误失败。
 
+## OkHttp Agent API 25 真机链路验证
+
+- 使用项目内 `NetworkEvents.java` 和 `LogcatSink.java` 构建临时 OkHttp 4.12 debug 应用，通过 ADB reverse 把设备请求导向本机测试 HTTP 服务。应用实际请求了带有路径的 URL，服务端确认收到 `GET /capture-path-is-not-logged` 并返回 HTTP 200。
+- 桌面端按 API 25 设备兼容路径回退到目标主进程 PID 读取 Logcat，得到 1 条有效记录、0 条无效记录：主机 `127.0.0.1:18080`、GET、状态 200、耗时及连接/等待/读取阶段；解析结果将 path 标为“未采集”，重建 URL 只保留 origin，原始请求路径未泄漏。
+- 临时 APK、ADB reverse 转发均已移除，并恢复 `com.will.calendar.demo/.CalendarDemoActivity`。该结果验证已接入该 OkHttp Agent 的应用，不代表无需接入即可捕获设备全部流量；响应体未读取，因此响应读取字节显示 0。
+
 ## 应用内 Android View Debug Agent
 
 - 新增仅供目标应用 debug 构建接入的 `LayoutAgent.java`：通过 Android 本机抽象 socket 在应用进程内读取当前 Activity View 树、属性与窗口截图；最多 10,000 节点、100 层；`FLAG_SECURE` 或超过 16,000,000 像素时不生成截图。

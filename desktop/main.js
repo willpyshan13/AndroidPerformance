@@ -139,7 +139,10 @@ if (singleInstance) {
     origin = `http://127.0.0.1:${server.address().port}`;
     installMenu(); createWindow();
     app.on('activate', () => { if (!window) createWindow(); });
-  }).catch(error => { dialog.showErrorBox('Android Performance 启动失败', error.stack || error.message); app.quit(); });
+  }).catch(async error => {
+    if (process.env.APW_SMOKE_READY_FILE) await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ error: error.stack || error.message }), { mode: 0o600 }).catch(() => {});
+    dialog.showErrorBox('Android Performance 启动失败', error.stack || error.message); app.quit();
+  });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   // before-quit can be canceled by the unsaved-capture dialog. Keep the backend alive until quitting is final.
   app.on('will-quit', event => {

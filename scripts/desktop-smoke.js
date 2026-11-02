@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,19 +9,26 @@ const executable = resolve(process.argv[2] || `dist/v${pkg.version}/win-unpacked
 const tempRoot = await mkdtemp(join(tmpdir(), 'android-performance-smoke-'));
 const readyFile = join(tempRoot, 'ready.json');
 const profileDir = join(tempRoot, 'profile');
+await access(executable);
+let childOutput = '';
 const child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
   env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile },
-  stdio: 'ignore',
+  stdio: ['ignore', 'pipe', 'pipe'],
 });
 let exitInfo;
 child.once('error', error => { exitInfo = { error }; });
 child.once('exit', (code, signal) => { exitInfo = { code, signal }; });
+for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { childOutput = `${childOutput}${chunk}`.slice(-8000); });
 
 async function waitForReady() {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (exitInfo) throw new Error(`Desktop app exited before ready (${exitInfo.error?.message || `code ${exitInfo.code}, signal ${exitInfo.signal}`})`);
-    try { return JSON.parse(await readFile(readyFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (exitInfo) throw new Error(`Desktop app exited before ready (${exitInfo.error?.message || `code ${exitInfo.code}, signal ${exitInfo.signal}`})${childOutput ? `\n${childOutput}` : ''}`);
+    try {
+      const result = JSON.parse(await readFile(readyFile, 'utf8'));
+      if (result.error) throw new Error(`Desktop app startup failed:\n${result.error}`);
+      return result;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
     await delay(200);
   }
   throw new Error('Desktop app did not start its local service within 60 seconds');

@@ -9,6 +9,7 @@ import { locateDeviceSimpleperf } from './simpleperf.js';
 import { parseBatteryStats } from './battery.js';
 import { parseNetworkAgentLog } from './network-agent.js';
 import { parseGpuCapabilities } from './gpu.js';
+import { captureLayoutFromAgent } from './layout-agent.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
 
 const exec = promisify(execFile);
@@ -249,6 +250,10 @@ export class Adb {
           note: 'UIAutomator 可访问性层级快照；不是完整 View/Compose 树。截图与层级为顺序采集，动画期间可能不一致。' };
       } finally { await this.shell(serial, ['rm', '-f', remote]).catch(() => {}); }
     });
+  }
+  async layoutAgent(serial,packageName,sharedToken) {
+    validateTarget(serial,packageName);
+    return this.exclusive(serial,()=>captureLayoutFromAgent(this,serial,packageName,sharedToken));
   }
   async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u']) {
     validateTarget(serial,packageName);

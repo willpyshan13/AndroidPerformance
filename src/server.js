@@ -17,7 +17,7 @@ import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact 
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
 import {createRemoteSourceSnapshot} from './source-git.js';
-import {buildAgentPackage} from './agent-package.js';
+import {buildAgentPackage,buildLayoutAgentPackage} from './agent-package.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export const VERSION = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
@@ -85,6 +85,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       const pkg = url.searchParams.get('package');
       if (req.method === 'GET') {
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
+        if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
         if (path === '/api/status') return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, platform: process.platform, desktop, dataDir });
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
@@ -374,6 +375,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/benchmark/run') return json(await adb.runBenchmark(body.serial,body.component,body.testClass??''));
         if (path === '/api/benchmark/report') return json(await adb.readBenchmarkReport(body.serial,body.path));
         if (path === '/api/layout') return json(await adb.layout(body.serial));
+        if (path === '/api/layout/agent') return json(await adb.layoutAgent(body.serial,body.packageName,body.token));
         if (path === '/api/cpu-profile') {
           const data=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u']);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' });

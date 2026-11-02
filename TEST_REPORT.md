@@ -1,5 +1,14 @@
 # 当前验证记录（2026-11-02）
 
+## 应用内 Android View Debug Agent
+
+- 新增仅供目标应用 debug 构建接入的 `LayoutAgent.java`：通过 Android 本机抽象 socket 在应用进程内读取当前 Activity View 树、属性与窗口截图；最多 10,000 节点、100 层；`FLAG_SECURE` 或超过 16,000,000 像素时不生成截图。
+- 桌面端生成 24 字节随机令牌，临时执行 `adb forward tcp:0 localabstract:<socket>` 并在结束时移除转发；目标端校验共享令牌。源码包包含集成说明；未接入 Agent 的应用继续使用 UIAutomator 回退。
+- 5 项集成测试覆盖转发/清理、令牌拒绝、截图不可用与截断标记、受令牌保护的 API 和源码 ZIP 内容。Java 源码以 Android 31 `android.jar` 编译通过。
+- API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
+- 该 Agent 只枚举 Android View，不含 Compose Semantics/Composable 树、State Reads 或重组计数；`View.draw` 对 Surface 等硬件层可能不完整。
+- 完整回归：212 项，197 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。
+
 ## Compose Compiler 稳定性报告导入
 
 - 布局检查页可导入 `composables.txt`、`composables.csv` 和 `classes.txt`，分别查看 composable restartable/skippable 状态、文本报告中的不稳定参数、类及字段稳定性；支持组合搜索和分别载入两类报告。
@@ -11,7 +20,7 @@
 
 - 网络请求可按域名/路径、方法、状态段、HAR 连接 ID、耗时范围和本地时间区间过滤；汇总卡、域名阶段统计、接口 P50/P95、活动时间线及请求表共用同一筛选结果。
 - HAR 仅保留匹配 `[A-Za-z0-9._:-]{1,128}` 的连接 ID；查询参数、凭据、请求头和正文仍丢弃。Agent 目前不提供连接 ID，连接筛选只在 HAR 含标识时显示。
-- 单元测试覆盖组合筛选、失败/响应状态、时间范围、耗时边界和无效区间。网络真机检查发现当前没有连接设备，Agent 真实应用链路尚未验证。
+- 单元测试覆盖组合筛选、失败/响应状态、时间范围、耗时边界和无效区间。该次网络真机检查时没有连接设备，因此 OkHttp 网络 Agent 的真实应用链路仍未验证。
 - 当前已增加筛选结果 CSV 导出，验证字段引用/引号转义、HAR 查询凭据不泄露、公式注入前缀保护及 50,000 条上限。
 - 完整回归：202 项，187 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check` 与 `git diff --check` 通过。
 
@@ -20,7 +29,7 @@
 - UIAutomator 布局采集新增 `wm density` 读取，优先采用 Android 报告的 override density；密度查询不可用时保留截图/层级采集并显示警告，不进行 dp 判断。
 - 节点线索新增可点击、长按或可勾选节点的可见 bounds 换算；任一边小于 48 dp 时显示复核候选和换算尺寸。48 dp 来自 [Android 官方可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。结果只代表 UIAutomator 返回的可见边界，不能观察 padding、TouchDelegate 或 Compose 最小触控区域，不能据此确认真实触控目标过小。
 - 合成层级覆盖 override density、48 dp 阈值、长按节点、禁用节点、缺失 bounds、未知密度回退；ADB 测试覆盖截图/层级可用但密度读取缺失的降级路径。
-- 本增量后的完整回归为 207 项，192 通过、0 失败、15 项因未配置其他外部样本而跳过。`adb devices -l` 当前无设备，本轮没有真机验证。
+- 该次完整回归为 207 项，192 通过、0 失败、15 项因未配置其他外部样本而跳过；当时没有连接设备。后续 View Agent 真机验证见本报告首节。
 
 ## LeakCanary Shark 桌面分析器接入
 

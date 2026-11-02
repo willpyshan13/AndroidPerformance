@@ -33,6 +33,12 @@ test('ADB agent snapshot scopes logcat to exact current-user UID and never inter
  const missing=new Adb('adb',async()=>({stdout:'package:com.example.app2 uid:10043\n'}));await assert.rejects(()=>missing.networkAgentSnapshot('device','com.example.app'),/UID/);
 });
 
+test('older Android falls back from unsupported UID Logcat filter to the package main PID',async()=>{
+ const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);const joined=args.join(' ');if(joined.includes("'cmd' 'package'"))throw new Error('Unrecognized Option');if(joined.includes("'dumpsys' 'package'"))return {stdout:'Packages:\n  userId=10100\n'};if(joined.includes("'am' 'get-current-user'"))return {stdout:'0\n'};if(joined.includes("'logcat'")&&joined.includes('--uid='))throw new Error('Unrecognized Option');if(joined.includes("'pidof'"))return {stdout:'4321\n'};return {stdout:JSON.stringify(record)+'\n'};});
+ const result=await adb.networkAgentSnapshot('device-25','com.example.app');
+ assert.equal(result.uid,10100);assert.equal(result.pid,4321);assert.equal(result.processScope,'main-process');assert.equal(result.rows.length,1);assert.ok(calls.some(args=>args.includes("'--pid=4321'")));
+});
+
 test('network agent HTTP endpoint returns the scoped snapshot',async t=>{
  const {createApp}=await import('../src/server.js');const {once}=await import('node:events');
  const app=createApp({adb:{path:'fake',networkAgentSnapshot:async(serial,packageName)=>({source:'adb',serial,packageName,...parseNetworkAgentLog(JSON.stringify(record))})},token:'test'});

@@ -1,6 +1,6 @@
 # 应用内 View 布局 Agent（仅 Debug）
 
-这个源码 Agent 在目标应用进程内读取当前 Activity 的 Android View 树、可用的 Compose 合并/未合并 Semantics 树和应用窗口截图。桌面端通过 ADB 临时转发 Android 本机抽象 socket 请求采集，结束后立即移除转发。它不声明 INTERNET 权限，也不上传数据。
+这个 debug 源码包包含 Android View Agent、可选的 Compose Semantics 读取和一个需手动放入指定 Composable 的重组观测 probe。View Agent 在目标应用进程内读取当前 Activity 的 Android View 树、可用的 Compose 合并/未合并 Semantics 树和应用窗口截图；桌面端通过 ADB 临时转发 Android 本机抽象 socket 请求采集，结束后移除转发。它不声明 INTERNET 权限，也不上传数据。
 
 ## 接入
 
@@ -43,4 +43,18 @@ import dev.androidperformance.agent.LayoutAgent;
 - 这是 debug-only 诊断源码。不要将令牌或 Agent 放进 release 构建。令牌以明文存在 debug APK 中，不构成对有设备调试权限者的安全边界。
 - 遇到 Compose `AndroidComposeView` 时，Agent 通过可选反射读取 merged 与 unmerged Semantics 节点，转换为 `ComposeSemanticsRoot` / `ComposeSemanticsNode` 并保留 bounds、文本、角色、TestTag、点击和选中等状态；Compose 依赖不是本 Agent 的编译依赖。不同 Compose 版本的运行时接口可能变化，读取失败会返回兼容性警告，Android View 树仍保留。
 - Compose `Password` 节点会隐藏文本和内容描述；`EditableText` 仅标记为可编辑，不输出其内容。该 Semantics 树不是 Composable 调用树，不提供 State Reads 或运行时重组次数。官方重组计数还受 Compose 版本与 Android API 版本限制。
+- 若要统计选定 Composable 的实际执行次数，可将 ZIP 中的 `ApwComposeRecompositionProbe.kt` 放入目标模块 `src/debug/kotlin/dev/androidperformance/agent/`，并在目标函数体内调用：
+
+```kotlin
+import dev.androidperformance.agent.ApwComposeRecompositionProbe
+
+@Composable
+fun FeedScreen() {
+    if (BuildConfig.DEBUG) ApwComposeRecompositionProbe("FeedScreen")
+    // screen content
+}
+```
+
+- 布局页“Compose 运行时重组观测”按钮从目标包主进程 PID 的 main Logcat 缓冲区汇总已插桩实例。计数是 `SideEffect` 成功执行次数，包含首次组合；同名实例的累计计数会相加。它不自动追踪所有 Composable，也不报告跳过次数或 State Reads；目标应用的独立子进程不在此快照范围。Logcat 是环形缓冲区，历史事件可能被覆盖；此 probe 会增加 debug 日志开销，正式性能测量前应移除或关闭调用。
+- 观测记录只包含自定义名称、随机实例 ID、计数和设备单调时钟，不写入参数值或状态内容。probe 调用必须受 `BuildConfig.DEBUG` 限制，不能用于 release。
 - 特殊 Surface、视频、硬件合成层可能无法通过 `View.draw` 完整捕获。设备旋转、动画或窗口切换期间，快照可能不稳定。

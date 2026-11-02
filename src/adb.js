@@ -10,6 +10,7 @@ import { parseBatteryStats } from './battery.js';
 import { parseNetworkAgentLog } from './network-agent.js';
 import { parseGpuCapabilities } from './gpu.js';
 import { captureLayoutFromAgent } from './layout-agent.js';
+import { parseComposeRecompositionLog } from './compose-runtime.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
 
 const exec = promisify(execFile);
@@ -100,16 +101,44 @@ export class Adb {
     const result = await this.shell(serial, ['pm', 'list', 'packages']);
     return result.split(/\r?\n/).filter(s => s.startsWith('package:')).map(s => s.slice(8).trim()).sort();
   }
+  async packageUid(serial,packageName) {
+    validateTarget(serial,packageName);
+    const listing=await this.shell(serial,['cmd','package','list','packages','-U','--user','current',packageName]).catch(()=>''),
+      matches=listing.split(/\r?\n/).map(line=>line.trim().match(/^package:([^\s]+)\s+uid:(\d+)$/)).filter(match=>match&&match[1]===packageName);
+    if(matches.length===1)return Number(matches[0][2]);
+    if(matches.length>1)throw new Error('无法唯一确定目标应用 UID，请检查包名和系统权限');
+    // Android releases predating `cmd package list -U` expose the app ID in dumpsys.
+    const details=await this.shell(serial,['dumpsys','package',packageName]).catch(()=>''),appIdMatch=details.match(/^\s*userId=(\d+)\s*$/m);
+    if(!appIdMatch)throw new Error('无法确定目标应用的当前用户 UID，请检查包名和系统权限');
+    const userOutput=await this.shell(serial,['am','get-current-user']).catch(()=>''),userMatch=userOutput.trim().match(/^\d{1,5}$/);
+    if(!userMatch)throw new Error('设备未能报告当前 Android 用户，无法安全过滤应用 Logcat');
+    const uid=Number(appIdMatch[1])+Number(userMatch[0])*100000;
+    if(!Number.isSafeInteger(uid)||uid<=0)throw new Error('目标应用 UID 超出有效范围');
+    return uid;
+  }
   async networkAgentSnapshot(serial,packageName) {
     validateTarget(serial,packageName);
-    const listing=await this.shell(serial,['cmd','package','list','packages','-U','--user','current',packageName]);
-    const entries=listing.split(/\r?\n/).map(line=>line.trim().match(/^package:([^\s]+)\s+uid:(\d+)$/)).filter(Boolean);
-    const matches=entries.filter(match=>match[1]===packageName);
-    if(matches.length!==1)throw new Error('无法确定目标应用的当前用户 UID，请检查包名和系统权限');
-    const uid=matches[0][2];
-    const raw=await this.shell(serial,['logcat','-b','main','-t','10000','-v','raw',`--uid=${uid}`,'-s','APWNetwork:I'],{timeout:30000});
+    const uid=await this.packageUid(serial,packageName);
+    let raw,pid=null,processScope='uid';
+    try { raw=await this.shell(serial,['logcat','-b','main','-t','10000','-v','raw',`--uid=${uid}`,'-s','APWNetwork:I'],{timeout:30000}); }
+    catch(error) {
+      if(!/unrecognized option|unknown option/i.test(error.message))throw error;
+      const pids=(await this.shell(serial,['pidof',packageName])).trim().split(/\s+/).filter(value=>/^\d+$/.test(value));
+      if(!pids.length)throw new Error('设备 Logcat 不支持 UID 过滤，且目标应用主进程未运行，无法读取网络 Agent 事件');
+      pid=pids[0];processScope='main-process';
+      raw=await this.shell(serial,['logcat','-b','main','-t','10000','-v','raw',`--pid=${pid}`,'-s','APWNetwork:I'],{timeout:30000});
+    }
     const parsed=parseNetworkAgentLog(raw);
-    return {source:'adb',serial,packageName,uid:Number(uid),timestamp:Date.now(),...parsed,limit:10000};
+    return {source:'adb',serial,packageName,uid,pid:pid?Number(pid):null,processScope,timestamp:Date.now(),...parsed,limit:10000};
+  }
+  async composeRecompositionSnapshot(serial,packageName) {
+    validateTarget(serial,packageName);
+    return this.exclusive(serial,async()=>{
+      const pidOutput=await this.shell(serial,['pidof',packageName]),pids=pidOutput.trim().split(/\s+/).filter(pid=>/^\d+$/.test(pid));
+      if(!pids.length)throw new Error('目标应用主进程未运行，无法读取 Compose probe');
+      const pid=pids[0],raw=await this.shell(serial,['logcat','-b','main','-t','20000','-v','raw',`--pid=${pid}`,'-s','APWCompose:D'],{timeout:30000,maxBuffer:10*1024*1024});
+      return {...parseComposeRecompositionLog(raw,{serial,packageName,pid:Number(pid)}),processScope:'main'};
+    });
   }
   async info(serial) {
     const [model, version, api, abi] = await Promise.all(['ro.product.model', 'ro.build.version.release', 'ro.build.version.sdk', 'ro.product.cpu.abi']

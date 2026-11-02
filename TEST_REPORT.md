@@ -7,8 +7,15 @@
 - 5 项集成测试覆盖转发/清理、令牌拒绝、截图不可用与截断标记、受令牌保护的 API 和源码 ZIP 内容。Java 源码以 Android 31 `android.jar` 编译通过。
 - API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
 - Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。该 fixture 验证反射桥接和设备传输，不等于真实 Compose Runtime 集成验证；目标 Compose 应用仍须接入 Agent 后验证。
-- Agent 仍不提供 Composable 调用树、State Reads 或运行时重组计数；`View.draw` 对 Surface 等硬件层可能不完整。
-- 完整回归：213 项，198 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Agent 源码和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
+- Agent 本身不提供 Composable 调用树、自动 skip 计数或 State Reads；可选 probe 仅统计显式插桩的函数；`View.draw` 对 Surface 等硬件层可能不完整。
+- 完整回归：218 项，203 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Kotlin probe 和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
+
+## Compose Runtime probe（显式插桩）
+
+- 新增 `ApwComposeRecompositionProbe.kt`：Compose Compiler 2.2.21 + Compose Runtime/UI 1.11.1 编译通过。Probe 通过 `SideEffect` 记录每个插桩实例的调用计数、设备单调时钟与随机进程会话/实例 ID，不记录参数或 State 内容。
+- 桌面端按已选包主进程 PID 读取 `APWCompose:D` main Logcat，聚合本缓冲区当前进程会话中同名实例的最高累计计数；限制返回最近 500 条事件。API 25 不支持 Logcat `--uid`，因此该功能使用 `pidof` + `logcat --pid`，不覆盖目标应用独立子进程。
+- 4 项新增单测覆盖会话隔离、实例聚合、格式/大小边界、PID 命令和受令牌保护 API。API 25 临时应用输出 3 条对应 wire-format 记录，桌面 ADB 读取正确得出 `FeedScreen` 两个实例合计 5 次；这是设备上的传输/parser 验证，不是实际 Compose UI 运行时集成测试。测试 APK 已卸载并恢复原 Activity。
+- 同一兼容性修复还让网络 Agent 在旧版设备不支持 UID Logcat 过滤时回退到目标主进程 PID；新增一项回归测试验证该回退。
 
 ## Compose Compiler 稳定性报告导入
 

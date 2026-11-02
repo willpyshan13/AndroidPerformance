@@ -304,7 +304,7 @@ export class Adb {
     validateTarget(serial,packageName);
     return this.exclusive(serial,()=>captureLayoutFromAgent(this,serial,packageName,sharedToken));
   }
-  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u'], {frequencyHz=99,callGraph='fp',traceOffCpu=false}={}) {
+  async captureCpuProfile(serial, packageName, seconds=10, locator=locateDeviceSimpleperf, events=['cpu-clock:u'], {frequencyHz=99,callGraph='fp',traceOffCpu=false,signal}={}) {
     validateTarget(serial,packageName);
     if(!Number.isInteger(seconds)||seconds<3||seconds>30)throw new Error('采样时长须为 3–30 秒');
     if(!Array.isArray(events)||events.length<1||events.length>8||events.some(event=>typeof event!=='string'||event.length>160||!/^[A-Za-z0-9_./:-]+$/.test(event))||new Set(events).size!==events.length)throw new Error('采样事件须为 1–8 个有效且不重复的 simpleperf 事件名');
@@ -314,8 +314,9 @@ export class Adb {
     if(traceOffCpu&&(events.length!==1||!/^(?:cpu|task)-clock(?::u)?$/.test(events[0])))throw new Error('on/off-CPU 跟踪只支持单个 cpu-clock 或 task-clock 事件');
     return this.exclusive(serial,async()=>{
       const abi=(await this.shell(serial,['getprop','ro.product.cpu.abi'])).trim(),api=(await this.shell(serial,['getprop','ro.build.version.sdk'])).trim(),binary=await locator(abi,api),id=randomUUID();
-      const remoteBinary=`/data/local/tmp/apw-simpleperf-${id}`,remoteData=`/data/local/tmp/apw-profile-${id}.data`,local=join(tmpdir(),`apw-profile-${id}.data`);
+      const remoteBinary=`/data/local/tmp/apw-simpleperf-${id}`,remoteData=`/data/local/tmp/apw-profile-${id}.data`,remotePid=`/data/local/tmp/apw-simpleperf-${id}.pid`,local=join(tmpdir(),`apw-profile-${id}.data`);let cancelPromise=Promise.resolve(),recordStarted=false;
       try {
+        if(signal?.aborted)throw new Error('CPU 采样已取消');
         await this.run(['-s',serial,'push',binary,remoteBinary],{timeout:30000});
         await this.shell(serial,['chmod','755',remoteBinary]);
         if(traceOffCpu){
@@ -325,22 +326,28 @@ export class Adb {
         const recordArgs=[remoteBinary,'record','--app',packageName,'-e',events.join(','),'-f',String(frequencyHz),'--duration',String(seconds),'--call-graph',callGraph,...(traceOffCpu?['--trace-offcpu']:[]),'-o',remoteData];
         const quoted=recordArgs.map(arg=>`'${String(arg).replaceAll("'", "'\\''")}'`);
         let recordOutput='';
+        if(signal?.aborted)throw new Error('CPU 采样已取消');
+        const cancelRecord=()=>{if(!recordStarted)return;cancelPromise=this.shell(serial,[`i=0; while [ ! -s '${remotePid}' ] && [ "$i" -lt 20 ]; do sleep 0.1; i=$((i+1)); done; pid=$(cat '${remotePid}' 2>/dev/null); case "$pid" in ''|*[!0-9]*) exit 1;; esac; kill -INT "$pid"`],{timeout:10000,maxBuffer:1024*1024}).catch(()=>{});};
+        signal?.addEventListener('abort',cancelRecord,{once:true});
         try {
-          const result=await this.runner(this.path,['-s',serial,'shell',...quoted],{timeout:(seconds+45)*1000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});
+          recordStarted=true;
+          const shellCommand=`(${quoted.join(' ')} & echo $! > '${remotePid}'; wait $!)`;
+          const result=await this.runner(this.path,['-s',serial,'shell',shellCommand],{timeout:(seconds+45)*1000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});
           recordOutput=`${result.stdout||''}\n${result.stderr||''}`;
         } catch(error) {
           recordOutput=`${error.stdout||''}\n${error.stderr||''}`;
+          if(signal?.aborted)throw new Error('CPU 采样已取消');
           if(error.signal==='SIGKILL')throw new Error('ADB 被系统强制终止（SIGKILL），请检查程序签名或选择新下载的官方 Platform Tools；当前路径：'+this.path);
           const detail=error.stderr?.toString().trim()||error.message;
           throw new Error(error.code==='ENOENT'?'未找到 ADB，请设置 ADB_PATH 或安装 Android Platform Tools':`ADB 执行失败：${detail.slice(0,1200)}`);
-        }
+        } finally {recordStarted=false;signal?.removeEventListener('abort',cancelRecord);await cancelPromise;}
         const raw=(await this.shell(serial,['wc','-c',remoteData])).trim(),match=raw.match(/^(\d+)(?:\s|$)/),size=match?Number(match[1]):NaN;
         if(!Number.isSafeInteger(size)||size<8||size>256*1024*1024)throw new Error('采样文件为空或超过 256 MiB 上限');
         await this.run(['-s',serial,'pull',remoteData,local],{timeout:120000});
         const data=await readFile(local);if(data.length!==size||data.subarray(0,8).toString('ascii')!=='PERFILE2')throw new Error('设备未返回有效的 perf.data');
         return {data,diagnostics:{...parseSimpleperfDiagnostics(recordOutput),traceOffCpu}};
-      } catch(error) { throw new Error(`CPU 采样失败：${error.message}；目标通常需要可调试或可 profile，设备及内核也必须允许采样。`); }
-      finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData]),unlink(local)]);}
+      } catch(error) { if(signal?.aborted)throw new Error('CPU 采样已取消');throw new Error(`CPU 采样失败：${error.message}；目标通常需要可调试或可 profile，设备及内核也必须允许采样。`); }
+      finally {await Promise.allSettled([this.shell(serial,['rm','-f',remoteBinary,remoteData,remotePid]),unlink(local)]);}
     });
   }
   async captureArtMethodTrace(serial,packageName,seconds=10,samplingIntervalUs=1000,wait=delayWithSignal,signal){

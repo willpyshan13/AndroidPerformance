@@ -43,7 +43,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false, macrobenchmarkBusy=false, macrobenchmarkArtifacts=new Map();
   let gpuBusy=false;
-  let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;const artTraceCaptures=new Map();
+  let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;const artTraceCaptures=new Map(),cpuCaptures=new Map();
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
   const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):null)});
   const server = http.createServer(async (req, res) => {
@@ -432,8 +432,13 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(typeof body.captureId!=='string'||!/^[-\da-f]{36}$/i.test(body.captureId))throw new Error('ART trace capture ID 无效');const captureController=new AbortController();artTraceCaptures.set(body.captureId,captureController);res.once('close',()=>{if(!res.writableFinished)captureController.abort();});
           try{const data=await adb.captureArtMethodTrace(body.serial,body.packageName,body.seconds??10,body.samplingIntervalUs??1000,undefined,captureController.signal);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="art-method.trace"','X-Content-Type-Options':'nosniff'});return res.end(data);}finally{artTraceCaptures.delete(body.captureId);}
         }
+        if(path==='/api/cpu-profile/cancel'){
+          if(typeof body.captureId!=='string'||!/^[-\da-f]{36}$/i.test(body.captureId))throw new Error('CPU 采样任务 ID 无效');const active=cpuCaptures.get(body.captureId);if(!active)return json({error:'CPU 采样任务已结束'},404);active.abort();return json({cancelled:true});
+        }
         if (path === '/api/cpu-profile') {
-          const capture=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp',traceOffCpu:body.traceOffCpu??false});
+          if(typeof body.captureId!=='string'||!/^[-\da-f]{36}$/i.test(body.captureId))throw new Error('CPU 采样任务 ID 无效');const captureController=new AbortController();cpuCaptures.set(body.captureId,captureController);res.once('close',()=>{if(!res.writableFinished)captureController.abort();});
+          let capture;
+          try{capture=await adb.captureCpuProfile(body.serial,body.packageName,body.seconds,undefined,body.events??['cpu-clock:u'],{frequencyHz:body.frequencyHz??99,callGraph:body.callGraph??'fp',traceOffCpu:body.traceOffCpu??false,signal:captureController.signal});}finally{cpuCaptures.delete(body.captureId);}
           const data=Buffer.isBuffer(capture)?capture:capture.data;
           const diagnostics=Buffer.isBuffer(capture)?null:capture.diagnostics;
           const headers={ 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="perf.data"' };

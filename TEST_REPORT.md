@@ -515,3 +515,9 @@ npm run test:device -- \
 - CPU 页面新增独立 ART `.trace/.dmtrace` 导入入口；解析放在 module Worker 中运行，最多接受 256 MiB 文件，并限制事件、方法、线程及保留时间区间数量。支持标准 v1/v2/v3 与解析器覆盖的 v2/v3 streaming 格式，呈现线程调用时间线、调用次数、inclusive/self 时间及不完整调用提示；与 simpleperf 的 perf.data 采样证据分开展示。
 - 新增 `am profile` 设备采集：目标应用须已运行且 debuggable/profileable，可设置 3–30 秒和 100 µs–1 s 抽样间隔；采集中可取消，取消后先停止设备跟踪并清理远端 / 本地临时文件。成功结果校验 SLOW magic 与大小，再自动载入分析。
 - 回归覆盖嵌套调用、自身时间、v1/v2 记录宽度、unroll、streaming 内联元数据、尾部 clock summary（含 thread-cpu）、损坏头部和事件上限；模拟 ADB 与 HTTP API 测试覆盖启停命令、取消、采样设置、产物返回及清理。全量套件：318 项，302 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接的 ADB 设备，尚未用真机导出文件核对格式兼容性和设备权限。新增 CPU JSON 报告导出，区分 simpleperf 权重与 ART 方法计时，报告限制 Top 函数 / 方法 1,000 行、线程 1,000 个及 ART 调用区间 2,000 条。报告结构与截断边界通过回归。历史 macOS packaged smoke 的 Electron 启动 SIGABRT 未在本功能中复测。
+
+## simpleperf 采集取消（2026-11-03）
+
+- CPU 采集中加入取消入口。采集任务通过唯一 PID 文件定位设备端 simpleperf，仅向本次进程发送 SIGINT；原采集请求保持等待，直到 ADB shell 退出后再清理远端二进制、perf.data、PID 文件及本机临时文件，最后释放设备锁。启动准备阶段收到取消会在开始记录前退出。
+- ADB 回归验证取消信号到达指定 PID 命令、记录请求结束、临时文件清理和采集锁释放；HTTP 回归验证取消 ID 仅中止相应活动任务。定向 CPU / HTTP 测试 34 项通过；完整套件 320 项，304 通过、0 失败、16 项可选官方样本跳过。`npm run check` 和 `git diff --check` 通过。
+- 当前没有连接的 ADB 设备，因此设备端 SIGINT 在不同 Android shell / simpleperf 版本上的行为仍待真机确认。

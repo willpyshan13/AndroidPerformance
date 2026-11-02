@@ -39,8 +39,22 @@ test('CPU profile capture validates perf magic and cleans both copies',async()=>
  const adb=new Adb('adb',async(_path,args)=>{calls.push(args);const cmd=args.join(' ');if(cmd.includes('ro.product.cpu.abi'))return {stdout:'arm64-v8a'};if(cmd.includes('ro.build.version.sdk'))return {stdout:'25'};if(cmd.includes("'record'"))return {stdout:'Samples recorded: 12 (cut 2). Samples lost: 1\n3 with truncated stacks.'};if(cmd.includes("'wc'"))return {stdout:'12 /tmp/data'};if(args.includes('pull')){local=args.at(-1);await writeFile(local,Buffer.from('PERFILE2test'));}return {stdout:''};});
  const data=await adb.captureCpuProfile('ABC','com.example.app',5,async(abi,api)=>{assert.equal(abi,'arm64-v8a');assert.equal(api,'25');return '/fake/simpleperf';},['cpu-clock:u','cpu-cycles:u','instructions:u'],{frequencyHz:499,callGraph:'dwarf'});
  assert.equal(data.data.toString(),'PERFILE2test');assert.deepEqual(data.diagnostics,{samplesRecorded:12,samplesCut:2,samplesLost:1,kernelSamplesLost:null,userSamplesLost:null,truncatedStacks:3,available:true,traceOffCpu:false});await assert.rejects(access(local));assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
- const record=calls.find(args=>args.join(' ').includes("'record'"));assert.ok(record);const eventIndex=record.indexOf("'-e'");assert.equal(record[eventIndex+1],"'cpu-clock:u,cpu-cycles:u,instructions:u'");assert.equal(record[record.indexOf("'-f'")+1],"'499'");assert.equal(record[record.indexOf("'--call-graph'")+1],"'dwarf'");
+ const record=calls.find(args=>args.join(' ').includes("'record'"));assert.ok(record);const recordCommand=record.at(-1);assert.match(recordCommand,/\'-e\' \'cpu-clock:u,cpu-cycles:u,instructions:u\'/);assert.match(recordCommand,/\'-f\' \'499\'/);assert.match(recordCommand,/\'--call-graph\' \'dwarf\'/);
  const before=calls.length;for(const events of [[],Array(9).fill('cpu-clock'),['cpu-clock','cpu-clock'],['cpu-clock;id']])await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf',events),/simpleperf 事件名/);for(const frequencyHz of [0,-1,4001,99.5])await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf',['cpu-clock:u'],{frequencyHz}),/采样频率/);for(const callGraph of ['bad','dwarf;id'])await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf',['cpu-clock:u'],{callGraph}),/调用栈展开/);assert.equal(calls.length,before);
+});
+
+test('CPU profile cancellation interrupts only its remote simpleperf process and waits for cleanup',async()=>{
+ const calls=[],controller=new AbortController();let finishRecord;
+ const adb=new Adb('adb',async(_path,args)=>{
+  calls.push(args);const command=args.join(' ');
+  if(command.includes('ro.product.cpu.abi'))return {stdout:'arm64-v8a'};
+  if(command.includes('ro.build.version.sdk'))return {stdout:'34'};
+  if(command.includes('wait $!'))return new Promise((_resolve,reject)=>{finishRecord=()=>reject(Object.assign(new Error('interrupted'),{code:130}));setTimeout(()=>controller.abort(),5);});
+  if(command.includes('kill -INT')){assert.match(args.at(-1),/apw-simpleperf-[\da-f-]+\.pid/);finishRecord();return {stdout:''};}
+  return {stdout:''};
+ });
+ await assert.rejects(adb.captureCpuProfile('ABC','com.example.app',5,async()=>'/fake/simpleperf',['cpu-clock:u'],{signal:controller.signal}),/CPU 采样已取消/);
+ assert.ok(calls.some(args=>args.at(-1)?.includes('kill -INT')));assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
 });
 
 test('off-CPU capture requires one clock event and a device-reported tracepoint feature',async()=>{

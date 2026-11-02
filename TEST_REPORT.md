@@ -442,5 +442,6 @@ npm run test:device -- \
 
 - CPU timeline now builds per-bin and chronological sample indexes when loading up to 50,000 samples. Bin selection uses only that bin's candidates; arbitrary time-range selection uses binary search over timestamps and processes only samples inside the selected range.
 - Added regression coverage for unsorted timestamps, duplicate and inclusive boundaries, thread filtering, and a guard that fails if bin/range interaction scans the full sample list. The original `timeNs` string is retained for monotonic-clock FrameTimeline correlation.
+- Reverse-call-tree traversal now keeps parent pointers instead of copying an ancestor array for every visited node; a deep, highly fragmented tree fixture verifies caller weights and match totals.
 - This verifies query behavior and index use, not end-to-end browser rendering performance on large or highly fragmented real profiles; that benchmark remains open.
-- CPU-specific tests: 15 passed. Full suite: 294 tests, 278 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.
+- CPU-specific tests: 16 passed. Full suite: 295 tests, 279 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.

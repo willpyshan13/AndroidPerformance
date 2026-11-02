@@ -371,14 +371,14 @@ export function parseFoldedStacks(text) {
 // are counted separately, just as in the function summary.
 export function reverseCallTree(scope, symbol) {
   if(!scope||typeof symbol!=='string'||!symbol)throw new Error('请选择有效函数');
-  const root={name:symbol,weight:0,children:[]},lookup=new WeakMap(),stack=[{node:scope,ancestors:[]}];let matches=0,created=1;
+  const root={name:symbol,weight:0,children:[]},lookup=new WeakMap(),parents=new WeakMap([[scope,null]]),stack=[scope];let matches=0,created=1;
   while(stack.length){
-    const {node,ancestors}=stack.pop();
+    const node=stack.pop();
     if(node.name===symbol){
       matches++;root.weight+=node.weight;if(!Number.isSafeInteger(root.weight))throw new Error('反向调用树权重超出安全范围');
-      let target=root;for(let i=ancestors.length-1;i>=0;i--){const name=ancestors[i].name;let map=lookup.get(target);if(!map){map=new Map();lookup.set(target,map);}let next=map.get(name);if(!next){if(++created>100000)throw new Error('反向调用树超过 100,000 个节点');next={name,weight:0,children:[]};map.set(name,next);target.children.push(next);}next.weight+=node.weight;target=next;}
+      let target=root;for(let caller=parents.get(node);caller;caller=parents.get(caller)){const name=caller.name;let map=lookup.get(target);if(!map){map=new Map();lookup.set(target,map);}let next=map.get(name);if(!next){if(++created>100000)throw new Error('反向调用树超过 100,000 个节点');next={name,weight:0,children:[]};map.set(name,next);target.children.push(next);}next.weight+=node.weight;if(!Number.isSafeInteger(next.weight))throw new Error('反向调用树权重超出安全范围');target=next;}
     }
-    for(let i=node.children.length-1;i>=0;i--)stack.push({node:node.children[i],ancestors:[...ancestors,node]});
+    for(let i=node.children.length-1;i>=0;i--){const child=node.children[i];parents.set(child,node);stack.push(child);}
   }
   const pending=[root];while(pending.length){const node=pending.pop();node.children.sort((a,b)=>b.weight-a.weight);for(const child of node.children)pending.push(child);}
   return {root,matches};

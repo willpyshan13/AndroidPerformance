@@ -110,3 +110,9 @@ test('reverse callers aggregate inclusive weights, respect scope and count recur
  const main=p.root.children.find(n=>n.name==='main');const scoped=reverseCallTree(main,'target');assert.equal(scoped.root.weight,9);
  assert.equal(reverseCallTree(p.root,'absent').matches,0);
 });
+test('reverse callers traverse deep, highly fragmented trees without losing caller weights',async()=>{
+ const {reverseCallTree}=await import('../public/offline.js'),matches=2000,root={name:'root',weight:matches,children:[]};let parent=root;
+ for(let i=0;i<80;i++){const child={name:`caller-${i}`,weight:matches,children:[]};parent.children.push(child);parent=child;}
+ parent.children=Array.from({length:matches},(_,i)=>({name:'target',weight:1,children:[],leaf:i}));
+ const result=reverseCallTree(root,'target');assert.equal(result.matches,matches);assert.equal(result.root.weight,matches);assert.equal(result.root.children[0].name,'caller-79');assert.equal(result.root.children[0].weight,matches);
+});

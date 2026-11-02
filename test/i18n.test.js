@@ -131,6 +131,16 @@ test('Benchmark page has English translations for every literal Chinese label an
   assert.deepEqual(untranslated,[]);
 });
 
+test('independent Benchmark experiment comparison localizes its statistical limits',()=>{
+  const guidance=[
+    '每份单独保存的 AndroidX 报告作为一个实验单位，使用该报告指标中位数做 95% 百分位 Bootstrap 区间；每侧至少 5 份，最多 100 份。请选不同的独立测试运行，不要把同一报告中的 iterations 当作独立实验。区间是探索性估计，不是 p 值、不证明因果；应用无法确认实验是否真正独立。',
+    '每份独立保存的 JSON 报告为一个实验单位；报告内部迭代先聚合为该报告中位数。区间使用两组报告中位数的独立重抽样，不将单份报告的 runs 展开成实验样本。它是探索性 95% Bootstrap 区间，不是 p 值或因果结论；是否独立由你根据运行过程核实。',
+  ];
+  assert.equal(translate('独立实验组不确定性','en-US'),'Independent Experiment Uncertainty');
+  assert.equal(translate('分析独立实验组','en-US'),'Analyze independent experiment groups');
+  assert.deepEqual(guidance.filter(text=>translate(text,'en-US')===text),[]);
+});
+
 test('APK analysis page and its data-driven file categories have English labels and evidence guidance',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function apkKeyValues'),end=app.indexOf('\nfunction sessionTable',start),source=app.slice(start,end);
   const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)))];

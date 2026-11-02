@@ -290,6 +290,27 @@ export function benchmarkContextWarnings(baseline,current) {
   return fields.flatMap(([label,get])=>{const a=get(baseline.context||{}),b=get(current.context||{});return a===undefined||a===null||b===undefined||b===null?[`${label}缺失`]:a!==b?[`${label}不一致`]:[];});
 }
 
+// Treat separately saved AndroidX reports as the experiment units. Iterations
+// inside one report are not promoted to independent experiments.
+export function benchmarkExperimentUncertainty(baselineReports,currentReports,key,{resamples=5000,minExperiments=5,maxExperiments=100}={}){
+ if(!Array.isArray(baselineReports)||!Array.isArray(currentReports)||!baselineReports.length||!currentReports.length||baselineReports.length>maxExperiments||currentReports.length>maxExperiments||typeof key!=='string'||!key||!Number.isInteger(resamples)||resamples<1000||resamples>20000||!Number.isInteger(minExperiments)||minExperiments<2||minExperiments>20)throw new Error('独立实验统计参数无效');
+ const collect=reports=>reports.flatMap(report=>{
+  if(!report||!Array.isArray(report.results))return [];
+  const rows=report.results.filter(row=>row?.key===key);
+  return rows.length===1&&Number.isFinite(rows[0].median)?[rows[0].median]:[];
+ });
+ const before=collect(baselineReports),after=collect(currentReports),middle=values=>{const sorted=[...values].sort((a,b)=>a-b);return sorted.length%2?sorted[(sorted.length-1)/2]:sorted[sorted.length/2-1]/2+sorted[sorted.length/2]/2;};
+ if(!before.length||!after.length)return {available:false,reason:'至少一侧没有唯一且有效的报告级指标',baselineExperiments:before.length,currentExperiments:after.length};
+ const baselineMedian=middle(before),currentMedian=middle(after),deltaPercent=baselineMedian===0?null:(currentMedian-baselineMedian)/Math.abs(baselineMedian)*100;
+ if(before.length<minExperiments||after.length<minExperiments||baselineMedian===0)return {available:false,reason:baselineMedian===0?'基线中位数为零，不能计算相对区间':minExperiments===5?'每侧至少需要 5 份独立报告':`每侧至少需要 ${minExperiments} 份独立报告`,baselineExperiments:before.length,currentExperiments:after.length,baselineMedian,currentMedian,deltaPercent,lowerPercent:null,upperPercent:null,resamples:0,method:'独立报告中位数的百分位 Bootstrap'};
+ let seed=2166136261;for(const ch of `${key}|${before.join(',')}|${after.join(',')}`)seed=Math.imul(seed^ch.charCodeAt(0),16777619)>>>0;
+ const random=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return (seed>>>0)/4294967296;},sampleMedian=values=>{const sample=Array.from({length:values.length},()=>values[Math.floor(random()*values.length)]);return middle(sample);},distribution=[];
+ for(let i=0;i<resamples;i++){const b=sampleMedian(before),c=sampleMedian(after);if(b!==0)distribution.push((c-b)/Math.abs(b)*100);}
+ if(distribution.length<resamples*.95)return {available:false,reason:'重抽样中基线中位数过多为零，无法估计相对区间',baselineExperiments:before.length,currentExperiments:after.length,baselineMedian,currentMedian,deltaPercent,lowerPercent:null,upperPercent:null,resamples:distribution.length,method:'独立报告中位数的百分位 Bootstrap'};
+ distribution.sort((a,b)=>a-b);const quantile=p=>distribution[Math.max(0,Math.ceil(distribution.length*p)-1)];
+ return {available:true,baselineExperiments:before.length,currentExperiments:after.length,baselineMedian,currentMedian,deltaPercent,lowerPercent:quantile(.025),upperPercent:quantile(.975),resamples:distribution.length,method:'独立报告中位数的百分位 Bootstrap',seeded:true};
+}
+
 // HPROF object IDs are snapshot-local. Match unambiguous class names only.
 export function compareHeaps(baseline, current) {
   const group = heap => {

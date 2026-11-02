@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary} from '../public/offline.js';
+import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary,benchmarkExperimentUncertainty} from '../public/offline.js';
 import {validateRecord} from '../src/records.js';
 const benchmark=(params,metrics={time:{runs:[1,3]}})=>({name:'test',className:'Example',params,metrics});
 const parse=(benchmarks,context={})=>parseBenchmark({context,benchmarks});
@@ -55,4 +55,15 @@ test('sampled metrics preserve iteration boundaries and describe recorded distri
  const payload={...parse([input]),source:'import',fileName:'run.json'};assert.doesNotThrow(()=>validateRecord({kind:'benchmark',source:'import',payload}));
  payload.results.find(r=>r.metricType==='sampledMetrics').sampleGroups[0][0]=99;assert.throws(()=>validateRecord({kind:'benchmark',source:'import',payload}),/分组/);
  const old={...row};delete old.sampleGroups;assert.equal(benchmarkSampleSummary(old).groups,null);
+});
+
+test('experiment-level Benchmark uncertainty uses saved reports as units and deterministic bootstrap intervals',()=>{
+ const key='time',report=value=>({results:[{key,median:value}]}),baseline=[99,100,101,102,103].map(report),current=[109,110,111,112,113].map(report);
+ const estimate=benchmarkExperimentUncertainty(baseline,current,key),again=benchmarkExperimentUncertainty(baseline,current,key);
+ assert.equal(estimate.available,true);assert.equal(estimate.baselineExperiments,5);assert.equal(estimate.currentExperiments,5);assert.ok(Math.abs(estimate.deltaPercent-9.900990099)<1e-9);
+ assert.ok(estimate.lowerPercent>0);assert.ok(estimate.upperPercent>=estimate.lowerPercent);assert.deepEqual(estimate,again);assert.equal(estimate.resamples,5000);
+ assert.equal(benchmarkExperimentUncertainty([report(100)],current,key).reason,'每侧至少需要 5 份独立报告');
+ assert.equal(benchmarkExperimentUncertainty([report(0),report(0),report(0),report(0),report(0)],current,key).reason,'基线中位数为零，不能计算相对区间');
+ const duplicate={results:[{key,median:100},{key,median:101}]};assert.equal(benchmarkExperimentUncertainty([duplicate,...baseline.slice(1)],current,key).baselineExperiments,4);
+ assert.throws(()=>benchmarkExperimentUncertainty(baseline,current,key,{resamples:10}),/参数无效/);
 });

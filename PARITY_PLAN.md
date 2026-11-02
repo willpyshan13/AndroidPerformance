@@ -2,7 +2,7 @@
 
 目标：对齐 AndroidPerformanceStudio 公布的用户功能，同时保留现有 APK 分析。以下状态按本项目实际能力记录；实现后须附上验证结果及设备限制。
 
-界面语言：已加入简体中文 / English 切换并持久化到桌面设置；导航、设备栏、外观设置和部分说明已本地化。分析模块大部分界面仍为中文，英文界面尚未完成；AI 分析按用户决定不实现。
+界面语言：已加入简体中文 / English 切换并持久化到桌面设置；导航、设备栏、外观设置、首页字段和分析页静态标题、字段及说明已本地化。分析模块大部分界面仍为中文，英文界面尚未完成；AI 分析按用户决定不实现。
 
 | 模块 | 当前状态 | 待完成 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 | GPU | 本机产物索引、SHA-256 完整性校验、追踪分析交接，桌面端选择与启动 AGI、校验后交接帧捕获、读取设备声明的 Vulkan/OpenGL ES 能力；复制与模拟 ADB 验证 | AGI 实际打开产物、真机捕获、兼容性与完整关联验证 |
 | Benchmark | AndroidX JSON 参数与指标类型匹配、重复标识保护、设备及运行环境差异提示、预热与重复次数和热降频等待信息、样本分布、sampledMetrics 迭代分组、历史运行和 JSON 报告；已安装的 benchmark instrumentation 运行、标准报告更新时间和大小检查、仅在本次报告更新后自动读取及按路径回读，AndroidX 官方 Macro/Micro 报告和模拟 ADB 验证 | 真机 benchmark 执行、自动获取和校验追踪、独立实验级统计检验及不确定性分析、完整 Macrobenchmark 编排 |
 | 源码工作区 | 本地及 GitHub/AOSP 只读快照、提交标识、校验、文本检索和查看，CPU 和布局类的 Java/Kotlin 声明候选关联；公开仓库及 API 验证，本地服务界面验证创建快照、声明定位及上下文查看 | 原生桌面界面与目录选择验证、更多远程版本与网络环境验证、精确符号解析和更多证据关联 |
-| 界面与发布 | 简体中文与进行中的 English 本地化（导航、设备栏、设置、首页字段及分析页静态标题和说明）；系统/浅色/深色主题、90–120% 界面缩放并保存到 Electron 本机配置；GitHub Actions 原生 runner 全绿并上传 macOS arm64/x64 DMG、Windows x64 NSIS EXE、Linux x64 AppImage；Windows Java runtime 以归档打包并在首次启动时解压，解压路径安全与缓存复用单测通过；Trace Processor 已增加 macOS x64、Windows x64、Linux x64/arm64 校验资源；全量测试 244 项中 228 通过、16 个外部样本测试跳过 | 全面英文界面、本机安装启动和 Windows runtime 实际启动验证、Linux arm64 安装包（当前官方 Linux SDK 缺少原生 ARM64 AAPT2）、Apple Developer 签名与公证 |
+| 界面与发布 | 简体中文与进行中的 English 本地化（导航、设备栏、设置、首页字段及分析页静态标题和说明）；系统/浅色/深色主题、90–120% 界面缩放并保存到 Electron 本机配置；GitHub Actions 原生 runner 全绿并上传 macOS arm64/x64 DMG、Windows x64 NSIS EXE、Linux x64 AppImage；Windows Java runtime 以归档打包并在首次启动时解压，解压路径安全与缓存复用单测通过；Trace Processor 已增加 macOS x64、Windows x64、Linux x64/arm64 校验资源；全量测试 245 项中 229 通过、16 个外部样本测试跳过 | 全面英文界面、本机安装启动和 Windows runtime 实际启动验证、Linux arm64 安装包（当前官方 Linux SDK 缺少原生 ARM64 AAPT2）、Apple Developer 签名与公证 |
 | APK | 分析单个 APK | 保留现有功能 |
 
 各模块应基于真实证据展示可用性；设备权限、Android 版本或工具缺失时明确提示，不伪造数据。完整 Compose、网络采集与能耗归因需满足目标应用和设备的具体条件。

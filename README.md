@@ -95,7 +95,7 @@ npm run package:win:installers      # Windows x64 NSIS + MSI
 npm run package:linux:installers   # Linux x64 AppImage + DEB + RPM
 ```
 
-GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 尚未进入打包矩阵：本轮检查的 Google Maven 官方 Linux AAPT2 是 x86-64 ELF；目前没有已验证的 ARM64 AAPT2 方案，所以不能在不牺牲 APK 分析能力的情况下发布该架构。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)；Windows runtime 解压仍需安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
+GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 原生 runner 打包 job 已加入：使用 Ubuntu arm64 的 ADB 与 AAPT2，并在解包后的 DEB 中执行实际 APK 分析冒烟验证；该 job 尚未取得 CI 结果，因此当前不将 Linux arm64 标记为已验证发布平台。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)；Windows runtime 解压已通过 MSI 安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
 
 ## 数据与隐私
 

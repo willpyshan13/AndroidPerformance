@@ -438,6 +438,14 @@ npm run test:device -- \
 - smoke 暴露本机服务未开放 `/i18n.js`：入口脚本因此没有渲染导航。已补静态资源路由，并新增 HTTP 回归测试检查入口的模块依赖；当前全量测试 293 项，277 通过、0 失败、16 个可选官方样本测试跳过，`npm run check` 通过。
 - 获批 host 桌面上的开发模式 Electron smoke 返回 16 个导航项，且主视图已渲染。沙盒内 Electron 的 SIGABRT 仍说明该受限运行环境不适用于可见桌面启动测试。
 
+
+## Linux arm64 桌面包与 APK 工具（2026-11-03）
+
+- GitHub Actions 增加 Ubuntu 24.04 arm64 原生打包 job。准备脚本将 Ubuntu 的 ADB、AAPT2 及非 glibc 运行库、copyright 文件加入应用资源；DEB 元数据声明 Ubuntu 24.04 的 glibc 最低版本。
+- 加入真实 AAPT2 smoke：构造最小 APK 并调用现有分析器核对包名、应用标签、minSdk 与清单 ZIP 项。本机使用 Android SDK AAPT2 运行通过；解析结果为 `dev.apw.smoke`、minSdk 21。
+- 加入提取 DEB 后的包内 smoke：检查 ADB/AAPT2 与许可证文件，从提取路径启动 ADB，并用包内 AAPT2 重新执行 APK 分析。该脚本须由原生 Linux arm64 CI 运行；当前执行环境无法访问 GitHub Actions 日志，故不能声称 arm64 安装包已验证。
+- 本轮 `npm test`：328 项，312 通过、0 失败、16 个可选官方样本测试跳过；`npm run check` 和 `git diff --check` 通过。当前 ADB 主机权限下 `adb devices -l` 可运行，但没有列出设备，因此真机专属检查待设备重新连接。
+
 ## CPU sample interaction indexing（2026-11-03）
 
 - CPU timeline now builds per-bin and chronological sample indexes when loading up to 50,000 samples. Bin selection uses only that bin's candidates; arbitrary time-range selection uses binary search over timestamps and processes only samples inside the selected range.

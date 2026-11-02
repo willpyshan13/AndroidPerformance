@@ -148,3 +148,16 @@ test('Battery analysis page has English labels, history errors, and sampling gui
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Frame analysis page has English labels and distinguishes gfxinfo, FrameTimeline, and Compose evidence',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderFrames()'),end=app.indexOf('\nfunction renderStartup()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '数据来自 dumpsys gfxinfo framestats 的有限历史缓冲区；仅统计 Flags=0 且时间戳有效的帧。超过所选预算的帧数是参考信号，不等同于平台 Jank、FPS 或刷新率检测。',
+    '使用追踪内 CLOCK_MONOTONIC 快照将 Probe uptime 纳秒映射至 Perfetto 时间轴，再按事件是否落入实际帧区间匹配。需要同一设备的 Compose Probe 日志和含 FrameTimeline 的追踪；应用不能验证两个来源的设备身份。时间重合不证明 State 更新导致该帧或 Jank。旧版 elapsedRealtime 时间戳不会参与匹配。',
+    '读取当前已导入追踪的实际帧时间线；Android 12 及以上且追踪包含 FrameTimeline 数据时才有结果。这里展示系统原始 Jank 类型和呈现状态，与 gfxinfo 的自选预算分组不是同一指标。多图层或同一帧的多条记录不会自动合并。完成时差是实际结束减预期结束；仅在进程、令牌和图层对应唯一时计算，不代表实际显示时间或平台 Jank 。最多读取最早 2,000 条。',
+    '仅按系统报告的 App / SurfaceFlinger CPU / GPU Deadline Missed 分类分组：同一轨道相邻记录、起始时间间隔不超过 100 ms 且连续出现至少两次。不同轨道分开；截断追踪可能遗漏记录，不推断原因。',
+    '同一 PROFILEDATA 段中，原始记录相邻、起始时间相差不超过 100 ms 的两个或更多超预算帧归为一组。被跳过的帧和不同段会打断分组；这不是平台 Jank 或因果判断。旧记录或演示数据缺少原始顺序时不分组。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

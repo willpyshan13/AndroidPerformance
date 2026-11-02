@@ -371,6 +371,7 @@ const toastEn={
  '帧期间的进程线程状态':'Process thread states during frames',
  '线程状态区间':'Thread state intervals',
  'Binder 事务':'Binder transactions',
+ 'GPU 追踪诊断':'GPU trace diagnostics',
  'Deadline Missed 记录':'Deadline Missed records',
  'Binder 同步事务阶段':'Synchronous Binder transaction phases',
  'FrameTimeline 记录':'FrameTimeline records',

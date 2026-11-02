@@ -350,3 +350,11 @@ npm run test:device -- \
 
 - API 25 / rk3399-all / `com.will.calendar.demo`：设备和应用发现、三次实时监视、连续进程 CPU、gfxinfo 读取与文本导入、79 节点布局和 266,343 字节截图、HAR 脱敏、Benchmark 对比、4 类记录持久化读回、远端 XML 清理及采集锁释放均通过。
 - Perfetto 录制按设备能力正确返回 unsupported（该 Android 7.1.2 设备无 `perfetto`）；设备冒烟合计 11 项通过、1 项不支持、1 项因未允许应用控制而跳过。报告写入 `/private/tmp/apw-device-smoke/report.json`，未控制目标应用启动或重置帧统计。
+
+
+## GPU 追踪诊断（2026-11-03）
+
+- 新增本机 Trace Processor 查询：GPU RenderStage、GPU 频率原始值、按进程 GPU 内存；每类数据独立报告是否可用与结果截断状态，不从空轨道推断为零。
+- 以 Trace Processor v59.1 在无 GPU 数据的合成追踪中执行三类查询，确认标准查询表存在并返回空结果；另以合成 CSV 验证文本解码、进程信息、时间精度和缺失轨道处理。
+- 完整测试：273 项，257 通过、0 失败、16 个可选外部样本测试因未配置而跳过；`npm run check` 通过。
+- 未验证真实设备驱动轨道、GPU RenderStage 与 FrameTimeline 的跨轨道关联；队列事件可能并行，累计持续时间不等于墙钟耗时。

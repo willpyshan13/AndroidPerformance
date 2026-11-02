@@ -162,6 +162,21 @@ test('startup breakdown preserves exclusive interval evidence and rejects invali
  const result=parseStartupBreakdown(csv);assert.deepEqual(result.summary,[{reason:'binder',durationNs:'300',count:2}]);assert.equal(result.intervals[0].tsNs,'9007199254740993');
  await assert.rejects(()=>queryStartupBreakdown('/trace',{startupId:'0 OR 1=1'}),/标识无效/);await assert.rejects(()=>queryStartupBreakdown('/trace',{startupId:'9223372036854775808'}),/标识无效/);
 });
+test('startup ART attribution clips observed GC, JIT, class loading and dex2oat slices to TTID/TTFD phases',async t=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const path=new URL('../fixtures/trace-startup-art.json',import.meta.url).pathname,{queryStartupArtAttribution,parseStartupArtAttribution}=await import('../src/trace-analysis.js');
+ const process=await queryTraceSql(path,{sql:'SELECT CAST(upid AS TEXT) AS upid FROM process WHERE pid=101'});assert.equal(process.rows.length,1);
+ const startup={tsNs:'2000000',ttidNs:'7000000',ttfdNs:'15000000',upid:process.rows[0][0]},result=await queryStartupArtAttribution(path,{startup});
+ assert.deepEqual(result.groups.map(x=>[x.phase,x.category,x.totalOverlapNs,x.count]),[
+  ['launch_to_ttid','gc','1000000',1],['launch_to_ttid','jit','2000000',1],
+  ['ttid_to_ttfd','class_loading','1000000',1],['ttid_to_ttfd','class_verification','2000000',1],
+  ['ttid_to_ttfd','class_initialization','1000000',1],['ttid_to_ttfd','dex2oat','3000000',1],
+ ]);
+ const hex=value=>Buffer.from(value).toString('hex');const parsed=parseStartupArtAttribution(`"phase_hex","category_hex","ts_ns","dur_ns","name_hex","process_hex"\n"${hex('launch_to_ttid')}","${hex('jit')}","5000000","2000000","${hex('JIT compiling Foo')}","${hex('com.example')}"\n`);
+ assert.equal(parsed.groups[0].names[0],'JIT compiling Foo');assert.equal(parsed.groups[0].totalOverlapNs,'2000000');
+ await assert.rejects(queryStartupArtAttribution(path,{startup:{...startup,upid:'1 OR 1=1'}}),/参数无效/);
+ await assert.rejects(queryStartupArtAttribution(path,{startup:{...startup,ttfdNs:'100'}}),/参数无效/);
+});
 test('real Android startup breakdown exposes observed Perfetto classifications',async t=>{
  const path=process.env.APW_STARTUP_TRACE;if(!path){t.skip('设置 APW_STARTUP_TRACE 指向 Perfetto 官方 Android 样本');return;}
  const {queryStartupBreakdown}=await import('../src/trace-analysis.js');const result=await queryStartupBreakdown(path,{startupId:'0'});

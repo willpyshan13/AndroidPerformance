@@ -284,6 +284,43 @@ export async function queryStartupBreakdown(path,{startupId,locator=locateTraceP
  const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`启动阶段查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseStartupBreakdown(result.stdout);
 }
 
+export function parseStartupArtAttribution(csv){
+ const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='phase_hex,category_hex,ts_ns,dur_ns,name_hex,process_hex')throw new Error('ART 启动归因返回列无效');
+ const decode=hex=>{if(!/^(?:[0-9A-Fa-f]{2})*$/.test(hex))throw new Error('ART 启动归因文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
+ const groups=new Map();for(const row of rows){if(row.length!==6||! /^-?\d+$/.test(row[2])||! /^\d+$/.test(row[3]))throw new Error('ART 启动归因数值无效');
+  const phase=decode(row[0]),category=decode(row[1]);if(!['launch_to_ttid','ttid_to_ttfd'].includes(phase)||!['gc','jit','class_loading','class_verification','class_initialization','dex2oat'].includes(category))throw new Error('ART 启动归因分类无效');
+  const key=`${phase}\0${category}`;let group=groups.get(key);if(!group){group={phase,category,totalOverlapNs:0n,count:0,names:[],processes:[]};groups.set(key,group);}group.totalOverlapNs+=BigInt(row[3]);group.count++;
+  const name=decode(row[4]),process=decode(row[5]);if(name&&!group.names.includes(name)&&group.names.length<5)group.names.push(name);if(process&&!group.processes.includes(process)&&group.processes.length<5)group.processes.push(process);
+ }
+ const phases=['launch_to_ttid','ttid_to_ttfd'],categories=['gc','jit','class_loading','class_verification','class_initialization','dex2oat'];return {groups:[...groups.values()].map(g=>({...g,totalOverlapNs:g.totalOverlapNs.toString()})).sort((a,b)=>phases.indexOf(a.phase)-phases.indexOf(b.phase)||categories.indexOf(a.category)-categories.indexOf(b.category)),truncated:rows.length>1000};
+}
+export async function queryStartupArtAttribution(path,{startup,locator=locateTraceProcessor,runner=exec}={}){
+ const decimal=(value,signed=false)=>typeof value==='string'&&(signed?/^-?\d{1,19}$/:/^\d{1,19}$/.test(value));
+ if(!startup||!decimal(startup.tsNs,true)||!decimal(startup.ttidNs)||!decimal(startup.ttfdNs)||!decimal(startup.upid)||BigInt(startup.upid)<1n||BigInt(startup.ttfdNs)<BigInt(startup.ttidNs)||BigInt(startup.ttfdNs)-BigInt(startup.ttidNs)>120_000_000_000n)throw new Error('ART 启动归因参数无效或缺少 TTID/TTFD');
+ const min=-(1n<<63n),max=(1n<<63n)-1n,start=BigInt(startup.tsNs),initial=BigInt(startup.ttidNs),full=BigInt(startup.ttfdNs),upid=BigInt(startup.upid),ttid=start+initial,ttfd=start+full;
+ if(start<min||start>max||initial>max||full>max||upid>max||ttid<min||ttid>max||ttfd<min||ttfd>max)throw new Error('ART 启动归因数值超出 Trace Processor 范围');
+ const query=`WITH phases AS (
+ SELECT 'launch_to_ttid' AS phase,${start.toString()} AS start_ns,${ttid.toString()} AS end_ns
+ UNION ALL SELECT 'ttid_to_ttfd',${ttid.toString()},${ttfd.toString()}
+), candidates AS (
+ SELECT s.ts,s.dur,s.name,t.name AS thread_name,p.name AS process_name,
+ CASE WHEN lower(p.name) GLOB '*dex2oat*' THEN 'dex2oat'
+ WHEN s.name GLOB 'JIT compiling*' THEN 'jit'
+ WHEN s.name GLOB 'VerifyClass*' OR s.name GLOB '*Class verification*' THEN 'class_verification'
+ WHEN s.name GLOB '*InitializeClass*' OR s.name GLOB '*Class initialization*' THEN 'class_initialization'
+ WHEN s.name GLOB 'ClassLinker*' OR s.name GLOB 'OpenDexFilesFromOat*' OR s.name GLOB '*LoadClass*' THEN 'class_loading'
+ WHEN lower(s.name) GLOB '* garbage collection*' OR lower(s.name) GLOB '* gc' OR lower(s.name) GLOB '* gc *' OR lower(s.name) GLOB '* gc:*' OR lower(s.name) GLOB 'gc *' OR lower(s.name) GLOB 'gc:*' THEN 'gc' END AS category
+ FROM slice s JOIN thread_track tt ON s.track_id=tt.id JOIN thread t ON tt.utid=t.utid LEFT JOIN process p ON t.upid=p.upid
+ WHERE s.dur>0 AND (t.upid=${BigInt(startup.upid).toString()} OR lower(p.name) GLOB '*dex2oat*')
+)
+ SELECT hex(CAST(w.phase AS BLOB)) AS phase_hex,hex(CAST(c.category AS BLOB)) AS category_hex,
+ CAST(MAX(c.ts,w.start_ns) AS TEXT) AS ts_ns,CAST(MIN(c.ts+c.dur,w.end_ns)-MAX(c.ts,w.start_ns) AS TEXT) AS dur_ns,
+ hex(CAST(c.name AS BLOB)) AS name_hex,hex(CAST(COALESCE(c.process_name,'') AS BLOB)) AS process_hex
+ FROM candidates c CROSS JOIN phases w WHERE c.category IS NOT NULL AND c.ts<w.end_ns AND c.ts+c.dur>w.start_ns
+ ORDER BY CAST(dur_ns AS INT) DESC LIMIT 1001`;
+ const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`ART 启动归因查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseStartupArtAttribution(result.stdout);
+}
+
 export function parseThreadStates(csv){
  const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='kind,utid,tid,pid,thread_hex,process_hex,state_hex,ts,dur,count')throw new Error('线程状态返回列无效');
  const summary=[],intervals=[];let summaryTruncated=false,intervalsTruncated=false;

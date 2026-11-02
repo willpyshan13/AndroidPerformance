@@ -33,18 +33,22 @@ jobs:
         include:
           - runner: macos-15
             label: macos-arm64
+            artifactPath: dist/v*/*.dmg
             command: package:dmg
             mac: true
           - runner: macos-15-intel
             label: macos-x64
+            artifactPath: dist/v*/*.dmg
             command: package:dmg:x64
             mac: true
           - runner: windows-latest
             label: windows-x64
+            artifactPath: dist/v*/*.exe
             command: package:win
             mac: false
           - runner: ubuntu-24.04
             label: linux-x64
+            artifactPath: dist/v*/*.AppImage
             command: package:linux
             mac: false
     runs-on: ${{ matrix.runner }}
@@ -94,6 +98,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: android-performance-${{ matrix.label }}
-          path: dist/v*/**
+          path: ${{ matrix.artifactPath }}
           if-no-files-found: error
           retention-days: 14

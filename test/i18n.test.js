@@ -173,3 +173,13 @@ test('Startup page localizes known launch modes and profile-header states while 
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Heap page labels preserve HPROF evidence while explaining allocation-profile limits',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderHeap()'),end=app.indexOf('\nasync function browseDestroyedActivities()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+  const guidance=[
+    '采集通常要求应用可调试，可能暂停目标进程。文件可能包含敏感数据。字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小；可分页浏览实例、候选根路径和近似支配图，不能据此证明泄漏。最多索引 100 万个对象，近似支配图计算最多支持 25 万个索引对象。',
+    '按调用栈采样 malloc/free 分配。Native 要求 Android 10+；ART 分配样本要求 Android 12+，仅显示采集期间分配调用，不是存活对象快照。目标应用还需符合系统 debuggable/profileable 限制；数据源可能增加目标进程开销。采集按应用包名匹配进程，独立命名的子进程可能需要单独配置。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

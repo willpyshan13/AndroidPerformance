@@ -29,6 +29,16 @@ let childError;
 let childOutput = '';
 let failure;
 
+async function stopChild(processHandle) {
+  if (!processHandle || processHandle.exitCode !== null || processHandle.signalCode !== null) return;
+  processHandle.kill('SIGTERM');
+  await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  if (processHandle.exitCode === null && processHandle.signalCode === null) {
+    processHandle.kill('SIGKILL');
+    await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  }
+}
+
 try {
   await access(executable);
   await stat(join(resources, 'java-runtime', 'bin', 'java'));
@@ -60,8 +70,9 @@ try {
   const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
   const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
   if(missingQuickActions.length)throw new Error(`Packaged macOS home is missing quick actions: ${missingQuickActions.join(', ')}`);
-  const brokenRoutes=ready.rendererState.routeChecks?.filter((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
-  if(ready.rendererState.routeChecks?.length!==16||brokenRoutes?.length)throw new Error(`Packaged macOS route smoke failed: ${JSON.stringify(ready.rendererState.routeChecks)}`);
+  const routeChecks=ready.rendererState.routeChecks;
+  const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
+  if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo))throw new Error(`Packaged macOS route smoke failed: ${JSON.stringify(routeChecks)}`);
   if(childOutput.includes('Renderer console error:'))throw new Error(`Packaged macOS renderer logged an error:\n${childOutput}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
@@ -75,10 +86,7 @@ try {
   console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, and Perfetto UI ready`);
 } catch (error) { failure = error; }
 finally {
-  if (child && child.exitCode === null && child.signalCode === null) child.kill();
-  if (child && child.exitCode === null && child.signalCode === null) {
-    await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), delay(5_000)]);
-  }
+  await stopChild(child);
   await rm(tempRoot, { recursive: true, force: true });
 }
 

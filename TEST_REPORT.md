@@ -478,3 +478,9 @@ npm run test:device -- \
 - Rebuilt and launched the macOS arm64 `.app` with a clean profile and saved `en-US` preference. The smoke verified 16 navigation items, all 13 quick-action routes, English native menu labels, and bundled Java, Trace Processor, and Perfetto UI. Passed.
 - Full suite: 300 tests, 284 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.
 - The packaged-app smoke now cycles through every navigation route, requiring the active route, a page heading, visible content, and a content change after each transition. A clean macOS arm64 packaged run passed all 16 pages with no renderer console errors.
+
+## Demo-data route smoke and process cleanup（2026-11-03）
+
+- Packaged macOS and Windows smoke now toggle into built-in demo mode and repeat the 16-page route sweep, in addition to the clean no-device/no-data sweep. Both sweeps require each route to activate, render a heading and content, and update content after transitions; renderer console errors fail the run.
+- macOS arm64 package passed both sweeps. Added SIGKILL escalation after the graceful shutdown timeout so the desktop smoke runner and Electron child cannot remain hanging after reporting success.
+- Full suite: 300 tests, 284 passed, 0 failed, 16 optional official-sample tests skipped; syntax and whitespace checks passed.

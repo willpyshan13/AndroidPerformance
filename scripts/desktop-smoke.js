@@ -47,6 +47,16 @@ async function waitForReady(child, readyFile, getOutput, getError) {
   throw new Error('Installed desktop app did not start its local service within 60 seconds');
 }
 
+async function stopChild(processHandle) {
+  if (!processHandle || processHandle.exitCode !== null || processHandle.signalCode !== null) return;
+  processHandle.kill('SIGTERM');
+  await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  if (processHandle.exitCode === null && processHandle.signalCode === null) {
+    processHandle.kill('SIGKILL');
+    await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  }
+}
+
 async function verifyInstalledApp(label, installDir, tempRoot) {
   const profileDir = join(tempRoot, `${label}-profile`);
   const readyFile = join(tempRoot, `${label}-ready.json`);
@@ -69,8 +79,9 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
     const missingQuickActions=requiredQuickActions.filter(route=>!rendererState.quickActionRoutes?.includes(route));
     if(missingQuickActions.length)throw new Error(`${label}: desktop home is missing quick actions: ${missingQuickActions.join(', ')}`);
-    const brokenRoutes=rendererState.routeChecks?.filter((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
-    if(rendererState.routeChecks?.length!==16||brokenRoutes?.length)throw new Error(`${label}: desktop route smoke failed: ${JSON.stringify(rendererState.routeChecks)}`);
+    const routeChecks=rendererState.routeChecks;
+    const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
+    if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo))throw new Error(`${label}: desktop route smoke failed: ${JSON.stringify(routeChecks)}`);
     if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
@@ -84,10 +95,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     await stat(join(profileDir, 'runtime', 'java-runtime', 'bin', 'java.exe'));
     console.log(`${label} installed desktop smoke passed: ${origin}; renderer and Java runtime ready`);
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill();
-    if (child.exitCode === null && child.signalCode === null) {
-      await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), delay(5_000)]);
-    }
+    await stopChild(child);
   }
 }
 

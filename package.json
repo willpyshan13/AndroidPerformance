@@ -47,10 +47,6 @@
         "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"]
       },
       {
-        "from": "tools/java-runtime",
-        "to": "java-runtime"
-      },
-      {
         "from": "tools/ui-inspector",
         "to": "ui-inspector",
         "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"]

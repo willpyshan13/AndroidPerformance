@@ -1,5 +1,5 @@
 import { DEMO_DEVICE, DEMO_PACKAGE, demoSample, demoHistory, demoFrames, demoStartup, demoLayout, DEMO_HAR } from './demo.js';
-import {translate as translateText, supportedLanguages} from './i18n.js';
+import {translate as translateText, localizeTextNodes, supportedLanguages} from './i18n.js';
 import { parseHar, filterNetworkRequests, networkRequestsCsv, parseComposeCompilerReport, apkBaselineEvidence, mergeNetworkAgentSnapshot, summarizeHarHosts, summarizeNetworkEndpoints, buildNetworkTimeline, parseBenchmark, compareBenchmarks, benchmarkSampleSummary, benchmarkContextWarnings, compareHeaps, parseFoldedStacks, reverseCallTree, layoutFlame, buildSampleTimeline, sampleQuality, sampleStackChart, profileForTimeBin, profileForTimeRange, layoutScope, extractLayoutNodes, matchComposeRuntimeGroups, compareLayouts, layoutDiffOverlays, summarizeLayoutChanges, layoutComparisonReport, inspectLayout, clusterFrames, clusterFrameTimeline, traceEventWindow, createLayoutCaptureArchive, parseLayoutCaptureArchive, correlateComposeEventsToFrames } from './offline.js';
 
 const $ = selector => document.querySelector(selector);
@@ -821,6 +821,7 @@ function render() {
   renderNav(); renderDeviceOptions(); updateChrome();
   const views={ overview:renderOverview, monitor:renderMonitor, 'cpu-profile':renderCpuProfile, frames:renderFrames, startup:renderStartup, layout:renderLayout, heap:renderHeap, battery:renderBattery, gpu:renderGpu, trace:renderTrace, network:renderNetwork, benchmark:renderBenchmark, apk:renderApk, source:renderSource, sessions:renderSessions, settings:renderSettings };
   $('#main').innerHTML=(views[state.route]||renderOverview)();
+  localizeTextNodes($('#main'),state.language);
   requestAnimationFrame(()=>{ drawCharts(); if(state.route==='layout'&&state.selectedNode!==null) selectNode(state.selectedNode); const flame=$('.flame-scroll');if(state.route==='cpu-profile'&&flame)flame.scrollTop=flame.scrollHeight; });
 }
 

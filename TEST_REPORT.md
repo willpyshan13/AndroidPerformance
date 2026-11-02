@@ -370,10 +370,18 @@ npm run test:device -- \
 
 - 两次快照具备相同设备、包名、UID 和 since-charged 窗口时，如果 `pwi,uid` 两端估计存在且非递减，比较结果提供系统 UID mAh 估计值的区间差；缺失不按零处理，下降时返回不可用并记录重置提示。
 - 界面显示当前累计值、基线值和区间估计，并说明系统模型估算可能包含共享 UID 应用，不等同于实测功耗或独立应用耗电归因。
-- 回归覆盖有效小数差、估计值下降、缺少一端读数和英文说明翻译。完整 `npm test`：280 项，264 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
+- 回归覆盖有效小数差、估计值下降、缺少一端读数和英文说明翻译。完整 `npm test`：282 项，266 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。
 
 ## 无插桩 UID 网络流量比较
 
 - 网络页新增独立于 OkHttp 请求 Agent 的系统流量卡片，可分别采集基线与结束快照，显示移动网络和 Wi-Fi 的 UID 字节变化；复用 BatteryStats 已有按 UID 查询及严格会话窗口对比接口。
 - 共享 UID 可能包含其他应用；缺失或重置的字段不按零处理。该视图只有系统累计字节计数，不呈现请求、域名、内容或时间线；UI 和英文说明测试覆盖了这一边界。
-- 新页面尚未在真机验证；当前环境没有已连接设备。完整测试为 280 项，264 通过、0 失败、16 项可选官方样本跳过；macOS arm64 `.app` 已重建、签名验证通过，`app.asar` 包含新界面。
+- 新页面尚未在真机验证；当前环境没有已连接设备。完整测试为 282 项，266 通过、0 失败、16 项可选官方样本跳过；macOS arm64 `.app` 已重建、签名验证通过，`app.asar` 包含新界面。
+
+
+## Compose State 变更观察关联
+
+- 应用内 debug Agent 通过 Compose `Snapshot.registerApplyObserver` 接收已应用 State 对象集合；仅以对象身份与当前 Composition 的 State-scope 读取关联求交集，不读取值。每次 Agent 采集之间的结果写入 Composition group XML 属性，并在布局树及 Composable 调用树显示。首个采集建立观察基线。
+- 缓冲最多暂存 5,000 个对象并使用弱引用；Activity 停止时尝试注销 observer。观察器不可用、缺字段或溢出时显示不可用 / 警告，不伪造为零。该交集不证明 Scope 随后重组、绘制或造成掉帧。
+- Java Agent 以 `javac --release 8` 对 Android 31 与 36 SDK 编译通过；布局 Agent 端到端合成测试覆盖变更关联、首采基线、observer 不可用和缓冲溢出；英文文案检查通过。当前没有连接设备，未验证 Compose Runtime 实际 observer 回调或真机行为。
+- 完整 `npm test`：282 项，266 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。

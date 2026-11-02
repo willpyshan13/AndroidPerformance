@@ -33,10 +33,21 @@ test('layout agent reports Compose Semantics counts and runtime incompatibility'
 });
 
 test('layout agent reports runtime group and per-scope state-read relationship counts',async t=>{
- const xml='<hierarchy><node class="ComposeRuntimeTree"><node class="ComposeRuntimeGroup" compose-key="-1" compose-state-read-count="2"/></node></hierarchy>';
- const h=await harness(t,{ok:true,xml,screenshot:png.toString('base64'),composeHosts:1,composeNodes:4,composeRuntimeGroups:30,composeStateReads:7,composeStateReadsAvailable:true,composeRuntimeWarning:false});
+ const xml='<hierarchy><node class="ComposeRuntimeTree"><node class="ComposeRuntimeGroup" compose-key="-1" compose-state-read-count="2" compose-changed-state-read-count="3"/></node></hierarchy>';
+ const h=await harness(t,{ok:true,xml,screenshot:png.toString('base64'),composeHosts:1,composeNodes:4,composeRuntimeGroups:30,composeStateReads:7,composeStateReadsAvailable:true,composeChangedStateReads:3,composeChangedStateObjects:1,composeChangedStateReadsAvailable:true,composeRuntimeWarning:false});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
- assert.equal(result.composeRuntimeGroups,30);assert.equal(result.composeStateReads,7);assert.equal(result.composeStateReadsAvailable,true);assert.match(result.note,/30 个组合组和 7 条 State 读取关联/);assert.match(result.note,/不会通过强制重组/);assert.equal(result.warning,null);assert.match(result.xml,/compose-state-read-count="2"/);
+ assert.equal(result.composeRuntimeGroups,30);assert.equal(result.composeStateReads,7);assert.equal(result.composeStateReadsAvailable,true);assert.equal(result.composeChangedStateObjects,1);assert.equal(result.composeChangedStateReads,3);assert.equal(result.composeChangedStateReadsAvailable,true);assert.match(result.note,/30 个组合组和 7 条 State 读取关联/);assert.match(result.note,/观察到 1 个当前 Compose 树读取的 State 对象变化/);assert.match(result.note,/不证明该组已重组/);assert.match(result.note,/不会通过强制重组/);assert.equal(result.warning,null);assert.match(result.xml,/compose-state-read-count="2"/);assert.match(result.xml,/compose-changed-state-read-count="3"/);
+});
+
+test('layout agent marks the first State apply-observer capture as a baseline',async t=>{
+ const xml='<hierarchy><node class="ComposeRuntimeGroup" compose-changed-state-read-count="baseline"/></hierarchy>';
+ const h=await harness(t,{ok:true,xml,screenshot:png.toString('base64'),composeHosts:1,composeChangedStateReadsAvailable:true,composeChangedStateReadsBaseline:true});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);assert.equal(result.composeChangedStateReadsBaseline,true);assert.match(result.note,/首次 Agent 采集建立 Snapshot 观察基线/);
+});
+
+test('layout agent reports unavailable or truncated changed-State observations',async t=>{
+ const h=await harness(t,{ok:true,xml:'<hierarchy/>',screenshot:png.toString('base64'),composeHosts:1,composeChangedStateReadsAvailable:false,composeChangedStateReadsWarning:true,composeChangedStateOverflow:2});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);assert.equal(result.composeChangedStateReadsAvailable,false);assert.equal(result.composeChangedStateOverflow,2);assert.match(result.warning,/apply observer 不可用/);assert.match(result.warning,/2 个 State 变更对象/);
 });
 
 test('layout agent reports unavailable State observations instead of zero',async t=>{

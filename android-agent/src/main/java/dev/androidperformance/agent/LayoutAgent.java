@@ -27,12 +27,16 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.lang.ref.WeakReference;
+import java.lang.ref.ReferenceQueue;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.Collections;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
@@ -49,6 +53,12 @@ public final class LayoutAgent {
     private static volatile String token;
     private static volatile boolean started;
     private static volatile LocalServerSocket server;
+    private static final Object SNAPSHOT_LOCK = new Object();
+    private static final ReferenceQueue<Object> CHANGED_STATE_QUEUE = new ReferenceQueue<>();
+    private static final Set<IdentityWeakReference> CHANGED_SNAPSHOT_STATES = new java.util.HashSet<>();
+    private static final Map<ClassLoader, Object> SNAPSHOT_OBSERVER_HANDLES = new IdentityHashMap<>();
+    private static final int MAX_PENDING_CHANGED_STATES = 5000;
+    private static int droppedChangedSnapshotStates;
 
     private LayoutAgent() {}
 
@@ -71,7 +81,7 @@ public final class LayoutAgent {
     public static synchronized void stop(Activity current) {
         Activity active = activity.get();
         if (active == current) activity = new WeakReference<>(null);
-        if (activity.get() == null) token = null;
+        if (activity.get() == null) { token = null; stopSnapshotObservers(); }
     }
 
     private static void serve(String packageName) {
@@ -132,7 +142,7 @@ public final class LayoutAgent {
         XmlSerializer serializer = Xml.newSerializer(); serializer.setOutput(xml, "UTF-8");
         serializer.startDocument("UTF-8", true); serializer.startTag(null, "hierarchy"); serializer.attribute(null, "rotation", "0");
         int[] rootLocation = new int[2]; root.getLocationOnScreen(rootLocation);
-        CaptureState state = new CaptureState(); writeView(serializer, current, root, rootLocation, 0, 0, state);
+        CaptureState state = new CaptureState(); state.changedSnapshotStates = drainChangedSnapshotStates(state); writeView(serializer, current, root, rootLocation, 0, 0, state);
         serializer.endTag(null, "hierarchy"); serializer.endDocument();
 
         JSONObject response = new JSONObject(); response.put("ok", true); response.put("xml", xml.toString("UTF-8"));
@@ -150,6 +160,12 @@ public final class LayoutAgent {
         response.put("composeRuntimeGroups", state.composeRuntimeGroups); response.put("composeStateReads", state.composeStateReads);
         response.put("composeStateReadsAvailable", state.composeHosts > 0 && state.composeStateReadsAvailable);
         response.put("composeStateReadsWarning", state.composeStateReadsWarning);
+        response.put("composeChangedStateReads", state.composeChangedStateReadAssociations);
+        response.put("composeChangedStateObjects", state.composeChangedStateObjects);
+        response.put("composeChangedStateReadsAvailable", state.composeHosts > 0 && state.composeChangedStateReadsAvailable);
+        response.put("composeChangedStateReadsBaseline", state.changedObservationBaseline);
+        response.put("composeChangedStateReadsWarning", state.composeChangedStateReadsWarning);
+        response.put("composeChangedStateOverflow", state.droppedChangedSnapshotStates);
         response.put("composeRuntimeWarning", state.composeRuntimeWarning); response.put("composeRuntimeDetail", safe(state.composeRuntimeDetail));
         return response;
     }
@@ -203,9 +219,11 @@ public final class LayoutAgent {
             Object composition = composeComposition(host);
             Object slotTable = fieldValue(composition, "slotTable");
             Object compositionData = slotTable;
-            Map<Object, Integer> stateReadCounts = stateReadCounts(composition);
-            state.composeStateReadsAvailable = state.composeStateReadsAvailable && stateReadCounts != null;
-            if (stateReadCounts == null) state.composeStateReadsWarning = true;
+            StateObservations observations = stateReadCounts(composition, state);
+            state.composeStateReadsAvailable = state.composeStateReadsAvailable && observations != null;
+            state.composeChangedStateReadsAvailable = state.composeChangedStateReadsAvailable && observations != null && observations.changedAvailable;
+            if (observations == null) state.composeStateReadsWarning = true;
+            if (observations != null && !observations.changedAvailable) state.composeChangedStateReadsWarning = true;
             Method groups = findMethod(compositionData.getClass(), "getCompositionGroups");
             if (groups == null) throw new NoSuchMethodException("compositionGroups");
             Object roots = groups.invoke(compositionData);
@@ -213,7 +231,7 @@ public final class LayoutAgent {
             out.startTag(null, "node"); attr(out, "class", "ComposeRuntimeTree"); attr(out, "compose-tree", "runtime");
             attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", ""); attr(out, "resource-id", "");
             attr(out, "index", "0"); attr(out, "bounds", "[0,0][0,0]");
-            for (Object group : (Iterable<?>)roots) writeCompositionGroup(out, group, depth + 1, state, stateReadCounts);
+            for (Object group : (Iterable<?>)roots) writeCompositionGroup(out, group, depth + 1, state, observations);
             out.endTag(null, "node");
         } catch (Exception error) {
             state.composeRuntimeWarning = true;
@@ -248,40 +266,120 @@ public final class LayoutAgent {
         throw new NoSuchFieldException(name);
     }
 
-    private static Map<Object, Integer> stateReadCounts(Object composition) {
-        Map<Object, Integer> counts = new IdentityHashMap<>();
+    private static StateObservations stateReadCounts(Object composition, CaptureState state) {
+        StateObservations observations = new StateObservations();
         try {
-            Object observations = fieldValue(composition, "observations");
-            Method asMap = findMethod(observations.getClass(), "asMap");
-            Object values = asMap == null ? null : asMap.invoke(observations);
+            ClassLoader loader = composition.getClass().getClassLoader();
+            observations.changedAvailable = ensureSnapshotObserver(loader, state);
+            Object observationStore = fieldValue(composition, "observations");
+            Method asMap = findMethod(observationStore.getClass(), "asMap");
+            Object values = asMap == null ? null : asMap.invoke(observationStore);
             if (!(values instanceof Map)) return null;
-            for (Object scopes : ((Map<?, ?>)values).values()) {
-                if (scopes instanceof Iterable) for (Object scope : (Iterable<?>)scopes) counts.put(scope, counts.containsKey(scope) ? counts.get(scope) + 1 : 1);
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>)values).entrySet()) {
+                Object stateObject = entry.getKey(), scopes = entry.getValue();
+                if (!(scopes instanceof Iterable)) continue;
+                boolean changed = state.changedSnapshotStates.contains(stateObject);
+                if (changed && state.observedChangedSnapshotStates.add(stateObject)) state.composeChangedStateObjects++;
+                for (Object scope : (Iterable<?>)scopes) {
+                    observations.readCounts.put(scope, observations.readCounts.containsKey(scope) ? observations.readCounts.get(scope) + 1 : 1);
+                    if (changed) observations.changedReadCounts.put(scope, observations.changedReadCounts.containsKey(scope) ? observations.changedReadCounts.get(scope) + 1 : 1);
+                }
             }
         } catch (Exception ignored) { return null; }
-        return counts;
+        return observations;
     }
 
-    private static void writeCompositionGroup(XmlSerializer out, Object group, int depth, CaptureState state, Map<Object, Integer> stateReadCounts) throws Exception {
+    private static boolean ensureSnapshotObserver(ClassLoader candidateLoader, CaptureState state) {
+        final ClassLoader loader = candidateLoader == null ? LayoutAgent.class.getClassLoader() : candidateLoader;
+        synchronized (SNAPSHOT_LOCK) {
+            if (SNAPSHOT_OBSERVER_HANDLES.containsKey(loader)) return SNAPSHOT_OBSERVER_HANDLES.get(loader) != null;
+            try {
+                Class<?> snapshotClass = Class.forName("androidx.compose.runtime.snapshots.Snapshot", false, loader);
+                Field companionField = snapshotClass.getField("Companion");
+                Object companion = companionField.get(null);
+                Method registration = null;
+                for (Method candidate : companion.getClass().getMethods()) {
+                    Class<?>[] parameters = candidate.getParameterTypes();
+                    if ("registerApplyObserver".equals(candidate.getName()) && parameters.length == 1 && parameters[0].isInterface() && "kotlin.jvm.functions.Function2".equals(parameters[0].getName())) { registration = candidate; break; }
+                }
+                if (registration == null) throw new NoSuchMethodException("Snapshot.registerApplyObserver");
+                Class<?> callbackType = registration.getParameterTypes()[0];
+                Object callback = Proxy.newProxyInstance(loader, new Class<?>[]{callbackType}, (proxy, method, args) -> {
+                    if ("invoke".equals(method.getName()) && args != null && args.length > 0 && args[0] instanceof Set) {
+                        synchronized (SNAPSHOT_LOCK) {
+                            IdentityWeakReference stale;
+                            while ((stale = (IdentityWeakReference)CHANGED_STATE_QUEUE.poll()) != null) CHANGED_SNAPSHOT_STATES.remove(stale);
+                            for (Object changed : (Set<?>)args[0]) {
+                                IdentityWeakReference ref = new IdentityWeakReference(changed, CHANGED_STATE_QUEUE);
+                                if (CHANGED_SNAPSHOT_STATES.contains(ref)) continue;
+                                if (CHANGED_SNAPSHOT_STATES.size() >= MAX_PENDING_CHANGED_STATES) { droppedChangedSnapshotStates++; continue; }
+                                CHANGED_SNAPSHOT_STATES.add(ref);
+                            }
+                        }
+                        return Class.forName("kotlin.Unit", false, loader).getField("INSTANCE").get(null);
+                    }
+                    if ("toString".equals(method.getName())) return "APW Compose Snapshot observer";
+                    if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                    if ("equals".equals(method.getName())) return proxy == (args == null ? null : args[0]);
+                    return null;
+                });
+                SNAPSHOT_OBSERVER_HANDLES.put(loader, registration.invoke(companion, callback));
+                state.changedObservationBaseline = true;
+                return true;
+            } catch (Exception error) {
+                SNAPSHOT_OBSERVER_HANDLES.put(loader, null);
+                return false;
+            }
+        }
+    }
+
+    private static Set<Object> drainChangedSnapshotStates(CaptureState state) {
+        synchronized (SNAPSHOT_LOCK) {
+            Set<Object> result = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (IdentityWeakReference ref : CHANGED_SNAPSHOT_STATES) { Object value = ref.get(); if (value != null) result.add(value); }
+            CHANGED_SNAPSHOT_STATES.clear(); while (CHANGED_STATE_QUEUE.poll() != null) {}
+            state.droppedChangedSnapshotStates = droppedChangedSnapshotStates; droppedChangedSnapshotStates = 0;
+            return result;
+        }
+    }
+
+    private static void stopSnapshotObservers() {
+        synchronized (SNAPSHOT_LOCK) {
+            for (Object handle : SNAPSHOT_OBSERVER_HANDLES.values()) try {
+                if (handle == null) continue;
+                Method dispose = null;
+                for (String name : new String[]{"dispose", "close", "invoke"}) { dispose = findMethod(handle.getClass(), name); if (dispose != null) break; }
+                if (dispose != null) dispose.invoke(handle);
+            } catch (Exception ignored) {}
+            SNAPSHOT_OBSERVER_HANDLES.clear(); CHANGED_SNAPSHOT_STATES.clear(); droppedChangedSnapshotStates = 0;
+        }
+    }
+
+    private static void writeCompositionGroup(XmlSerializer out, Object group, int depth, CaptureState state, StateObservations observations) throws Exception {
         if (group == null || depth > MAX_DEPTH || state.count >= MAX_NODES) { state.truncated = true; return; }
         state.count++; state.composeRuntimeGroups++;
         Object key = invoke(group, "getKey"), identity = invoke(group, "getIdentity"), sourceInfo = invoke(group, "getSourceInfo");
-        int reads = 0;
+        int reads = 0, changedReads = 0;
         Object data = invoke(group, "getData");
         if (data instanceof Iterable) for (Object item : (Iterable<?>)data) {
-            if (stateReadCounts != null && item != null && item.getClass().getName().contains("RecomposeScope")) reads += stateReadCounts.getOrDefault(item, 0);
+            if (observations != null && item != null && item.getClass().getName().contains("RecomposeScope")) {
+                reads += observations.readCounts.getOrDefault(item, 0);
+                changedReads += observations.changedReadCounts.getOrDefault(item, 0);
+            }
         }
-        if (stateReadCounts != null) state.composeStateReads += reads;
+        if (observations != null) state.composeStateReads += reads;
+        state.composeChangedStateReadAssociations += changedReads;
         out.startTag(null, "node"); attr(out, "class", "ComposeRuntimeGroup"); attr(out, "compose-tree", "runtime");
         attr(out, "compose-key", safe(String.valueOf(key))); attr(out, "compose-identity", safe(String.valueOf(identity)));
         attr(out, "compose-source-info", safe(sourceInfo == null ? "" : String.valueOf(sourceInfo)));
-        attr(out, "compose-state-read-count", stateReadCounts == null ? "unavailable" : Integer.toString(reads));
+        attr(out, "compose-state-read-count", observations == null ? "unavailable" : Integer.toString(reads));
+        attr(out, "compose-changed-state-read-count", observations == null || !observations.changedAvailable ? "unavailable" : state.changedObservationBaseline ? "baseline" : Integer.toString(changedReads));
         attr(out, "index", "0"); attr(out, "resource-id", ""); attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", "");
         attr(out, "bounds", "[0,0][0,0]"); attr(out, "checkable", "false"); attr(out, "checked", "false"); attr(out, "clickable", "false");
         attr(out, "long-clickable", "false"); attr(out, "focusable", "false"); attr(out, "focused", "false"); attr(out, "selected", "false");
         attr(out, "enabled", "true"); attr(out, "scrollable", "false"); attr(out, "visibility", "visible"); attr(out, "alpha", "1.000");
         Object children = invoke(group, "getCompositionGroups");
-        if (children instanceof Iterable) for (Object child : (Iterable<?>)children) writeCompositionGroup(out, child, depth + 1, state, stateReadCounts);
+        if (children instanceof Iterable) for (Object child : (Iterable<?>)children) writeCompositionGroup(out, child, depth + 1, state, observations);
         out.endTag(null, "node");
     }
 
@@ -425,5 +523,12 @@ public final class LayoutAgent {
         final Map<String, Object> properties = new java.util.LinkedHashMap<>();
         final List<SemanticsSnapshot> children = new ArrayList<>();
     }
-    private static final class CaptureState { int count; int composeHosts; int composeNodes; int composeRuntimeGroups; int composeStateReads; boolean composeStateReadsAvailable = true; boolean truncated; boolean composeWarning; boolean composeRuntimeWarning; boolean composeStateReadsWarning; String composeRuntimeDetail = ""; }
+    private static final class StateObservations { final Map<Object,Integer> readCounts = new IdentityHashMap<>(); final Map<Object,Integer> changedReadCounts = new IdentityHashMap<>(); boolean changedAvailable; }
+    private static final class IdentityWeakReference extends WeakReference<Object> {
+        private final int hash;
+        IdentityWeakReference(Object value, ReferenceQueue<Object> queue) { super(value, queue); hash = System.identityHashCode(value); }
+        @Override public int hashCode() { return hash; }
+        @Override public boolean equals(Object other) { if (this == other) return true; if (!(other instanceof IdentityWeakReference)) return false; Object value = get(); return value != null && value == ((IdentityWeakReference)other).get(); }
+    }
+    private static final class CaptureState { int count; int composeHosts; int composeNodes; int composeRuntimeGroups; int composeStateReads; int composeChangedStateReadAssociations; int composeChangedStateObjects; int droppedChangedSnapshotStates; Set<Object> changedSnapshotStates = Collections.emptySet(); final Set<Object> observedChangedSnapshotStates = Collections.newSetFromMap(new IdentityHashMap<>()); boolean composeStateReadsAvailable = true; boolean composeChangedStateReadsAvailable = true; boolean changedObservationBaseline; boolean truncated; boolean composeWarning; boolean composeRuntimeWarning; boolean composeStateReadsWarning; boolean composeChangedStateReadsWarning; String composeRuntimeDetail = ""; }
 }

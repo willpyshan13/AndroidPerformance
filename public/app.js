@@ -34,10 +34,27 @@ const routes = [
   ['apk', 'APK 分析', 'package', 'APK'], ['source', '源码工作区', 'folder'],
   ['sessions', '采集记录', 'folder'], ['settings', '设置与帮助', 'settings'],
 ];
-const state = { route: 'overview', demo: false, devices: [], serial: '', packageName: localStorage.getItem('apw-package') || '', info: null, status: null,
+const state = { route: 'overview', demo: false, theme: ['system','light','dark'].includes(localStorage.getItem('apw-theme'))?localStorage.getItem('apw-theme'):'system', uiScale: ['0.9','1','1.1','1.2'].includes(localStorage.getItem('apw-scale'))?localStorage.getItem('apw-scale'):'1', devices: [], serial: '', packageName: localStorage.getItem('apw-package') || '', info: null, status: null,
   samples: [], monitoring: false, generation: 0, pollTimer: null, interval: 2000, error: '', frames: null, budget: 16.667, startup: null, startupTrace:null, compilation:null, startupMode: 'cold', runs: 3,
   sourceSnapshots:[], sourceSnapshot:null, sourceQuery:'', sourceMatches:null, sourceFile:null, sourceLine:null, gpuArtifacts:[], gpuChecks:{}, gpuCapabilities:null, agiPath:null, battery:null, batteryBefore:null, batteryDelta:null, batteryEndCaptured:false, traceResult:null, traceArchives:[], traceIncludeApp:false, frameTimeline:null, frameTimelineScope:'all', binderScope:'all', binderDirection:'both', cpuProfile:null, cpuOriginal:null, cpuTimeline:null, cpuPerfFile:null, cpuArchives:[], cpuSymfs:'', cpuEvents:[], cpuEvent:null, cpuEventsTruncated:false, cpuBin:null, cpuRange:null, cpuThreadFilter:null, cpuFilter:'', cpuFocus:[], layout: null, nodes: [], selectedNode: null, layoutFilter: '', layoutRoot: null, layoutBaseline: null, heap: null, heapBaseline: null, heapRole: 'current', heapView: 'classes', heapFilter: '', heapBrowse: null, network: null, networkAgentActive:false, networkAgentTimer:null, networkAgentGeneration:0, baseline: null, current: null, apk:null, apkTab:'overview',apkFilter:'',apkCategory:'all',apkComponent:'all', sessions: [], busy: new Set(), replay: false, networkFilter: '', deviceGeneration: 0 };
 let toastTimer, importHandler;
+function applyAppearance(){
+  const dark=state.theme==='dark'||(state.theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme=dark?'dark':'light';
+  document.documentElement.style.zoom=state.uiScale;
+}
+function persistAppearance(){
+  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);
+  return window.desktop?.saveAppearance?window.desktop.saveAppearance({theme:state.theme,scale:state.uiScale}):Promise.resolve();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(state.theme==='system')applyAppearance();});
+applyAppearance();
+window.desktop?.getAppearance().then(preferences=>{
+  if(['system','light','dark'].includes(preferences.theme))state.theme=preferences.theme;
+  if(['0.9','1','1.1','1.2'].includes(preferences.scale))state.uiScale=preferences.scale;
+  localStorage.setItem('apw-theme',state.theme);localStorage.setItem('apw-scale',state.uiScale);applyAppearance();
+  if(state.route==='settings')render();
+}).catch(error=>toast(`无法读取桌面外观设置：${error.message}`,true));
 
 async function api(path, body, binary = false) {
   const response = await fetch(`/api${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Workbench-Token': token, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -544,7 +561,7 @@ function renderSessions() {
 }
 function renderSettings() {
   return pageHeader('设置与帮助','准备好设备，让采集从一次连接开始。')+
-    `<div class="settings-grid"><div class="panel"><div class="panel-head"><h2>本机运行环境</h2>${icon('settings',16)}</div><div class="panel-body"><div class="evidence-row"><span>版本</span><strong>${esc(state.status?.version||'检测中')}</strong></div><div class="evidence-row"><span>运行模式</span><strong>${state.status?.desktop?'原生桌面应用 · Electron':'本地 HTTP · 127.0.0.1'}</strong></div><p class="hint">ADB 路径</p><code>${esc(state.status?.adbPath||'检测中')}</code><p>自动检测 PATH、ANDROID_HOME、ANDROID_SDK_ROOT 和常见 SDK 安装目录。${state.status?.desktop?'可通过原生菜单「文件 → 选择 ADB 程序…」修改路径。':'指定其他 ADB 后重启服务：'}</p><code>${state.status?.desktop?'文件 → 选择 ADB 程序…':'ADB_PATH=/your/sdk/platform-tools/adb npm start'}</code><p class="hint">记录目录</p><code>${esc(state.status?.dataDir||'检测中')}</code></div></div><div class="panel"><div class="panel-head"><h2>设备连接</h2>${icon('phone',16)}</div><div class="panel-body"><p>1. 在 Android 设备上打开开发者选项和 USB 调试。<br>2. 使用数据线连接电脑，并在设备上允许 USB 调试。<br>3. 点击右上角刷新，选择设备和目标应用。<br>4. 启动目标应用，再开始采集。</p><code>adb devices -l</code><p>unauthorized：在手机确认调试授权。<br>offline：检查连接或重新插拔。<br>无线设备：先在系统终端完成 adb pair / connect。</p></div></div><div class="panel"><div class="panel-head"><h2>功能与限制</h2>${icon('info',16)}</div><div class="panel-body"><p>已实现：设备指标、帧与启动分析、CPU 采样、堆分析、布局检查、系统追踪、资源统计、HAR 与 Benchmark 分析、APK 分析和源码快照。</p><p class="hint">功能受设备权限、系统版本及工具安装情况限制；完整 Compose 检查、应用级能耗归因和网络实时采集仍在开发。</p></div></div><div class="panel"><div class="panel-head"><h2>证据与数据</h2>${icon('folder',16)}</div><div class="panel-body"><p>数据仅保存在当前电脑，不调用 AI 或上传服务。实时数据最多保留 1,800 个样本；图表展示最近 120 个。停止采集后请手动保存记录。</p><p class="hint">启动实验会操作前台应用；帧重置仅清除系统 gfxinfo 统计。UIAutomator 采集的是当前窗口，可能包含敏感内容，请按需保存。演示样例可随时清除并切换到真实设备。</p></div></div></div>`;
+    `<div class="settings-grid"><div class="panel"><div class="panel-head"><h2>主题与显示</h2>${icon('settings',16)}</div><div class="panel-body appearance-controls"><label for="appearance-theme">颜色主题<select id="appearance-theme"><option value="system" ${state.theme==='system'?'selected':''}>跟随系统</option><option value="light" ${state.theme==='light'?'selected':''}>浅色</option><option value="dark" ${state.theme==='dark'?'selected':''}>深色</option></select></label><label for="appearance-scale">界面缩放<select id="appearance-scale">${[['0.9','90%'],['1','100%'],['1.1','110%'],['1.2','120%']].map(([value,label])=>`<option value="${value}" ${state.uiScale===value?'selected':''}>${label}</option>`).join('')}</select></label><p class="hint">设置保存在本机，并应用于桌面端和本地工作台。</p></div></div><div class="panel"><div class="panel-head"><h2>本机运行环境</h2>${icon('settings',16)}</div><div class="panel-body"><div class="evidence-row"><span>版本</span><strong>${esc(state.status?.version||'检测中')}</strong></div><div class="evidence-row"><span>运行模式</span><strong>${state.status?.desktop?'原生桌面应用 · Electron':'本地 HTTP · 127.0.0.1'}</strong></div><p class="hint">ADB 路径</p><code>${esc(state.status?.adbPath||'检测中')}</code><p>自动检测 PATH、ANDROID_HOME、ANDROID_SDK_ROOT 和常见 SDK 安装目录。${state.status?.desktop?'可通过原生菜单「文件 → 选择 ADB 程序…」修改路径。':'指定其他 ADB 后重启服务：'}</p><code>${state.status?.desktop?'文件 → 选择 ADB 程序…':'ADB_PATH=/your/sdk/platform-tools/adb npm start'}</code><p class="hint">记录目录</p><code>${esc(state.status?.dataDir||'检测中')}</code></div></div><div class="panel"><div class="panel-head"><h2>设备连接</h2>${icon('phone',16)}</div><div class="panel-body"><p>1. 在 Android 设备上打开开发者选项和 USB 调试。<br>2. 使用数据线连接电脑，并在设备上允许 USB 调试。<br>3. 点击右上角刷新，选择设备和目标应用。<br>4. 启动目标应用，再开始采集。</p><code>adb devices -l</code><p>unauthorized：在手机确认调试授权。<br>offline：检查连接或重新插拔。<br>无线设备：先在系统终端完成 adb pair / connect。</p></div></div><div class="panel"><div class="panel-head"><h2>功能与限制</h2>${icon('info',16)}</div><div class="panel-body"><p>已实现：设备指标、帧与启动分析、CPU 采样、堆分析、布局检查、系统追踪、资源统计、HAR 与 Benchmark 分析、APK 分析和源码快照。</p><p class="hint">功能受设备权限、系统版本及工具安装情况限制；完整 Compose 检查、应用级能耗归因和网络实时采集仍在开发。</p></div></div><div class="panel"><div class="panel-head"><h2>证据与数据</h2>${icon('folder',16)}</div><div class="panel-body"><p>数据仅保存在当前电脑，不调用 AI 或上传服务。实时数据最多保留 1,800 个样本；图表展示最近 120 个。停止采集后请手动保存记录。</p><p class="hint">启动实验会操作前台应用；帧重置仅清除系统 gfxinfo 统计。UIAutomator 采集的是当前窗口，可能包含敏感内容，请按需保存。演示样例可随时清除并切换到真实设备。</p></div></div></div>`;
 }
 
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -874,6 +891,8 @@ document.addEventListener('click',async event=>{
   const request=event.target.closest('[data-request]');if(request){const row=state.network.rows.find(r=>r.id===Number(request.dataset.request));showDialog(`${row.method} ${row.path}`,`<pre>${esc(JSON.stringify(row,null,2))}</pre><p class="hint">timings 的单位为 ms。ssl 是 connect 的子阶段，不应重复相加。</p>`);}
 });
 document.addEventListener('change',event=>{
+  if(event.target.id==='appearance-theme'){state.theme=event.target.value;applyAppearance();persistAppearance().catch(error=>toast(`无法保存外观设置：${error.message}`,true));}
+  if(event.target.id==='appearance-scale'){state.uiScale=event.target.value;applyAppearance();persistAppearance().catch(error=>toast(`无法保存外观设置：${error.message}`,true));}
   if(event.target.id==='source-snapshot')openSourceSnapshot(event.target.value).catch(error=>toast(error.message,true));
   if(event.target.id==='frame-timeline-scope')state.frameTimelineScope=event.target.value;
   if(event.target.id==='cpu-thread'){state.cpuFocus=event.target.value==='all'?[]:[Number(event.target.value)];render();}

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const routes = new Set(['overview', 'monitor', 'cpu-profile', 'heap', 'battery', 'gpu', 'frames', 'startup', 'layout', 'trace', 'network', 'benchmark', 'apk', 'source', 'sessions', 'settings']);
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
+  getAppearance: () => ipcRenderer.invoke('workbench:get-appearance'),
+  saveAppearance: appearance => ipcRenderer.invoke('workbench:save-appearance', appearance),
   agiStatus: () => ipcRenderer.invoke('workbench:agi-status'),
   selectAgi: () => ipcRenderer.invoke('workbench:agi-select'),
   launchAgi: () => ipcRenderer.invoke('workbench:agi-launch'),

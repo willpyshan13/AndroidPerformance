@@ -17,3 +17,21 @@
 .trace-track{overflow:hidden}.trace-event{position:absolute;top:2px;height:14px;background:#70a997;min-width:2px;border-radius:2px;border:1px solid #fff;padding:0}.trace-event.sched{background:#d68e61}.trace-event:hover,.trace-event:focus{outline:2px solid #395c53;z-index:2}
 
 .trace-event.sched.idle{background:#a6b1b5}
+
+.appearance-controls{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center}.appearance-controls label{display:flex;flex-direction:column;gap:8px;font-size:10px;color:var(--muted)}.appearance-controls select{width:100%;max-width:none}.appearance-controls .hint{grid-column:1/-1;margin-top:0}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#11181c;--surface:#1a2429;--ink:#e1e9ec;--muted:#a3b0b7;--line:#2d3a40;--accent:#55c6ad;--accent-light:#1e3b35}
+:root[data-theme="dark"] body,:root[data-theme="dark"] .shell{background:var(--bg);color:var(--ink)}
+:root[data-theme="dark"] .sidebar,:root[data-theme="dark"] .topbar,:root[data-theme="dark"] .devicebar,:root[data-theme="dark"] .panel,:root[data-theme="dark"] .module-card,:root[data-theme="dark"] .apk-identity,:root[data-theme="dark"] dialog,:root[data-theme="dark"] .apk-manifest{background:var(--surface);color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] .button,:root[data-theme="dark"] select,:root[data-theme="dark"] input,:root[data-theme="dark"] .nav-item .nav-count,:root[data-theme="dark"] .segmented,:root[data-theme="dark"] .segmented button.active{background:#222e34;color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] .button:hover,:root[data-theme="dark"] .icon-button:hover,:root[data-theme="dark"] .nav-item:hover,:root[data-theme="dark"] tbody tr.clickable:hover,:root[data-theme="dark"] .tree-node:hover,:root[data-theme="dark"] .apk-size-row:hover{background:#26343a}
+:root[data-theme="dark"] .button.primary{background:var(--accent);color:#10221e;border-color:var(--accent)}
+:root[data-theme="dark"] .select-wrap select,:root[data-theme="dark"] .package-wrap input,:root[data-theme="dark"] th,:root[data-theme="dark"] .tag,:root[data-theme="dark"] .stat-icon,:root[data-theme="dark"] .timeline-track,:root[data-theme="dark"] .trace-track{background:#222e34;color:var(--muted);border-color:var(--line)}
+:root[data-theme="dark"] td,:root[data-theme="dark"] th,:root[data-theme="dark"] .evidence-row,:root[data-theme="dark"] .inspector>section,:root[data-theme="dark"] .inspector .panel-head,:root[data-theme="dark"] .device-summary,:root[data-theme="dark"] .nav-separator{border-color:var(--line)}
+:root[data-theme="dark"] td,:root[data-theme="dark"] .settings-grid .panel-body p,:root[data-theme="dark"] .hint,:root[data-theme="dark"] .subtle,:root[data-theme="dark"] .page-header p,:root[data-theme="dark"] .panel-head p,:root[data-theme="dark"] pre{color:#aab8bf}
+:root[data-theme="dark"] td strong,:root[data-theme="dark"] .property-list dd,:root[data-theme="dark"] .apk-key-values dd,:root[data-theme="dark"] .apk-file-meta strong{color:#d5e0e4}
+:root[data-theme="dark"] .metric-note,:root[data-theme="dark"] .device-capability,:root[data-theme="dark"] .dropzone{background:#1c302b;border-color:#2b4940;color:#a7c5ba}
+:root[data-theme="dark"] .settings-grid code,:root[data-theme="dark"] .apk-manifest,:root[data-theme="dark"] .flame-scroll{background:#151e22;color:#b9c8ce;border-color:var(--line)}
+:root[data-theme="dark"] .budget-line span{background:var(--surface)}
+:root[data-theme="dark"] .tree-node{color:#aab8bf}
+:root[data-theme="dark"] .tag.green{background:#1e3b35;color:#81d4bd}:root[data-theme="dark"] .tag.orange{background:#3b3020;color:#d9b878}:root[data-theme="dark"] .tag.red{background:#402624;color:#e6978d}
+:root[data-theme="dark"] .canvas-pane{background-color:#151e22}:root[data-theme="dark"] .canvas-pane .panel-head{background:var(--surface)}

@@ -1,4 +1,33 @@
-# Android Performance 0.1.1 全功能测试报告
+# 当前验证记录（2026-11-02）
+
+## 自动回归
+
+`npm test`：**162 项通过、0 失败、15 项跳过**。跳过项需要通过环境变量指定外部 Android 官方 HPROF、Perfetto、Benchmark、Profile 或 simpleperf 样本；普通运行未配置这些样本。
+
+`npm run check` 和外观设置验证通过。Electron 中切换到深色主题及 120% 缩放后退出，再启动时两个选项均恢复；验证后将偏好恢复为跟随系统和 100%。
+
+## API 25 真机回归
+
+设备：rk3399-all，Android 7.1.2 / API 25 / arm64-v8a。完整设备 smoke **15 项通过、0 项失败，Perfetto 1 项标为 unsupported**。
+
+| 项目 | 结果 |
+| --- | --- |
+| 设备与应用发现 | 通过；94 个包，包含 `com.will.calendar.demo` |
+| 实时监控 | 通过；3 个连续 PSS 样本约 50.76、50.91、50.90 MiB；后两次 CPU 差值约 2.32%、2.38% |
+| gfxinfo 读取与文本导入 | 通过；读取 4 个有效帧，P95 404.22 ms，所选 16.67 ms 预算下 100% 超预算 |
+| 布局和截图 | 通过；79 个节点、266343 字节 PNG，无采集警告 |
+| Perfetto | 不支持；API 25 设备没有 `perfetto` 可执行文件，应用正确报告不支持 |
+| gfxinfo 重置 | 通过；重置后立即复读 0 帧 |
+| 冷启动 | 协议通过；两次 1008、1022 ms，设备未报告 LaunchState |
+| 温启动 | 协议通过；两次 610、480 ms，设备未报告 LaunchState |
+| 热启动 | 协议通过；两次 286、257 ms，设备未报告 LaunchState |
+| HAR 与 Benchmark | 通过；HAR 2 条记录并移除敏感字段；合成基准变化 -15% 和 +5% |
+| 记录持久化 | 通过；monitor、frames、layout、startup、network 5 种记录保存后读回一致 |
+| 采集清理 | 通过；设备临时 XML 已移除、采集锁已释放 |
+
+启动数值只证明该设备接受并完成启动命令，不证明冷/温/热请求实际对应系统判定的启动模式：设备没有返回 LaunchState。设备也不支持 Perfetto，因此此处没有验证真实 FrameTimeline、TTID/TTFD、trace 或线程关联。内存、CPU profiling、HPROF、GPU、实时网络和设备能耗归因没有纳入本次真机 smoke；它们仍由自动化/离线样本覆盖或等待兼容设备验证。
+
+# Android Performance 0.1.1 历史测试记录
 
 日期：2026-10-30（Asia/Shanghai）。范围：当前首版已实现的全部分析模块与桌面主流程。
 

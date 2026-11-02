@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { Adb, locateAdb } from '../src/adb.js';
 import { createApp, VERSION } from '../src/server.js';
 import { prepareAgiArtifact } from '../src/gpu.js';
+import { normalizeAppearance } from '../src/preferences.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const allowedExternal = new Set(['https://ui.perfetto.dev/', 'https://github.com/yuchuangu85/AndroidPerformanceStudio']);
@@ -102,6 +103,10 @@ if (singleInstance) {
       item.on('done', (_event, status) => { if (status === 'interrupted') dialog.showErrorBox('下载失败', '文件保存被中断，请重试。'); });
     });
     ipcMain.handle('workbench:agi-status',async event=>{authorizeGpuIpc(event);return await existingAgi();});
+    ipcMain.handle('workbench:get-appearance',async event=>{
+      authorizeGpuIpc(event);const defaults={theme:'system',scale:'1'};try{const settings=JSON.parse(await readFile(join(app.getPath('userData'),'settings.json'),'utf8')),saved={};if(typeof settings.theme==='string')saved.theme=settings.theme;if(settings.scale!==undefined)saved.scale=settings.scale;return {...defaults,...(Object.keys(saved).length?normalizeAppearance(saved):{})};}catch(error){if(error.code==='ENOENT')return defaults;return defaults;}
+    });
+    ipcMain.handle('workbench:save-appearance',async(event,value)=>{authorizeGpuIpc(event);const appearance=normalizeAppearance(value);await saveSettings(appearance);return appearance;});
     ipcMain.handle('workbench:source-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择本地源码目录',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     ipcMain.handle('workbench:agi-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:'选择 Android GPU Inspector 应用程序',properties:['openFile'],...(process.platform==='darwin'?{defaultPath:'/Applications'}:{})});if(result.canceled)return null;const chosen=result.filePaths[0];await access(chosen);agiPath=chosen;await saveSettings({agiPath});return chosen;});
     ipcMain.handle('workbench:agi-launch',async event=>{authorizeGpuIpc(event);const path=await existingAgi();if(!path)throw new Error('未找到 AGI，请先选择应用程序');const error=await shell.openPath(path);if(error)throw new Error(error);return true;});

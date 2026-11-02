@@ -267,6 +267,24 @@ export function sampleQuality(timeline){
  }
  return {samples:timeline.samples.length,unknownLeaf,noCallers,unknownLeafWeight,skipped:timeline.skipped||0,truncated:!!timeline.truncated};
 }
+// Summarize observed leaf-frame weights per time bin. This is a sampled trend,
+// not CPU time or an estimate of inclusive function cost.
+export function sampleStackChart(timeline, limit=8) {
+ if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(limit)||limit<1||limit>12)throw new Error('函数时间图数据无效');
+ const totals=new Map();
+ for(const sample of timeline.samples){const name=sample.frames.at(-1)||'(无调用栈)';totals.set(name,(totals.get(name)||0)+sample.weight);if(!Number.isSafeInteger(totals.get(name)))throw new Error('函数时间图权重超出安全范围');}
+ const names=[...totals].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,limit).map(([name])=>name);
+ const bins=Array.from({length:timeline.bins},()=>new Map(names.map(name=>[name,0])));
+ const other='其他函数';
+ for(const sample of timeline.samples){const leaf=sample.frames.at(-1)||'(无调用栈)',name=names.includes(leaf)?leaf:other,bin=bins[sample.bin];bin.set(name,(bin.get(name)||0)+sample.weight);if(!Number.isSafeInteger(bin.get(name)))throw new Error('函数时间图权重超出安全范围');}
+ const series=names.map(name=>({name,total:totals.get(name),values:bins.map(bin=>bin.get(name)||0)}));
+ const otherTotal=[...totals].filter(([name])=>!names.includes(name)).reduce((sum,[,weight])=>sum+weight,0);
+ if(!Number.isSafeInteger(otherTotal))throw new Error('函数时间图权重超出安全范围');
+ if(otherTotal)series.push({name:other,total:otherTotal,values:bins.map(bin=>bin.get(other)||0)});
+ const binTotals=bins.map(bin=>[...bin.values()].reduce((sum,weight)=>sum+weight,0));
+ if(binTotals.some(total=>!Number.isSafeInteger(total)))throw new Error('函数时间图权重超出安全范围');
+ return {bins:timeline.bins,series,totals:binTotals};
+}
 export function profileForTimeBin(timeline,bin,thread=null) {
   if(!timeline?.available||!Number.isInteger(bin)||bin<0||bin>=timeline.bins)throw new Error('时间范围无效');
   if(thread!==null&&typeof thread!=='string')throw new Error('线程筛选无效');

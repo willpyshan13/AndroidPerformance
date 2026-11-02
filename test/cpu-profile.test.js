@@ -63,6 +63,19 @@ test('time filtering can isolate one recorded thread without mixing other thread
  assert.equal(profileForTimeBin(timeline,0,'main-1/1').root.weight,3);assert.equal(profileForTimeBin(timeline,0).root.weight,10);
  assert.equal(profileForTimeRange(timeline,0,1,'worker-1/2').root.weight,12);assert.throws(()=>profileForTimeRange(timeline,0,1,'missing'),/没有采样点/);assert.throws(()=>profileForTimeBin(timeline,0,3),/线程筛选/);
 });
+test('sample stack chart aggregates leaf weights by time and keeps remaining functions visible',async()=>{
+ const {buildSampleTimeline,sampleStackChart}=await import('../public/offline.js');
+ const timeline=buildSampleTimeline({samples:[
+  {timeNs:'1000000',period:'7',thread:'main',pid:1,tid:1,frames:['root','hot']},
+  {timeNs:'1000000',period:'3',thread:'worker',pid:1,tid:2,frames:['hot']},
+  {timeNs:'2000000',period:'5',thread:'main',pid:1,tid:1,frames:['root','cold']},
+  {timeNs:'2000000',period:'2',thread:'main',pid:1,tid:1,frames:['root','rare']}
+ ],},2);
+ const chart=sampleStackChart(timeline,2);
+ assert.equal(chart.bins,2);assert.deepEqual(chart.series.map(x=>x.name),['hot','cold','其他函数']);
+ assert.deepEqual(chart.series.map(x=>x.total),[10,5,2]);assert.deepEqual(chart.series.map(x=>x.values),[[10,0],[0,5],[0,2]]);assert.deepEqual(chart.totals,[10,7]);
+ assert.throws(()=>sampleStackChart(timeline,0),/无效/);assert.throws(()=>sampleStackChart({available:false},8),/无效/);
+});
 test('reverse callers aggregate inclusive weights, respect scope and count recursion explicitly',async()=>{
  const {reverseCallTree}=await import('../public/offline.js');
  const p=parseFoldedStacks('main;A;target;leaf 4\nmain;B;target 3\nworker;A;target 2\nmain;target;target 1\n');

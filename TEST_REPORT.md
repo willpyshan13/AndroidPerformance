@@ -5,7 +5,7 @@
 - UIAutomator 布局采集新增 `wm density` 读取，优先采用 Android 报告的 override density；密度查询不可用时保留截图/层级采集并显示警告，不进行 dp 判断。
 - 节点线索新增可点击、长按或可勾选节点的可见 bounds 换算；任一边小于 48 dp 时显示复核候选和换算尺寸。48 dp 来自 [Android 官方可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。结果只代表 UIAutomator 返回的可见边界，不能观察 padding、TouchDelegate 或 Compose 最小触控区域，不能据此确认真实触控目标过小。
 - 合成层级覆盖 override density、48 dp 阈值、长按节点、禁用节点、缺失 bounds、未知密度回退；ADB 测试覆盖截图/层级可用但密度读取缺失的降级路径。
-- `APW_SHARK_SAMPLE=/private/tmp/android-studio-valid-leak.hprof APW_SHARK_MAPPING=/private/tmp/apw-shark-test.mapping npm test`：199 项，184 通过、0 失败、15 项因未配置其他外部样本而跳过。`npm run check`、`git diff --check` 通过。`adb devices -l` 当前无设备，本轮没有真机验证。
+- `APW_SHARK_SAMPLE=/private/tmp/android-studio-valid-leak.hprof APW_SHARK_MAPPING=/private/tmp/apw-shark-test.mapping npm test`：200 项，185 通过、0 失败、15 项因未配置其他外部样本而跳过。`npm run check`、`git diff --check` 通过。`adb devices -l` 当前无设备，本轮没有真机验证。
 
 ## LeakCanary Shark 桌面分析器接入
 
@@ -87,6 +87,13 @@
 
 - 导入 `fixtures/cpu-folded.txt`，确认调用树展示每个节点相对当前范围的权重条和比例。
 - 点击“展开”后调用树聚焦到选择的符号；无子节点的叶项不显示展开动作。浏览器验证 `main` 的权重为 600 / 父级 850（70.59%），展开后下一级比例按新的当前范围计算。
+
+## CPU 采样函数时间分布增量
+
+- 新增叶函数采样权重按时间段汇总图，展示权重最高的函数及“其他函数”，点击柱列按该时间段全部线程重新生成调用树。
+- 图表明确说明数据来自已读取样本的事件周期权重，不表示 CPU 时间或包含成本。
+- `node --test test/cpu-profile.test.js`：13 项通过，覆盖跨线程聚合、时间段分布、其他函数汇总及输入边界；`npm run check` 与 `git diff --check` 通过。
+- 此次未连接设备；真实 perf.data 的图表显示和点击操作仍待桌面界面核验。
 
 ## 布局设计稿叠加增量
 

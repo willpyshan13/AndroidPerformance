@@ -1,4 +1,4 @@
-import {mkdtemp,rm,mkdir,readFile,writeFile,chmod,rename} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,readFile,writeFile,chmod,copyFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -16,8 +16,8 @@ try {
   if(createHash('sha256').update(data).digest('hex')!==expected)throw new Error('Trace Processor SHA-256 不匹配');
   await promisify(execFile)('curl',['-fsSL','--max-time','30',licenseUrl,'-o',join(tmp,'LICENSE')],{timeout:40000});
   if(process.platform!=='win32')await chmod(join(tmp,name),0o755);await mkdir(dest,{recursive:true});await rm(join(dest,name),{force:true});
-  await rename(join(tmp,name),join(dest,name));
-  await rename(join(tmp,'LICENSE'),join(dest,'LICENSE'));
+  await copyFile(join(tmp,name),join(dest,name));
+  await copyFile(join(tmp,'LICENSE'),join(dest,'LICENSE'));
   await writeFile(join(dest,'source.json'),JSON.stringify({...artifact},null,2)+'\n');
   console.log(`Trace Processor v59.1：${dest}`);
 }finally{await rm(tmp,{recursive:true,force:true});}

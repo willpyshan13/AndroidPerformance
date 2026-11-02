@@ -1,5 +1,5 @@
 import {createWriteStream} from 'node:fs';
-import {access,cp,mkdir,mkdtemp,readFile,rename,rm,writeFile,chmod,readdir} from 'node:fs/promises';
+import {access,cp,mkdir,mkdtemp,readFile,rename,rm,writeFile,chmod,readdir,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -45,6 +45,13 @@ async function findJavaHome(root,depth=0){
  for(const entry of await readdir(root,{withFileTypes:true}).catch(()=>[]))if(entry.isDirectory()){const found=await findJavaHome(join(root,entry.name),depth+1);if(found)return found;}
  return null;
 }
+async function makeRuntimeReadable(root){
+ for(const entry of await readdir(root,{withFileTypes:true})){
+  const path=join(root,entry.name);
+  if(entry.isDirectory()){await chmod(path,0o700);await makeRuntimeReadable(path);}
+  else if(entry.isFile()){const {mode}=await stat(path);await chmod(path,mode|0o600);}
+ }
+}
 async function prepareRuntime(){
  const osMap={darwin:'mac',linux:'linux'},archMap={arm64:'aarch64',x64:'x64'};
  const checksums={
@@ -65,6 +72,7 @@ async function prepareRuntime(){
   const packed=join(runtimeStage,'packed');await rename(javaHome,packed);
   for(const entry of await readdir(runtimeStage))if(entry!=='packed')await rm(join(runtimeStage,entry),{recursive:true,force:true});
   const contents=await readdir(packed);for(const entry of contents)await rename(join(packed,entry),join(runtimeStage,entry));await rm(packed,{recursive:true,force:true});
+  await makeRuntimeReadable(runtimeStage);
   return `Temurin ${javaVersion} ${target}`;
  }
  let javaHome=process.env.JAVA_HOME;
@@ -73,6 +81,7 @@ async function prepareRuntime(){
  const java=join(javaHome,'bin',process.platform==='win32'?'java.exe':'java');
  try{await access(java);}catch{throw new Error(`找不到 Java runtime：${java}`);}
  await cp(javaHome,runtimeStage,{recursive:true,dereference:true});
+ await makeRuntimeReadable(runtimeStage);
  return `本机 Java runtime (${javaHome})`;
 }
 try{

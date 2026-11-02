@@ -17,7 +17,7 @@ test('English localization changes static UI labels but skips code, table conten
     const parent={tag,closest(){return ['pre','code','textarea','input','td'].includes(tag)?this:null;},matches(selector){return selector.split(',').includes(tag);}};
     return {parentElement:parent,nodeValue:value};
   };
-  const nodes=[entry('h2','APK 体积组成'),entry('pre','APK 体积组成'),entry('td','APK 体积组成'),entry('h2','customer label')];
+  const nodes=[entry('h2','APK 体积组成'),entry('pre','APK 体积组成'),entry('td','APK 体积组成'),entry('h2','customer label'),entry('dt','CPU 架构')];
   let index=-1,currentNode;
   const root={ownerDocument:{createTreeWalker(){return {nextNode(){index++;if(index>=nodes.length)return false;currentNode=nodes[index];this.currentNode=currentNode;return true;},currentNode};}}};
   localizeTextNodes(root,'en-US');
@@ -25,4 +25,5 @@ test('English localization changes static UI labels but skips code, table conten
   assert.equal(nodes[1].nodeValue,'APK 体积组成');
   assert.equal(nodes[2].nodeValue,'APK 体积组成');
   assert.equal(nodes[3].nodeValue,'customer label');
+  assert.equal(nodes[4].nodeValue,'CPU architecture');
 });

@@ -193,9 +193,10 @@ const en={
  'CPU 火焰图':'CPU flame graph',
  '从设备读取报告':'Read report from device',
  '采样数据的其它分析结果':'Additional sample analyses',
- '内存组成':'Memory composition',
  '内存分配剖析':'Memory allocation profile',
- '查看应用内存快照':'Inspect app memory snapshot'
+ '查看应用内存快照':'Inspect app memory snapshot',
+ '重复测量冷、温、热启动耗时':'Repeat cold, warm, and hot startup measurements','层级、屏幕快照与节点属性联动':'Link hierarchy, screenshots, and node properties','采集 Perfetto 追踪，保留原始证据':'Capture Perfetto traces and keep the original evidence','导入 HAR，检查请求与耗时':'Import HAR files to inspect requests and timing','包信息、签名证书与包体积分析':'Package metadata, signing certificates, and size analysis',
+ 'CPU 使用率':'CPU usage','PSS 内存':'PSS memory','主进程内存快照':'Main process memory snapshot','设备级指标':'Device-level metric','内存组成':'Memory breakdown','最近一次采样':'Latest sample','采样间隔':'Sampling interval','秒':'sec','个样本':'samples','设备序列号':'Device serial','CPU 架构':'CPU architecture','目标进程':'Target process','等待连接':'Waiting for connection','通过 USB 或已配置的无线 ADB':'Connect over USB or configured wireless ADB','内置示例 · 可体验全部页面':'Built-in demo · explore all pages','无需 Root · 能力取决于设备权限':'No root required · capabilities depend on device permissions','开启 USB 调试，并在设备上授权':'Enable USB debugging and authorize this computer','待采集':'Not captured','已载入':'Loaded','采集一次':'Capture once','暂无内存组成':'No memory breakdown yet','运行目标应用后开始采集。':'Launch the target app to start capturing.'
 };
 
 export const supportedLanguages=['zh-CN','en-US'];
@@ -210,7 +211,7 @@ export function localizeTextNodes(root,language='zh-CN'){
  while(walker.nextNode()){
   const node=walker.currentNode,parent=node.parentElement;
   if(!parent||parent.closest('pre,code,textarea,input,td,[data-source-file],[data-source-match],[data-user-content]'))continue;
-  if(!parent.matches('h1,h2,h3,h4,button,label,th,option,small,strong,p,.hint,.subtle,.tag,.eyebrow,.metric-note,.section-heading span,.empty'))continue;
+ if(!parent.matches('h1,h2,h3,h4,button,label,th,dt,option,small,strong,p,.hint,.subtle,.tag,.eyebrow,.metric-note,.section-heading span,.empty'))continue;
   const original=node.nodeValue,trimmed=original.trim(),translated=translate(trimmed,language);
   if(trimmed&&translated!==trimmed)node.nodeValue=original.replace(trimmed,translated);
  }

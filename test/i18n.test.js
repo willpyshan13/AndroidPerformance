@@ -46,3 +46,12 @@ test('every static table and definition-list heading with Chinese text has an En
   const untranslated=[...new Set(labels)].filter(label=>/[\u3400-\u9fff]/.test(label)&&translate(label,'en-US')===label);
   assert.deepEqual(untranslated,[]);
 });
+
+test('literal empty states and section headings have English translations',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const emptyLabels=[...app.matchAll(/empty\(\s*'([^']*)'\s*,\s*'([^']*)'/g)].flatMap(match=>[match[1],match[2]]);
+  const headings=[...app.matchAll(/<h[1-4]>([^<$`]+)</g)].map(match=>match[1].trim());
+  const labels=[...new Set([...emptyLabels,...headings])];
+  const untranslated=labels.filter(label=>/[\u3400-\u9fff]/.test(label)&&/[\u3400-\u9fff]/.test(translate(label,'en-US')));
+  assert.deepEqual(untranslated,[]);
+});

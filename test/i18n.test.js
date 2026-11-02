@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {supportedLanguages,translate,localizeTextNodes} from '../public/i18n.js';
+import {CATEGORY_NAMES} from '../src/apk.js';
 
 test('language selector supports Chinese and English while preserving user content',()=>{
   assert.deepEqual(supportedLanguages,['zh-CN','en-US']);
@@ -96,5 +97,20 @@ test('Benchmark page has English translations for every literal Chinese label an
     '输入测试包 Android/media 目录中的 JSON 完整路径，读取后作为当前运行。设备文件可能来自较早的测试；请自行核对生成时间、测试参数和设备，工具不自动认定它属于刚才的运行。其他位置的报告请手动导入。',
   ];
   const untranslated=[...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text,'en-US')));
+  assert.deepEqual(untranslated,[]);
+});
+
+test('APK analysis page and its data-driven file categories have English labels and evidence guidance',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function apkKeyValues'),end=app.indexOf('\nfunction sessionTable',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)))];
+  const guidance=[
+    '在本机检查安装包结构、Manifest 和证书，无需连接设备。',
+    '导入 APK，定位体积来源，查看应用声明与签名证书。',
+    '支持单个 APK，最大 512 MB；分析全程在本机完成。',
+    '这是 Manifest 中的权限声明，不代表系统已授予权限；未推断权限保护级别或应用运行时行为。',
+    'exported / enabled 显示 Manifest 的显式值，未声明不等于 false。组件名已按包名展开；点击一行查看 actions、categories 和其他声明。',
+    '仅分析此 APK 的静态声明；不运行、安装或上传应用，也不会合并其他 split APK。',
+  ];
+  const untranslated=[...literals,...guidance,...Object.values(CATEGORY_NAMES)].filter(text=>/[\u3400-\u9fff]/.test(translate(text,'en-US')));
   assert.deepEqual(untranslated,[]);
 });

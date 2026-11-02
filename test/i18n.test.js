@@ -137,3 +137,14 @@ test('GPU artifact page has English labels, capability status, and tool limitati
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
+
+test('Battery analysis page has English labels, history errors, and sampling guidance',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function batterySeriesControls()'),end=app.indexOf('\nfunction renderGpu()',start),source=app.slice(start,end);
+  const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>]/.test(text)))];
+  const guidance=[
+    '先采集基线，在设备上重现操作后采集结束快照。也可导入 dumpsys batterystats --checkin 文本。',
+    '表中网络计数和 UID 耗电估计是累计读数，不是电池电量消耗；系统窗口重置或设备切换后不可直接对比。',
+    '数据来自 Android batterystats 的 since-charged 累计记录，属于 UID；共享 UID 的应用无法单独归因。资源计数差值不是耗电量；系统若提供 UID mAh 则显示累计估计，缺失值和重置后的计数不按零计算。',
+  ];
+  assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});

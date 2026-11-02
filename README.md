@@ -95,7 +95,7 @@ npm run package:win:installers      # Windows x64 NSIS + MSI
 npm run package:linux:installers   # Linux x64 AppImage + DEB + RPM
 ```
 
-GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 尚未进入打包矩阵（缺少可用的原生 ARM64 AAPT2）；Windows runtime 解压仍需安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
+GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 尚未进入打包矩阵：本轮检查的 Google Maven 官方 Linux AAPT2 是 x86-64 ELF；目前没有已验证的 ARM64 AAPT2 方案，所以不能在不牺牲 APK 分析能力的情况下发布该架构。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)；Windows runtime 解压仍需安装后的桌面冒烟验证。macOS / Windows 安装包尚未使用开发者签名证书。
 
 ## 数据与隐私
 
@@ -126,7 +126,7 @@ GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 291 项，275 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
+| 自动测试 | 292 项，276 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 

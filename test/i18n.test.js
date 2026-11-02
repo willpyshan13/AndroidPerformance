@@ -37,6 +37,14 @@ test('settings capability summary reflects implemented modules and documented li
   assert.match(translate(limits,'en-US'),/API 29\+.*OkHttp Agent.*estimates/);
 });
 
+test('overview dashboard localizes capture status, device evidence, metrics, and module cards',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderOverview()'),end=app.indexOf('\nfunction renderMonitor()',start),source=app.slice(start,end);
+ const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2].trim()).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
+ assert.deepEqual(literals.filter(text=>translate(text,'en-US')===text),[]);
+ const dynamicLabels=['内置示例 · 可体验全部页面','无需 Root · 能力取决于设备权限','开启 USB 调试，并在设备上授权','通过 USB 或已配置的无线 ADB'];
+ assert.deepEqual(dynamicLabels.filter(text=>!source.includes(`tr('${text}')`)||translate(text,'en-US')===text),[]);
+});
+
 test('English localization changes static UI labels but skips code, table content, and unknown user text',()=>{
   const entry=(tag,value)=>{
     const parent={tag,closest(){return ['pre','code','textarea','input','td'].includes(tag)?this:null;},matches(selector){return selector.split(',').includes(tag);}};

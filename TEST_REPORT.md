@@ -22,6 +22,8 @@
 - 类列表识别 `androidx.compose.ui.node.LayoutNode`、Compose Runtime、`android.graphics.Bitmap` 和目标应用的 `CalendarDemoActivity`。
 - 查询 `java.lang.String`：46,604 个实例；分页浏览后打开真实实例，显示字段（`count`、`hash`、`value`）及 `zh-CN` 字符串预览。
 - 该对象的引用来源查询返回一条已索引引用边；候选根路径查询如实返回未找到路径，并提示引用图覆盖不完整。
+- Bitmap 查询识别 98 个实例及 Java byte[] 字段；逐字节确认重复缓冲区扫描找到 9 组，读取 1.07 MiB。重复字符串扫描、`zh-CN` 搜索及 Activity 状态查询均返回结果；后者找到 2 个 `CalendarDemoActivity` 候选。
+- 首次近似支配图计算被 20 万节点上限挡住；将索引节点计算上限调整为 25 万并在页面披露后，真机图成功计算：已索引 203,329、可达 167,842、引用边 545,545；排除已识别弱/软/虚引用后排除 1,511 条边。
 - 这验证的是一份 API 25 堆文件的采集、解析和交互路径；不证明跨版本兼容、精确保留大小、完整引用语义或 Compose Inspector 能力。
 
 ## 自动回归

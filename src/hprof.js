@@ -316,7 +316,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
     if(!dominatorCache||dominatorCache.excludeNonStrong!==excludeNonStrong){
       dominatorCache=null;
-      if(index.size>200000)throw new Error('支配图超过 20 万对象计算上限');
+      if(index.size>250000)throw new Error('支配图超过 25 万对象计算上限');
       const graph=buildReverseGraph(),items=[null,...index.values()],ids=new Map(items.slice(1).map((item,i)=>[item.id,i+1]));
       const outgoing=Array.from({length:items.length},()=>[]),weights=new Float64Array(items.length),unknownBytes=new Uint8Array(items.length);
       let missingRoots=0;

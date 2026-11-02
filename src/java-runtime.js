@@ -1,0 +1,26 @@
+import {mkdir,realpath,rename,rm,stat} from 'node:fs/promises';
+import {dirname,join,isAbsolute} from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+
+const run=promisify(execFile);
+
+export async function ensureWindowsJavaRuntime(archive,destination,{runner=run,tar=process.platform==='win32'?'tar.exe':'tar'}={}){
+ const executable=join(destination,'bin','java.exe');
+ try{if((await stat(executable)).isFile())return destination;}catch{}
+ const archivePath=await realpath(archive);
+ const listing=await runner(tar,['-tzf',archivePath],{timeout:30000,maxBuffer:4*1024*1024});
+ for(const entry of listing.stdout.split(/\r?\n/).filter(Boolean)){
+  const normalized=entry.replaceAll('\\','/').replace(/^\.\//,'');
+  if(isAbsolute(entry)||normalized.split('/').some(part=>part==='..')||normalized.includes(':'))throw new Error('Java runtime 归档包含无效路径');
+ }
+ const stage=`${destination}.extracting-${process.pid}`;
+ await mkdir(dirname(destination),{recursive:true});
+ await rm(stage,{recursive:true,force:true});
+ await mkdir(stage,{recursive:true});
+ try{
+  await runner(tar,['-xzf',archivePath,'-C',stage],{timeout:180000,maxBuffer:4*1024*1024});
+  if(!(await stat(join(stage,'bin','java.exe'))).isFile())throw new Error('Java runtime 归档缺少 bin/java.exe');
+  await rm(destination,{recursive:true,force:true});await rename(stage,destination);return destination;
+ }catch(error){await rm(stage,{recursive:true,force:true});throw new Error(`解压内置 Java runtime 失败：${error.message}`);}
+}

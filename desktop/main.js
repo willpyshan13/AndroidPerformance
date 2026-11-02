@@ -10,6 +10,7 @@ import { Adb, locateAdb } from '../src/adb.js';
 import { createApp, VERSION } from '../src/server.js';
 import { prepareAgiArtifact } from '../src/gpu.js';
 import { normalizeAppearance } from '../src/preferences.js';
+import { ensureWindowsJavaRuntime } from '../src/java-runtime.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const allowedExternal = new Set(['https://ui.perfetto.dev/', 'https://github.com/yuchuangu85/AndroidPerformanceStudio']);
@@ -120,10 +121,14 @@ if (singleInstance) {
       }catch(error){await rm(dirname(prepared.path),{recursive:true,force:true});throw new Error(`无法启动 AGI：${error.message}`);}
     });
     const recordsDir = join(app.getPath('userData'), 'records');
+    const javaRuntimeDir=app.isPackaged&&process.platform==='win32'
+      ? await ensureWindowsJavaRuntime(join(process.resourcesPath,'java-runtime.tar.gz'),join(app.getPath('userData'),'runtime','java-runtime'))
+      : app.isPackaged?join(process.resourcesPath,'java-runtime'):join(here,'..','tools','java-runtime');
+    const javaPath=join(javaRuntimeDir,'bin',process.platform==='win32'?'java.exe':'java');
     let adbPath = await locateAdb();
     try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath; } catch {}
     runtimeAdb = new Adb(adbPath);
-    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true });
+    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath: javaPath });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     origin = `http://127.0.0.1:${server.address().port}`;
     installMenu(); createWindow();

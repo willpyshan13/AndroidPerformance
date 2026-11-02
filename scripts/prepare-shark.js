@@ -107,5 +107,6 @@ try{
  const dest=join(tools,'shark-cli'),runtimeDest=join(tools,'java-runtime');await rm(dest,{recursive:true,force:true});await rm(runtimeDest,{recursive:true,force:true});
  await rename(stage,dest);await rename(runtimeStage,runtimeDest);
  const java=join(runtimeDest,'bin',process.platform==='win32'?'java.exe':'java');await chmod(java,0o755).catch(()=>{});
+ await run(process.platform==='win32'?'tar.exe':'tar',['-czf',join(tools,'java-runtime.tar.gz'),'-C',runtimeDest,'.'],{timeout:300000,maxBuffer:2*1024*1024});
  console.log(`Shark CLI ${version} 与 ${runtimeDescription} 已准备；核心 JAR ${includedJars.length} 个，归档 SHA-256 ${expected}`);
 }finally{await rm(tmp,{recursive:true,force:true});await rm(stage,{recursive:true,force:true});await rm(runtimeStage,{recursive:true,force:true});}

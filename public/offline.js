@@ -329,6 +329,80 @@ export function profileForTimeRange(timeline,startMs,endMs,thread=null) {
   return parseFoldedStacks(lines.join('\n'));
 }
 
+function parseComposeCsv(text){
+ const records=[];let row=[],field='',quoted=false;
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(quoted){if(c==='"'&&text[i+1]==='"'){field+='"';i++;}else if(c==='"')quoted=false;else field+=c;}
+  else if(c==='"'){if(field)throw new Error('Compose CSV 引号位置无效');quoted=true;}
+  else if(c===','){row.push(field);field='';}
+  else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field);field='';if(row.some(v=>v!==''))records.push(row);row=[];if(records.length>100001)throw new Error('Compose CSV 行数超过 100,000');}
+  else field+=c;
+  if(field.length>65536)throw new Error('Compose CSV 单元格超过 64 KiB');
+ }
+ if(quoted)throw new Error('Compose CSV 引号未闭合');if(field||row.length){row.push(field);records.push(row);}
+ if(records.length<2)throw new Error('Compose CSV 缺少表头或数据行');
+ const headers=records[0].map(x=>x.trim()),indices=new Map(headers.map((h,i)=>[h,i]));
+ if(!indices.has('name')||!indices.has('composable')||!indices.has('skippable')||!indices.has('restartable'))throw new Error('不是受支持的 Compose composables.csv（缺少必要列）');
+ const textAt=(r,key)=>{const i=indices.get(key);return i===undefined?'':r[i]||'';},flag=(r,key)=>{const value=textAt(r,key);if(value==='1')return true;if(value==='0'||value==='')return false;throw new Error(`Compose CSV ${key} 列含无效标志`);},count=(r,key)=>{const value=textAt(r,key);if(value===''||value===undefined)return null;if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value)))throw new Error(`Compose CSV ${key} 列含无效数字`);return Number(value);};
+ const rows=[];
+ for(const r of records.slice(1)){
+  if(r.length!==headers.length)throw new Error('Compose CSV 列数不一致');
+  if(!flag(r,'composable'))continue;
+  const name=textAt(r,'name');if(!name||name.length>1000)throw new Error('Compose CSV 函数名无效');
+  rows.push({package:textAt(r,'package'),name,skippable:flag(r,'skippable'),restartable:flag(r,'restartable'),readonly:flag(r,'readonly'),inline:flag(r,'inline'),isLambda:flag(r,'isLambda'),hasDefaults:flag(r,'hasDefaults'),defaultsGroup:count(r,'defaultsGroup'),groups:count(r,'groups'),calls:count(r,'calls'),unstableParameters:[],parameters:[]});
+  if(rows.length>100000)throw new Error('Compose composable 数量超过 100,000');
+ }
+ if(!rows.length)throw new Error('Compose CSV 没有标记为 composable 的行');
+ return {type:'composables',rows,summary:{composables:rows.length,skippable:rows.filter(x=>x.skippable).length,restartable:rows.filter(x=>x.restartable).length,withUnstableParameters:null},sourceFormat:'csv'};
+}
+
+function parseComposeText(text){
+ const lines=text.split(/\r?\n/),composables=[],classes=[];
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],trim=line.trim();
+  if(/\b(?:restartable|skippable|readonly)\b|\bscheme\s*\(/.test(trim)&&/\bfun\s+/.test(trim)){
+   const match=trim.match(/\bfun\s+(?:<[^>]+>\s*)?([A-Za-z_$][\w.$<>-]*)\s*\(/);if(!match)continue;
+   const open=trim.indexOf('(',match.index+match[0].length-1);let depth=1,block=trim.slice(open+1),j=i;
+   for(;j<lines.length&&depth>0;j++){
+    const part=j===i?trim.slice(open+1):lines[j];if(j!==i)block+=`\n${part}`;
+    let string=null,escape=false;
+    for(const c of part){if(string){if(escape)escape=false;else if(c==='\\')escape=true;else if(c===string)string=null;}else if(c==='"'||c==="'")string=c;else if(c==='(')depth++;else if(c===')')depth--;}
+   }
+   if(depth!==0)throw new Error('Compose composable 函数参数未闭合');
+   const parameters=[];
+   for(const parameterLine of block.split(/\r?\n/)){
+    const p=parameterLine.match(/^\s*(stable|unstable|runtime)\s+([^:\s]+)\s*:/);if(p)parameters.push({stability:p[1],name:p[2]});
+   }
+   const unstableParameters=parameters.filter(p=>p.stability==='unstable').map(p=>p.name);
+   const prefix=trim.slice(0,match.index);
+   composables.push({package:'',name:match[1],skippable:/\bskippable\b/.test(prefix),restartable:/\brestartable\b/.test(prefix),readonly:/\breadonly\b/.test(prefix),inline:false,isLambda:false,hasDefaults:/@(?:static|dynamic)\b/.test(block),defaultsGroup:null,groups:null,calls:null,parameters,unstableParameters});
+   i=Math.max(i,j-1);
+   if(composables.length>100000)throw new Error('Compose composable 数量超过 100,000');
+   continue;
+  }
+  const classMatch=trim.match(/^(stable|unstable|runtime)\s+class\s+(.+?)\s*\{\s*$/);if(!classMatch)continue;
+  const fields=[];let j=i+1;
+  for(;j<lines.length&&lines[j].trim()!=='}';j++){
+   const f=lines[j].trim().match(/^(stable|unstable|runtime)\s+(?:val|var)\s+(.+?)\s*:\s*(.+)$/);if(f)fields.push({stability:f[1],name:f[2],type:f[3]});
+  }
+  const runtime=lines.slice(i+1,j+1).map(x=>x.trim()).find(x=>/^<runtime stability>\s*=/.test(x))||null;
+  classes.push({stability:classMatch[1],name:classMatch[2],fields,runtime});i=j;
+  if(classes.length>100000)throw new Error('Compose class 数量超过 100,000');
+ }
+ if(composables.length)return {type:'composables',rows:composables,summary:{composables:composables.length,skippable:composables.filter(x=>x.skippable).length,restartable:composables.filter(x=>x.restartable).length,withUnstableParameters:composables.filter(x=>x.unstableParameters.length).length},sourceFormat:'txt'};
+ if(classes.length)return {type:'classes',rows:classes,summary:{classes:classes.length,unstable:classes.filter(x=>x.stability==='unstable').length,unstableFields:classes.reduce((n,x)=>n+x.fields.filter(f=>f.stability==='unstable').length,0)},sourceFormat:'txt'};
+ throw new Error('无法识别 Compose Compiler composables.txt 或 classes.txt 报告');
+}
+
+export function parseComposeCompilerReport(text,filename=''){
+ if(typeof text!=='string'||text.length>12*1024*1024)throw new Error('Compose Compiler 报告超过 12 MiB 或格式无效');
+ if(text.charCodeAt(0)===0xfeff)text=text.slice(1);
+ if(!text.trim())throw new Error('Compose Compiler 报告为空');
+ const csv=/\.csv$/i.test(filename)||/^\s*package\s*,\s*name\s*,\s*composable\s*,/i.test(text);
+ return csv?parseComposeCsv(text):parseComposeText(text);
+}
+
 // UIAutomator nodes are recorded in preorder, so a subtree ends at the next
 // node at the same or shallower depth. Keep the original IDs for selection.
 export function layoutScope(nodes, rootId = null) {

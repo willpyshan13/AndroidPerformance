@@ -74,6 +74,13 @@
 - 该实现不包含 Shark 的 Android reference matchers、object inspectors、leak fingerprint 或 retained-size 计算，不将根路径结果称为已确认泄漏。真机或真实 LeakCanary HPROF 样本尚未验证。
 - 完整 `npm test`：194 项，179 通过、0 失败、15 项因未配置官方外部样本而跳过；`npm run check` 与 `git diff --check` 通过。
 
+## LeakCanary 实时日志观察
+
+- 堆分析页新增可启动 / 停止的事件轮询，读取目标应用 UID 范围内的 Logcat；旧设备不支持 UID 过滤时按目标主进程 PID 回退。显示开始观察、对象保留、堆转储、分析及对象清除等可识别事件。
+- 解析器丢弃非 LeakCanary 标签和未识别日志内容，只保留匹配事件并限制单次读取与界面累计数量；UI 明确说明没有事件不代表没有泄漏，也要求应用已集成 LeakCanary。
+- 单元测试覆盖事件分类、无关行丢弃、事件数量上限、UID 查询、旧设备 PID 回退和目标包校验；HTTP 测试覆盖 token 鉴权及解析结果。
+- 完整 `npm test`：279 项，263 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。macOS arm64 桌面包重新构建且代码签名验证通过。当前无已连接设备，尚无真机日志验证。
+
 ## HPROF 快照对比增量
 
 - 快照对比新增按对象数量筛选增长、减少和不变类，并显示以基线为分母的对象数变化率及记录字段 / 元素字节变化率；基线为零时不伪造百分比，显示新增状态或不可用。

@@ -502,7 +502,26 @@ const stateEn={
  '调用栈已导入；请查看工具提示':'Call stack imported; see the tooltips',
  '采样事件已载入':'Sample event loaded',
  '基线快照已导入':'Baseline snapshot imported',
- '当前快照分析完成':'Current snapshot analysis complete'
+ '当前快照分析完成':'Current snapshot analysis complete',
+ 'LeakCanary 实时事件':'LeakCanary live events',
+ '停止读取':'Stop reading',
+ '读取目标应用日志':'Read target app logs',
+ '仅显示目标应用 UID（旧设备回退到主进程）中可识别的 LeakCanary 事件。需要目标应用已集成 LeakCanary；无事件不代表没有泄漏。':'Shows recognized LeakCanary events filtered to the target app UID (main process on older devices). The target app must include LeakCanary. No events does not mean there are no leaks.',
+ '按 UID 过滤':'Filtered by UID',
+ '按主进程 PID 过滤':'Filtered by main process PID',
+ '最近读取':'Last read',
+ '忽略的非事件行':'Non-event lines ignored',
+ '时间':'Time',
+ '事件':'Event',
+ '详情':'Details',
+ '开始观察':'Started watching',
+ '对象保留':'Object retained',
+ '堆转储':'Heap dump',
+ '分析结果':'Analysis result',
+ '对象已清除':'Object cleared',
+ '正在等待可识别的 LeakCanary 日志…':'Waiting for recognized LeakCanary logs…',
+ '尚未读取事件。':'No events read yet.',
+ '读取失败':'read failed'
 };
 
 export const supportedLanguages=['zh-CN','en-US'];

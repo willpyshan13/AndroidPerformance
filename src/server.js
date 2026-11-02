@@ -389,6 +389,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/battery/import')return json(parseBatteryStats(body.text,body.packageName));
         if(path==='/api/battery/compare')return json(compareBatteryStats(body.before,body.after));
         if(path==='/api/network/agent')return json(await adb.networkAgentSnapshot(body.serial,body.packageName));
+        if(path==='/api/heap/leakcanary-live')return json(await adb.leakCanarySnapshot(body.serial,body.packageName));
         if(path==='/api/gpu/capabilities')return json(await adb.gpuCapabilities(body.serial));
         if (path === '/api/frames/import') {
           if (typeof body.text !== 'string' || ![16.667, 11.111, 8.333].includes(body.budget)) throw new Error('gfxinfo 导入参数无效');

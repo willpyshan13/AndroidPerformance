@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run prepare:trace-processor
       - run: npm test
       - name: Identify individual failing test files
         if: failure()

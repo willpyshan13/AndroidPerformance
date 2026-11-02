@@ -25,6 +25,18 @@ test('home quick actions cover every analysis module and localize the newly expo
  }
 });
 
+test('home recent artifacts merge saved sessions and CPU, trace, and GPU archives with working destinations',async()=>{
+ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+ const start=app.indexOf('function recentAnalysisArtifacts()'),end=app.indexOf('\nfunction renderMonitor()',start),source=app.slice(start,end);
+ for(const collection of ['state.sessions','state.cpuArchives','state.traceArchives','state.gpuArtifacts'])assert.ok(source.includes(collection),`missing ${collection}`);
+ assert.match(source,/\.sort\(\(a,b\)=>\(b\.timestamp\|\|0\)-\(a\.timestamp\|\|0\)\)\.slice\(0,8\)/);
+ assert.match(source,/data-home-artifact="\$\{item\.artifactKind\}"/);
+ assert.match(app,/kind==='cpu'\?'cpu-profile':kind==='trace'\?'trace':'gpu'/);
+ assert.match(app,/actions\['load-cpu-archive'\]\(\)/);
+ assert.match(app,/actions\['load-trace-archive'\]\(\)/);
+ assert.match(app,/data-gpu-artifact-row="\$\{esc\(r\.id\)\}"/);
+});
+
 test('CPU and FrameTimeline correlation labels describe the PID and time-overlap boundary',()=>{
  assert.equal(translate('CPU 采样与 FrameTimeline 关联','en-US'),'CPU samples and FrameTimeline correlation');
  assert.match(translate('仅在 perf.data 明确记录 CLOCK_MONOTONIC 时启用。请人工确认两份文件来自同一设备和同一段交互；采样按 PID 与帧进程匹配，落入帧区间只表示时间重合，不代表函数耗时或因果。','en-US'),/CLOCK_MONOTONIC.*PID.*temporal overlap.*causation/);

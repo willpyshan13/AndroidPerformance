@@ -484,3 +484,11 @@ npm run test:device -- \
 - Packaged macOS and Windows smoke now toggle into built-in demo mode and repeat the 16-page route sweep, in addition to the clean no-device/no-data sweep. Both sweeps require each route to activate, render a heading and content, and update content after transitions; renderer console errors fail the run.
 - macOS arm64 package passed both sweeps. Added SIGKILL escalation after the graceful shutdown timeout so the desktop smoke runner and Electron child cannot remain hanging after reporting success.
 - Full suite: 300 tests, 284 passed, 0 failed, 16 optional official-sample tests skipped; syntax and whitespace checks passed.
+
+## 首页最近分析产物（2026-11-03）
+
+- 主页最近列表统一汇总采集记录、CPU 采样档案、系统追踪档案和 GPU 产物，按时间倒序展示最多 8 项。
+- 采集记录进入现有详情；CPU/Trace 点击后进入相应分析页并载入本地档案；GPU 点击后定位到对应索引项。档案已删除或载入失败会显示错误提示。
+- 增加回归断言核对数据集合、排序/截断及交互目标；打包 smoke 检查首页区块与无数据状态，并扫过全部 16 个路由的空状态和演示状态。
+- 全量套件：301 项，285 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check`、相关的 30 项本地化 / 包配置测试和 `git diff --check` 通过。
+- 重建 macOS arm64 `.app`；打包启动 smoke 验证首页最近产物空状态、全部 16 个路由、内置演示状态及 Java、Trace Processor、Perfetto UI 资源，通过且无渲染器错误。

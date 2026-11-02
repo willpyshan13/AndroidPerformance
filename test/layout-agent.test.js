@@ -23,7 +23,13 @@ async function harness(t,response){
 test('layout debug agent forwards a read-only View snapshot and always removes ADB forwarding',async t=>{
  const h=await harness(t,{ok:true,xml:'<hierarchy><node class="android.view.View" bounds="[0,0][1080,1920]"/></hierarchy>',screenshot:png.toString('base64'),truncated:false});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
- assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
+ assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.equal(result.composeHosts,0);assert.equal(result.composeNodes,0);assert.match(result.note,/Composable.*State Reads/);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
+});
+
+test('layout agent reports Compose Semantics counts and runtime incompatibility',async t=>{
+ const h=await harness(t,{ok:true,xml:'<hierarchy><node class="ComposeSemanticsNode" compose-tree="merged" text="Hello"/></hierarchy>',screenshot:null,composeHosts:1,composeNodes:7,composeWarning:true});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
+ assert.equal(result.composeHosts,1);assert.equal(result.composeNodes,7);assert.match(result.warning,/Compose 宿主/);assert.match(result.note,/7 个 Compose Semantics 节点/);
 });
 
 test('layout agent distinguishes secure screenshots and reports truncated trees',async t=>{

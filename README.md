@@ -43,7 +43,7 @@
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
-| 布局检查 | debug 构建可接入应用内 View Agent 采集 Activity View 树和截图；未接入时使用 UIAutomator 回退。支持节点搜索、快照对比、检查线索和 Compose Compiler 稳定性报告 | Android View、UIAutomator、Compose 编译报告 |
+| 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；未接入时使用 UIAutomator 回退。支持节点搜索、快照对比、检查线索和 Compose Compiler 稳定性报告 | Android View、Compose Semantics、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线及 Binder 名称匹配 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat | 本地导入标准 HAR |
@@ -114,7 +114,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 - **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照只包含受支持的文本源码，跳过符号链接及构建目录，最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位按声明名、文件中的类名和包名排列候选，无法证明方法所属类、区分重载或还原混淆与内联；请核对版本和源码。原生符号使用文本搜索。
 - **APK**：一次分析一个 APK；split APK 的结果只涵盖导入的文件。证书页面展示签名结构和证书信息，**不验证签名完整性或证书信任链**。
 
-仍需补齐：精确保留大小和泄漏分析、完整 Compose Inspector、应用级能耗归因和未经接入的应用网络采集。布局页可在 debug 构建中接入应用内 View Agent；未接入时使用 UIAutomator 回退。Agent 不读取 Compose 内部节点或运行时重组次数，View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列；嵌入式 Perfetto UI 的查询仍不会自动进入工作台报告。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
+仍需补齐：完整 Compose Inspector（Composable 调用树、State Reads、运行时重组观察）、应用级能耗归因和未经接入的应用网络采集。布局页可在 debug 构建中接入应用内 Agent；兼容的 Compose UI 运行时会采集合并/未合并 Semantics 节点，未接入时使用 UIAutomator 回退。Agent 不提供运行时重组次数；View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列；嵌入式 Perfetto UI 的查询仍不会自动进入工作台报告。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
 
 ## 验证记录
 
@@ -122,7 +122,7 @@ Windows / Linux 的打包配置尚未在对应系统完成验证。macOS x64 可
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 169 项通过、0 失败；15 项需要未配置的可选外部样本 | `npm test` |
+| 自动测试 | 213 项，198 通过、0 失败、15 项因未配置的可选外部样本而跳过 | `npm test` |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 
@@ -151,7 +151,7 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 
 布局检查还可导入 Compose Compiler 生成的 `composables.txt`、`composables.csv` 和 `classes.txt`，按函数、包、参数或类字段搜索 restartable/skippable 状态与静态稳定性推断。该报告不含应用运行时重组/跳过次数；运行时数据仍需单独采集，静态报告也不能单独证明性能问题。[Android Compose 稳定性诊断文档](https://developer.android.com/develop/ui/compose/performance/stability/diagnose)。
 
-若需更完整的 Android View 树，在布局页下载 View Agent 源码包，按包内指南接入目标应用的 debug 构建，再使用相同的临时令牌采集。Agent 只在应用进程内读取 View 树，不增加 Android 权限；正式 release 不应包含 Agent 或令牌。它不读取 Compose 内部节点；安全窗口和部分硬件合成内容也无法保证截图完整。
+在布局页下载 Agent 源码包，按包内指南接入目标应用的 debug 构建，再使用相同的临时令牌采集。Agent 只在应用进程内读取 View 与可兼容的 Compose Semantics 树，不增加 Android 权限；正式 release 不应包含 Agent 或令牌。它不读取 Composable 调用树、State Reads 或运行时重组次数；安全窗口和部分硬件合成内容也无法保证截图完整。
 
 启动页面可对已导入的 Perfetto 追踪查询启动区间和 TTID/TTFD，也可按里程碑窗口分别查看已记录的 GC、JIT、类加载、类验证、类初始化及 dex2oat 切片重叠；需要追踪包含相关 Android 事件，TTFD 还依赖应用的 fully drawn 报告。ART 切片时长不是线程 CPU 时间，事件间可能重叠，缺失不代表耗时为零。启动数据不会自动与启动实验逐次配对，已用 Perfetto 官方 Android 12 冷启动样本验证；本机设备采集仍待验证。
 

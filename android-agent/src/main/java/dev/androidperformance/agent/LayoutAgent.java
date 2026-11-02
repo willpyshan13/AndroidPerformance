@@ -27,6 +27,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
@@ -139,7 +143,9 @@ public final class LayoutAgent {
             if (bytes.size() <= 24 * 1024 * 1024) response.put("screenshot", Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP));
             else { response.put("screenshot", JSONObject.NULL); response.put("warning", "Screenshot exceeds 24 MiB"); }
         } else { response.put("screenshot", JSONObject.NULL); response.put("warning", "Secure window or screenshot exceeds 16 megapixels"); }
-        response.put("truncated", state.truncated); return response;
+        response.put("truncated", state.truncated); response.put("composeHosts", state.composeHosts);
+        response.put("composeNodes", state.composeNodes); response.put("composeWarning", state.composeWarning);
+        return response;
     }
 
     private static void writeView(XmlSerializer out, Activity current, View view, int[] rootLocation, int depth, int index, CaptureState state) throws Exception {
@@ -166,8 +172,118 @@ public final class LayoutAgent {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) writeView(out, current, group.getChildAt(i), rootLocation, depth + 1, i, state);
         }
+        if (view.getClass().getName().contains("AndroidComposeView")) writeComposeSemantics(out, view, rootLocation, depth + 1, state);
         out.endTag(null, "node");
     }
+
+    private static void writeComposeSemantics(XmlSerializer out, View host, int[] rootLocation, int depth, CaptureState state) {
+        state.composeHosts++;
+        try {
+            Method ownerGetter = findMethod(host.getClass(), "getSemanticsOwner");
+            if (ownerGetter == null) throw new NoSuchMethodException("getSemanticsOwner");
+            Object owner = ownerGetter.invoke(host);
+            Method mergedGetter = findMethod(owner.getClass(), "getRootSemanticsNode");
+            Method unmergedGetter = findMethod(owner.getClass(), "getUnmergedRootSemanticsNode");
+            if (mergedGetter == null || unmergedGetter == null) throw new NoSuchMethodException("Semantics roots");
+            SemanticsSnapshot merged = snapshotSemantics(mergedGetter.invoke(owner), 0, state);
+            SemanticsSnapshot unmerged = snapshotSemantics(unmergedGetter.invoke(owner), 0, state);
+            int[] hostLocation = new int[2]; host.getLocationOnScreen(hostLocation);
+            writeSemanticsTree(out, "merged", merged, hostLocation, rootLocation, host.getWidth(), host.getHeight(), depth);
+            writeSemanticsTree(out, "unmerged", unmerged, hostLocation, rootLocation, host.getWidth(), host.getHeight(), depth);
+        } catch (Exception error) {
+            state.composeWarning = true;
+        }
+    }
+
+    private static void writeSemanticsTree(XmlSerializer out, String tree, SemanticsSnapshot root, int[] hostLocation, int[] rootLocation, int hostWidth, int hostHeight, int depth) throws Exception {
+        if (root == null) return;
+        out.startTag(null, "node"); attr(out, "class", "ComposeSemanticsRoot"); attr(out, "compose-tree", tree);
+        attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", ""); attr(out, "resource-id", "");
+        attr(out, "index", "0"); attr(out, "checkable", "false"); attr(out, "checked", "false"); attr(out, "clickable", "false");
+        attr(out, "long-clickable", "false"); attr(out, "focusable", "false"); attr(out, "focused", "false");
+        attr(out, "selected", "false"); attr(out, "enabled", "true"); attr(out, "scrollable", "false");
+        attr(out, "visibility", "visible"); attr(out, "alpha", "1.000");
+        attr(out, "bounds", "[" + (hostLocation[0] - rootLocation[0]) + "," + (hostLocation[1] - rootLocation[1]) + "][" + (hostLocation[0] - rootLocation[0] + hostWidth) + "," + (hostLocation[1] - rootLocation[1] + hostHeight) + "]");
+        writeSemanticsNode(out, root, tree, hostLocation, rootLocation, depth + 1);
+        out.endTag(null, "node");
+    }
+
+    private static void writeSemanticsNode(XmlSerializer out, SemanticsSnapshot semantic, String tree, int[] hostLocation, int[] rootLocation, int depth) throws Exception {
+        boolean password = semantic.password;
+        float left = semantic.left, top = semantic.top, right = semantic.right, bottom = semantic.bottom;
+        int x = hostLocation[0] - rootLocation[0], y = hostLocation[1] - rootLocation[1];
+        out.startTag(null, "node"); attr(out, "class", "ComposeSemanticsNode"); attr(out, "compose-tree", tree);
+        attr(out, "compose-id", semantic.id);
+        attr(out, "index", "0"); attr(out, "resource-id", ""); attr(out, "package", "");
+        attr(out, "text", ""); attr(out, "content-desc", ""); attr(out, "checkable", "false"); attr(out, "checked", "false");
+        attr(out, "clickable", "false"); attr(out, "long-clickable", "false"); attr(out, "focusable", "false"); attr(out, "focused", "false");
+        attr(out, "selected", "false"); attr(out, "enabled", "true"); attr(out, "scrollable", "false"); attr(out, "visibility", "visible");
+        attr(out, "alpha", "1.000"); attr(out, "password", Boolean.toString(password));
+        attr(out, "bounds", "[" + Math.round(x + left) + "," + Math.round(y + top) + "][" + Math.round(x + right) + "," + Math.round(y + bottom) + "]");
+        for (Map.Entry<String, Object> entry : semantic.properties.entrySet()) {
+            String name = entry.getKey(); Object value = entry.getValue();
+            if ("Text".equals(name) && !password) attr(out, "text", semanticsText(value));
+            else if ("ContentDescription".equals(name) && !password) attr(out, "content-desc", semanticsText(value));
+            else if ("Role".equals(name)) attr(out, "compose-role", safe(value));
+            else if ("TestTag".equals(name)) attr(out, "compose-test-tag", safe(value));
+            else if ("StateDescription".equals(name)) attr(out, "compose-state-description", semanticsText(value));
+            else if ("EditableText".equals(name) && !password) attr(out, "compose-editable", "true");
+            else if ("OnClick".equals(name)) attr(out, "clickable", "true");
+            else if ("OnLongClick".equals(name)) attr(out, "long-clickable", "true");
+            else if ("Disabled".equals(name)) attr(out, "enabled", "false");
+            else if ("Selected".equals(name)) attr(out, "selected", String.valueOf(value));
+            else if ("Focused".equals(name)) attr(out, "focused", String.valueOf(value));
+            else if ("ToggleableState".equals(name)) { String stateValue = safe(value); attr(out, "checked", Boolean.toString(stateValue.endsWith("On"))); attr(out, "compose-toggle-state", stateValue); }
+            else if ("Heading".equals(name)) attr(out, "compose-heading", "true");
+        }
+        for (SemanticsSnapshot child : semantic.children) writeSemanticsNode(out, child, tree, hostLocation, rootLocation, depth + 1);
+        out.endTag(null, "node");
+    }
+
+    private static SemanticsSnapshot snapshotSemantics(Object semantic, int depth, CaptureState state) throws Exception {
+        if (semantic == null || depth > MAX_DEPTH || state.count >= MAX_NODES) { state.truncated = true; return null; }
+        state.count++; state.composeNodes++;
+        SemanticsSnapshot snapshot = new SemanticsSnapshot();
+        snapshot.id = String.valueOf(invoke(semantic, "getId"));
+        Object bounds = invoke(semantic, "getBoundsInRoot");
+        snapshot.left = number(invoke(bounds, "getLeft")); snapshot.top = number(invoke(bounds, "getTop"));
+        snapshot.right = number(invoke(bounds, "getRight")); snapshot.bottom = number(invoke(bounds, "getBottom"));
+        Object config = invoke(semantic, "getConfig");
+        for (Object item : (Iterable<?>) config) {
+            if (!(item instanceof Map.Entry)) continue;
+            Map.Entry<?, ?> entry = (Map.Entry<?, ?>) item;
+            String name = String.valueOf(invoke(entry.getKey(), "getName")); Object value = entry.getValue();
+            if ("Password".equals(name)) snapshot.password = Boolean.TRUE.equals(value);
+            if ("Text".equals(name)) snapshot.properties.put(name, semanticsText(value));
+            else if ("ContentDescription".equals(name)) snapshot.properties.put(name, semanticsText(value));
+            else if ("StateDescription".equals(name)) snapshot.properties.put(name, semanticsText(value));
+            else if ("Role".equals(name) || "TestTag".equals(name) || "EditableText".equals(name) || "OnClick".equals(name) || "OnLongClick".equals(name) || "Disabled".equals(name) || "Selected".equals(name) || "Focused".equals(name) || "ToggleableState".equals(name) || "Heading".equals(name)) snapshot.properties.put(name, value);
+        }
+        Object children = invoke(semantic, "getChildren");
+        for (Object child : (Iterable<?>) children) {
+            SemanticsSnapshot childSnapshot = snapshotSemantics(child, depth + 1, state);
+            if (childSnapshot != null) snapshot.children.add(childSnapshot);
+        }
+        return snapshot;
+    }
+
+    private static Method findMethod(Class<?> type, String name) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass())
+            for (Method method : current.getMethods()) if (name.equals(method.getName()) && method.getParameterTypes().length == 0) return method;
+        return null;
+    }
+    private static Object invoke(Object target, String name) throws Exception {
+        if (target == null) throw new IllegalStateException("Missing Compose semantics value");
+        Method method = findMethod(target.getClass(), name); if (method == null) throw new NoSuchMethodException(name);
+        return method.invoke(target);
+    }
+    private static float number(Object value) { return value instanceof Number ? ((Number)value).floatValue() : 0f; }
+    private static String semanticsText(Object value) {
+        if (value instanceof CharSequence) return clip((CharSequence)value);
+        if (value instanceof Iterable) { StringBuilder result = new StringBuilder(); for (Object item : (Iterable<?>)value) { if (result.length() > 0) result.append(", "); result.append(safe(item)); if (result.length() >= MAX_TEXT) break; } return clip(result); }
+        return "";
+    }
+    private static String safe(Object value) { return value == null ? "" : clip(String.valueOf(value)); }
 
     private static void attr(XmlSerializer out, String key, String value) throws Exception { out.attribute(null, key, value == null ? "" : value); }
     private static String resourceId(Activity current, int id) {
@@ -214,5 +330,10 @@ public final class LayoutAgent {
         } catch (Exception error) { throw new IllegalStateException(error); }
     }
 
-    private static final class CaptureState { int count; boolean truncated; }
+    private static final class SemanticsSnapshot {
+        String id; float left; float top; float right; float bottom; boolean password;
+        final Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        final List<SemanticsSnapshot> children = new ArrayList<>();
+    }
+    private static final class CaptureState { int count; int composeHosts; int composeNodes; boolean truncated; boolean composeWarning; }
 }

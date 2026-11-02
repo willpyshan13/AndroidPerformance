@@ -42,8 +42,11 @@ export async function captureLayoutFromAgent(adb,serial,packageName,sharedToken)
     }else warnings.push('截图不可用（安全窗口或文件超过 36 MiB）');
     if(typeof response.warning==='string'&&response.warning)warnings.push(response.warning);
     if(response.truncated===true)warnings.push('View 树达到 10,000 节点或 100 层采集上限');
+    const composeHosts=Number.isSafeInteger(response.composeHosts)&&response.composeHosts>=0?response.composeHosts:0;
+    const composeNodes=Number.isSafeInteger(response.composeNodes)&&response.composeNodes>=0?response.composeNodes:0;
+    if(response.composeWarning===true)warnings.push('检测到 Compose 宿主，但当前 Compose 运行时接口不兼容，未能读取其 Semantics 树');
     const densityOutput=await adb.shell(serial,['wm','density']).catch(()=>''),densities=[...densityOutput.matchAll(/(?:Physical|Override)\s+density:\s*(\d+)/g)].map(m=>Number(m[1])),densityDpi=densities.at(-1);
-    return {xml:response.xml,screenshot,imageSize,densityDpi:Number.isSafeInteger(densityDpi)&&densityDpi>=72&&densityDpi<=1000?densityDpi:null,warning:warnings.length?warnings.join('；'):null,source:'agent',timestamp:Date.now(),serial,packageName,truncated:response.truncated===true,note:'应用内 Debug Agent View 树与应用窗口截图；不含 Compose 内部节点。节点字段比 UIAutomator 更丰富，截图仍受安全窗口与系统渲染限制。'};
+    return {xml:response.xml,screenshot,imageSize,densityDpi:Number.isSafeInteger(densityDpi)&&densityDpi>=72&&densityDpi<=1000?densityDpi:null,warning:warnings.length?warnings.join('；'):null,source:'agent',timestamp:Date.now(),serial,packageName,truncated:response.truncated===true,composeHosts,composeNodes,note:`应用内 Debug Agent View 树与窗口截图；${composeHosts?`包含 ${composeNodes} 个 Compose Semantics 节点（合并与未合并树）。`:'未检测到 Compose 宿主。'}不包含 Composable 调用树、重组计数或 State Reads；截图仍受安全窗口与系统渲染限制。`};
   }finally{
     if(Number.isInteger(port))await adb.run(['-s',serial,'forward','--remove',`tcp:${port}`],{timeout:10000}).catch(()=>{});
   }

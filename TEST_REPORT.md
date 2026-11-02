@@ -6,8 +6,9 @@
 - 桌面端生成 24 字节随机令牌，临时执行 `adb forward tcp:0 localabstract:<socket>` 并在结束时移除转发；目标端校验共享令牌。源码包包含集成说明；未接入 Agent 的应用继续使用 UIAutomator 回退。
 - 5 项集成测试覆盖转发/清理、令牌拒绝、截图不可用与截断标记、受令牌保护的 API 和源码 ZIP 内容。Java 源码以 Android 31 `android.jar` 编译通过。
 - API 25 / rk3399-all 真机临时安装独立 debug fixture：实际获取 9 个 View 节点、1080×1920 PNG 和 240 dpi；验证 Button 状态、密码文本与内容描述脱敏、错误令牌拒绝及失败后移除 ADB 转发。测试 APK 已卸载，并恢复原 `com.will.calendar.demo/.CalendarDemoActivity` 前台。目标 Compose 应用本身没有接入 Agent 源码，故未声称对该应用完成 Agent 采集。
-- 该 Agent 只枚举 Android View，不含 Compose Semantics/Composable 树、State Reads 或重组计数；`View.draw` 对 Surface 等硬件层可能不完整。
-- 完整回归：212 项，197 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。
+- Compose Semantics 支持：以本地缓存的 AndroidX Compose UI 1.7.6 AAR 核对 `AndroidComposeView.getSemanticsOwner()`、merged/unmerged 根、节点 bounds/config/children 与属性 key 的公开反射签名；用相同方法签名的测试宿主在 API 25 真机采集出 merged/unmerged 树、文本、TestTag 和点击状态，并验证 `Password` 文本及内容描述均已脱敏。该 fixture 验证反射桥接和设备传输，不等于真实 Compose Runtime 集成验证；目标 Compose 应用仍须接入 Agent 后验证。
+- Agent 仍不提供 Composable 调用树、State Reads 或运行时重组计数；`View.draw` 对 Surface 等硬件层可能不完整。
+- 完整回归：213 项，198 通过、0 失败、15 项因未配置其他外部样本而跳过；`npm run check`、`git diff --check` 通过。macOS arm64 桌面目录包成功构建，Agent 源码和界面已确认包含在 `app.asar` 中；`codesign --verify --deep --strict` 通过。
 
 ## Compose Compiler 稳定性报告导入
 

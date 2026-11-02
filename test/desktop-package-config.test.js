@@ -15,6 +15,10 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  for(const target of ['dist/v*/*.pkg','dist/v*/*.msi','dist/v*/*.deb','dist/v*/*.rpm'])assert.ok(workflow.includes(target),`missing CI artifact pattern ${target}`);
  const smoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
  assert.match(smoke,/msiexec\.exe/);assert.match(smoke,/APPLICATIONFOLDER=/);assert.match(smoke,/\['\/x', msiInstaller/);assert.match(smoke,/runNsis\(\['\/S', `\/D=\$\{installDir\}`\]\)/);assert.match(smoke,/uninstallerName\), \['\/S'\]/);assert.match(smoke,/installed desktop smoke passed/);
+ const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
+ assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
+ const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);
+ assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);
  assert.doesNotMatch(pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n'),/tools\/java-runtime=>java-runtime/);
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const mac=resources('mac').join('\n'),win=resources('win').join('\n'),linux=resources('linux').join('\n');

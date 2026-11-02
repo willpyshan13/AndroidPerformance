@@ -445,3 +445,9 @@ npm run test:device -- \
 - Reverse-call-tree traversal now keeps parent pointers instead of copying an ancestor array for every visited node; a deep, highly fragmented tree fixture verifies caller weights and match totals.
 - This verifies query behavior and index use, not end-to-end browser rendering performance on large or highly fragmented real profiles; that benchmark remains open.
 - CPU-specific tests: 16 passed. Full suite: 295 tests, 279 passed, 0 failed, 16 optional official-sample tests skipped; `npm run check` and `git diff --check` passed.
+
+## Packaged macOS arm64 app startup smoke（2026-11-03）
+
+- Added a native macOS CI smoke for both arm64 and x64 package jobs. It locates the packaged `.app`, launches its bundled executable with an isolated profile, waits for renderer navigation and the main view, checks the local app modules and verifies bundled Java, Trace Processor, and Perfetto UI resources.
+- Rebuilt the arm64 `.app` from current sources and ran `node scripts/mac-desktop-smoke.js` on the host. The app started, served its main page and all four JavaScript modules, reported a ready renderer, and exposed all three checked native resources. The first attempt used an older pre-smoke `.app` and timed out; it was discarded after confirming its `app.asar` lacked the current smoke hook.
+- Local packaged-app smoke passed. The new Windows NSIS and macOS package smoke steps still require their latest GitHub Actions run to confirm native CI behavior.

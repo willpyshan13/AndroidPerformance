@@ -107,6 +107,9 @@ jobs:
       - name: Install Windows MSI and NSIS packages and verify desktop startup
         if: runner.os == 'Windows'
         run: node scripts/desktop-smoke.js
+      - name: Launch packaged macOS app and verify desktop startup
+        if: runner.os == 'macOS'
+        run: node scripts/mac-desktop-smoke.js
       - uses: actions/upload-artifact@v7
         with:
           name: android-performance-${{ matrix.label }}

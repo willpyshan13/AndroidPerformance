@@ -1,5 +1,5 @@
 import {createWriteStream} from 'node:fs';
-import {access,cp,mkdir,mkdtemp,readFile,rename,rm,writeFile,chmod,readdir,stat} from 'node:fs/promises';
+import {access,cp,mkdir,mkdtemp,readFile,rename,rm,writeFile,chmod,readdir,stat,realpath,copyFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -48,7 +48,12 @@ async function findJavaHome(root,depth=0){
 async function makeRuntimeReadable(root){
  for(const entry of await readdir(root,{withFileTypes:true})){
   const path=join(root,entry.name);
-  if(entry.isDirectory()){await chmod(path,0o700);await makeRuntimeReadable(path);}
+  if(entry.isSymbolicLink()){
+   const target=await realpath(path),targetStat=await stat(path);await rm(path);
+   if(targetStat.isDirectory())await cp(target,path,{recursive:true,dereference:true});else await copyFile(target,path);
+   if(targetStat.isDirectory()){await chmod(path,0o700);await makeRuntimeReadable(path);}
+   else await chmod(path,(await stat(path)).mode|0o600);
+  }else if(entry.isDirectory()){await chmod(path,0o700);await makeRuntimeReadable(path);}
   else if(entry.isFile()){const {mode}=await stat(path);await chmod(path,mode|0o600);}
  }
 }

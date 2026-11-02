@@ -33,4 +33,4 @@ macOS arm64 运行 `npm run prepare:trace-processor` 从 Perfetto 官方地址�
 
 桌面打包前运行 `npm run prepare:shark`。脚本下载 Square LeakCanary 2.14 官方 Shark CLI 发布包，固定校验归档 SHA-256，只保留 Android HPROF 分析需要的核心 JAR，并保存 Apache-2.0 / BSD-2-Clause 许可证及来源信息，同时准备 Eclipse Temurin Java 17 runtime。macOS 与 Linux 常见架构使用固定版本和 SHA-256 的 Temurin JRE；其他平台可通过 `JAVA_HOME` 使用 Java 17 或更新版本。资源写入忽略提交的 `tools/shark-cli/` 和 `tools/java-runtime/`，由桌面安装包带上。首次下载需要网络访问。
 
-Shark 在本地分析当前 HPROF 会话，不上传堆文件。报告由 LeakCanary Shark 生成，包含其 Android reference matcher、object inspector、leak signature 和 retained-size 分析。独立的 `KeyedWeakReference` 路径候选是本工具的辅助查询，不能替代 Shark 报告。当前界面尚未提供 ProGuard/R8 mapping 文件选择。
+Shark 在本地分析当前 HPROF 会话，不上传堆文件。报告由 LeakCanary Shark 生成，包含其 Android reference matcher、object inspector、leak signature 和 retained-size 分析。独立的 `KeyedWeakReference` 路径候选是本工具的辅助查询，不能替代 Shark 报告。可通过界面载入 R8/ProGuard `.map` 或 `.txt` 文件（上限 128 MiB）；文件保存在当前 HPROF 私有临时会话中，并随会话清理。

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, writeFile, mkdir, readdir, access, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, access, stat, open, rename, rm } from 'node:fs/promises';
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -41,7 +41,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false;
   let gpuBusy=false;
-  let apkBusy = false, heapBusy = false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
+  let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -171,7 +171,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           perfBusy=true;try{return json(await analyzePerfUpload(req));}finally{perfBusy=false;}
         }
         if (path === '/api/heap/analyze') {
-          if(heapBusy||sharkBusy){req.resume();return json({error:'已有堆文件或 Shark 分析正在运行，请等待完成'},409);}
+          if(heapBusy||mappingBusy||sharkBusy){req.resume();return json({error:'已有堆文件或 Shark 分析正在运行，请等待完成'},409);}
           const role=req.headers['x-heap-role']||'current';
           if(!['current','baseline'].includes(role)){req.resume();throw new Error('堆快照用途无效');}
           heapBusy=true;try{
@@ -185,11 +185,37 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
             return json({...result,sessionId,sharkAvailable:heapSession.sharkResources.available});
           }finally{heapBusy=false;}
         }
+        if(path==='/api/heap/mapping'){
+          const declared=req.headers['content-length'];
+          if(heapBusy||mappingBusy||sharkBusy){req.resume();return json({error:'堆文件或 Shark 分析正在运行，请等待完成'},409);}
+          if(!heapSession||req.headers['x-heap-session']!==heapSession.sessionId){req.resume();throw new Error('堆快照已关闭或已替换，请重新导入');}
+          if(declared!==undefined&&(!/^\d+$/.test(declared)||Number(declared)>128*1024*1024)){req.resume();throw Object.assign(new Error('混淆映射文件不能超过 128 MiB'),{status:413});}
+          let fileName='';try{fileName=decodeURIComponent(String(req.headers['x-heap-mapping-name']||''));}catch{req.resume();throw new Error('混淆映射文件名无效');}
+          if(!fileName||fileName.length>240||/[\x00-\x1f\x7f/\\]/.test(fileName)||!/(\.map|\.txt)$/i.test(fileName)){req.resume();throw new Error('请选择 .map 或 .txt 混淆映射文件');}
+          mappingBusy=true;const folder=dirname(heapSession.filePath),temp=join(folder,`mapping-${randomUUID()}.tmp`),mappingPath=join(folder,`mapping-${randomUUID()}.txt`);let size=0,decoder=new TextDecoder('utf-8',{fatal:true}),file;
+          try{
+            file=await open(temp,'wx',0o600);
+            for await(const chunk of req.iterator({destroyOnReturn:false})){
+              size+=chunk.length;if(size>128*1024*1024)throw Object.assign(new Error('混淆映射文件不能超过 128 MiB'),{status:413});
+              if(decoder.decode(chunk,{stream:true}).includes('\0'))throw new Error('混淆映射必须是 UTF-8 文本');
+              let offset=0;while(offset<chunk.length){const {bytesWritten}=await file.write(chunk,offset,chunk.length-offset);if(!bytesWritten)throw new Error('混淆映射文件写入失败');offset+=bytesWritten;}
+            }
+            if(decoder.decode().includes('\0'))throw new Error('混淆映射必须是 UTF-8 文本');
+            if(!size)throw new Error('混淆映射文件为空');await file.close();file=null;await rename(temp,mappingPath);
+            const previous=heapSession.mappingPath;heapSession.mappingPath=mappingPath;heapSession.mappingName=fileName;heapSession.mappingBytes=size;if(previous)await rm(previous,{force:true});
+            return json({fileName,size});
+          }catch(error){if(file)await file.close().catch(()=>{});await rm(temp,{force:true});throw error;}finally{mappingBusy=false;}
+        }
+        if(path==='/api/heap/mapping/clear'){
+          const body=await readBody(req);if(heapBusy||mappingBusy||sharkBusy)return json({error:'堆文件或 Shark 分析正在运行，请等待完成'},409);
+          if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
+          mappingBusy=true;try{if(heapSession.mappingPath)await rm(heapSession.mappingPath,{force:true});heapSession.mappingPath=null;heapSession.mappingName=null;heapSession.mappingBytes=null;return json({cleared:true});}finally{mappingBusy=false;}
+        }
         if(path==='/api/heap/shark-analysis'){
           const body=await readBody(req);
-          if(sharkBusy)return json({error:'Shark 分析已在运行，请等待完成'},409);
+          if(heapBusy||mappingBusy||sharkBusy)return json({error:'堆文件或 Shark 分析正在运行，请等待完成'},409);
           if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
-          sharkBusy=true;try{return json(await analyzeWithShark(heapSession.filePath,heapSession.sharkResources,{mappingPath:body.mappingPath??null}));}finally{sharkBusy=false;}
+          sharkBusy=true;try{return json(await analyzeWithShark(heapSession.filePath,heapSession.sharkResources,{mappingPath:heapSession.mappingPath??null}));}finally{sharkBusy=false;}
         }
         if (path === '/api/apk/analyze') {
           if(apkBusy){req.resume();return json({error:'已有 APK 正在分析，请等待完成'},409);}

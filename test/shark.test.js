@@ -43,13 +43,18 @@ test('HTTP Shark analysis is bound to the current retained HPROF session',async 
  app.listen(0,'127.0.0.1');await once(app,'listening');t.after(()=>new Promise(resolve=>app.close(resolve)));
  const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'test'};
  const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:heap}),session=await uploaded.json();assert.equal(uploaded.status,200);assert.equal(session.sharkAvailable,true);
+ const mapping=Buffer.from('com.example.Screen -> a:\n    void draw() -> b\n');
+ const mapped=await fetch(`${base}/heap/mapping`,{method:'POST',headers:{...headers,'X-Heap-Session':session.sessionId,'X-Heap-Mapping-Name':encodeURIComponent('mapping.txt')},body:mapping}),mappingResult=await mapped.json();
+ assert.equal(mapped.status,200,JSON.stringify(mappingResult));assert.equal(mappingResult.size,mapping.length);assert.equal(mappingResult.fileName,'mapping.txt');
  const analysis=await fetch(`${base}/heap/shark-analysis`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})}),result=await analysis.json();
- assert.equal(analysis.status,200,JSON.stringify(result));assert.equal(result.success,true);assert.match(result.report,/HEAP ANALYSIS RESULT/);
+ assert.equal(analysis.status,200,JSON.stringify(result));assert.equal(result.success,true);assert.match(result.report,/HEAP ANALYSIS RESULT/);assert.match(result.report,/-m/);assert.match(result.report,/mapping-[\w-]+\.txt/);
+ const cleared=await fetch(`${base}/heap/mapping/clear`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})});assert.equal(cleared.status,200);assert.equal((await cleared.json()).cleared,true);
+ const invalid=await fetch(`${base}/heap/mapping`,{method:'POST',headers:{...headers,'X-Heap-Session':session.sessionId,'X-Heap-Mapping-Name':encodeURIComponent('bad.bin')},body:mapping});assert.equal(invalid.status,400);
  const stale=await fetch(`${base}/heap/shark-analysis`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:'stale'})});assert.equal(stale.status,400);
 });
 
 test('official Android HPROF is analyzed by the prepared Shark CLI',async t=>{
  const sample=process.env.APW_SHARK_SAMPLE;if(!sample){t.skip('设置 APW_SHARK_SAMPLE 指向官方 Android HPROF 样本');return;}
  const resources=await resolveSharkResources({sharkDir:resolve(root,process.env.APW_SHARK_DIR||'tools/shark-cli'),javaPath:resolve(root,process.env.APW_SHARK_JAVA||'tools/java-runtime/bin/java')});
- const result=await analyzeWithShark(sample,resources);assert.equal(result.available,true);assert.equal(result.success,true,result.reason||result.report);assert.match(result.report,/HEAP ANALYSIS RESULT/);
+ const result=await analyzeWithShark(sample,resources,{mappingPath:process.env.APW_SHARK_MAPPING||null});assert.equal(result.available,true);assert.equal(result.success,true,result.reason||result.report);assert.match(result.report,/HEAP ANALYSIS RESULT/);
 });

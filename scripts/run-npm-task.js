@@ -7,11 +7,12 @@ if(!task||!/^[-:a-z0-9]+$/.test(task))throw new Error('npm task is required');
 const command=process.platform==='win32'?'npm.cmd':'npm';
 const run=()=>spawnSync(command,['run',task],{encoding:'utf8',shell:process.platform==='win32',maxBuffer:64*1024*1024});
 let result=run(),attempt=1;
-while(task.startsWith('package:')&&result.status!==0&&/EBUSY.*copyfile/i.test(`${result.stdout||''}\n${result.stderr||''}`)&&attempt<3){
- console.log(`::warning title=Transient file lock::Retrying ${task} after EBUSY copyfile (attempt ${attempt+1}/3).`);
+const maxAttempts=5;
+while(task.startsWith('package:')&&result.status!==0&&/EBUSY.*copyfile/i.test(`${result.stdout||''}\n${result.stderr||''}`)&&attempt<maxAttempts){
+ console.log(`::warning title=Transient file lock::Retrying ${task} after EBUSY copyfile (attempt ${attempt+1}/${maxAttempts}).`);
  const {version}=JSON.parse(await readFile('package.json','utf8'));
- await rm(join('dist',`v${version}`),{recursive:true,force:true,maxRetries:10,retryDelay:300});
- await new Promise(resolve=>setTimeout(resolve,1500));result=run();attempt++;
+ await rm(join('dist',`v${version}`),{recursive:true,force:true,maxRetries:15,retryDelay:500});
+ await new Promise(resolve=>setTimeout(resolve,Math.min(1500*2**(attempt-1),10_000)));result=run();attempt++;
 }
 if(result.stdout)process.stdout.write(result.stdout);
 if(result.stderr)process.stderr.write(result.stderr);

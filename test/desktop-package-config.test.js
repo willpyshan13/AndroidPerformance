@@ -4,8 +4,8 @@ import {readFile} from 'node:fs/promises';
 
 test('native desktop package targets stage platform-matched SDK and Trace Processor tools',async()=>{
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
- assert.equal(pkg.scripts['package:dmg:x64'],'electron-builder --mac dmg --x64');
- assert.equal(pkg.scripts['package:linux:arm64'],'electron-builder --linux AppImage --arm64');
+ assert.equal(pkg.scripts['package:dmg:x64'],'electron-builder --mac dmg --x64 --publish never');
+ assert.equal(pkg.scripts['package:linux:arm64'],'electron-builder --linux AppImage --arm64 --publish never');
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const win=resources('win').join('\n'),linux=resources('linux').join('\n');
  for(const [name,entries] of [['Windows',win],['Linux',linux]]){

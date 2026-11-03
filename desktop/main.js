@@ -49,18 +49,18 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
     for(const name of tabs){
       const tab=document.querySelector('[data-apk-tab="'+name+'"]');if(!tab)return fail('Missing APK tab: '+name);
       tab.click();await settle();
-      const content=document.querySelector('#apk-content'),text=content?.textContent||'';
-      const valid=tab.getAttribute('aria-selected')==='true'&&(
+      const content=document.querySelector('#apk-content'),text=content?.textContent||'',selected=document.querySelector('[data-apk-tab="'+name+'"]')?.getAttribute('aria-selected')==='true';
+      const valid=selected&&(
         name==='overview'?!!content?.querySelector('.apk-stack'):
         name==='files'?!!content?.querySelector('#apk-file-table tbody tr'):
         name==='permissions'?!!content?.querySelector('.table-wrap table'):
         name==='components'?!!content?.querySelector('#apk-component-table'):
         name==='dex'?text.includes('method_ids'):
-        name==='signing'?text.includes('签名结构')||text.includes('Signature structure'):
+        name==='signing'?text.includes('签名结构')||text.includes('Signing structure'):
         name==='manifest'?!!content?.querySelector('.apk-manifest pre')?.textContent.includes('<manifest'):false);
       checks[name]=valid;if(!valid)return fail('APK tab failed to render: '+name+'; '+text.slice(0,300));
     }
-    const fileTab=document.querySelector('[data-apk-tab="files"]');fileTab.click();await settle();
+    document.querySelector('[data-apk-tab="files"]')?.click();await settle();
     const search=document.querySelector('#apk-search');search.value='AndroidManifest.xml';search.dispatchEvent(new Event('input',{bubbles:true}));await settle();
     const filtered=Array.from(document.querySelectorAll('#apk-file-table tbody tr')).filter(row=>row.textContent.includes('AndroidManifest.xml')).length===1;
     if(!filtered)return fail('APK file-path filter did not isolate AndroidManifest.xml');

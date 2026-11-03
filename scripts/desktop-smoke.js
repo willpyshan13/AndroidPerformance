@@ -9,14 +9,19 @@ const outputDir = resolve(`dist/v${pkg.version}`);
 const diagnosticPath = resolve('dist/windows-desktop-smoke.log');
 async function publishFailureCode(error) {
   if (!process.env.GITHUB_OUTPUT) return;
-  const message = error?.message || String(error);
+  const messages = [error?.message || String(error)];
+  if (error instanceof AggregateError) messages.push(...error.errors.map(item => item?.message || String(item)));
+  const message = messages.join('\n');
   const code = /Expected one MSI/i.test(message) ? 'windows-msi-artifact-count'
     : /Expected one NSIS/i.test(message) ? 'windows-nsis-artifact-count'
-    : /MSI installation failed with exit code (\d+)/i.test(message) ? `windows-msi-install-${message.match(/MSI installation failed with exit code (\d+)/i)[1]}`
-    : /MSI uninstallation failed with exit code (\d+)/i.test(message) ? `windows-msi-uninstall-${message.match(/MSI uninstallation failed with exit code (\d+)/i)[1]}`
-    : /NSIS installation failed with exit code (\d+)/i.test(message) ? `windows-nsis-install-${message.match(/NSIS installation failed with exit code (\d+)/i)[1]}`
-    : /NSIS uninstallation failed with exit code (\d+)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+)/i)[1]}`
-    : /did not start|startup failed|renderer|APK analysis UI/i.test(message) ? 'windows-installed-app-startup'
+    : /MSI installation failed with exit code (\d+|unknown)/i.test(message) ? `windows-msi-install-${message.match(/MSI installation failed with exit code (\d+|unknown)/i)[1]}`
+    : /MSI uninstallation failed with exit code (\d+|unknown)/i.test(message) ? `windows-msi-uninstall-${message.match(/MSI uninstallation failed with exit code (\d+|unknown)/i)[1]}`
+    : /NSIS installation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-install-${message.match(/NSIS installation failed with exit code (\d+|unknown)/i)[1]}`
+    : /NSIS uninstallation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+|unknown)/i)[1]}`
+    : /NSIS uninstaller was not found/i.test(message) ? 'windows-nsis-uninstaller-missing'
+    : /temporary files could not be removed/i.test(message) ? 'windows-temp-cleanup'
+    : /desktop route\/CPU stack chart|home is missing quick actions|home artifact section|APK analysis UI/i.test(message) ? 'windows-installed-app-ui'
+    : /did not start|startup failed|renderer|Unable to start installed desktop app/i.test(message) ? 'windows-installed-app-startup'
     : 'windows-desktop-smoke-unknown';
   try { await appendFile(process.env.GITHUB_OUTPUT, `failure_code=${code}\n`, 'utf8'); } catch {}
 }

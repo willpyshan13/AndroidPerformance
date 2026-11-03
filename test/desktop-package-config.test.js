@@ -52,5 +52,5 @@ test('failed package smoke publishes a sanitized failure classification',async()
  assert.match(workflow,/id: apk-smoke-arm64/);assert.match(workflow,/id: apk-smoke-sdk/);assert.match(workflow,/id: desktop-installer-smoke/);
  assert.match(workflow,/android-performance-smoke-diagnostics-\$\{\{ matrix\.label \}\}-\$\{\{ steps\.apk-smoke-arm64\.outputs\.failure_code/);
  assert.match(apkSmoke,/aapt2-dump-xmltree/);assert.match(apkSmoke,/aapt2-manifest-output/);assert.match(apkSmoke,/failure_code=\$\{failureCode\}/);
- assert.match(desktopSmoke,/windows-msi-install-/);assert.match(desktopSmoke,/failure_code=\$\{code\}/);
+ assert.match(desktopSmoke,/windows-msi-install-/);assert.match(desktopSmoke,/windows-nsis-uninstaller-missing/);assert.match(desktopSmoke,/error\.errors\.map/);assert.match(desktopSmoke,/failure_code=\$\{code\}/);
 });

@@ -98,3 +98,7 @@ test('invalid ZIP, absent/duplicate manifest and unsafe paths fail before runnin
     const path=join(dir,name+'.apk');await writeFile(path,bytes);await assert.rejects(analyzeApk(path,{aapt2Path:'fixture',runner:async()=>{calls++;return {stdout:''};}}));
   }assert.equal(calls,0);
 });
+test('AAPT2 analysis failure identifies the exact subcommand',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-apk-command-error-'));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,'test.apk');await writeFile(path,zipFixture([['AndroidManifest.xml','binary']]));
+ await assert.rejects(analyzeApk(path,{aapt2Path:'fixture-aapt',runner:async(_tool,args)=>{if(args[1]==='badging')throw Object.assign(new Error('command failed'),{stderr:'fixture badging error'});return {stdout:TREE};}}),/AAPT2 解析失败：dump badging: fixture badging error/);
+});

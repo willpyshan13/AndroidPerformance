@@ -189,8 +189,13 @@ export async function analyzeApk(path, { fileName = basename(path), aapt2Path, r
     if (!tool) throw new Error('未找到 AAPT2：桌面版应包含解析器，源码运行可设置 AAPT2_PATH');
     let badging, tree;
     try {
-      const results = await Promise.allSettled([['dump','badging',path], ['dump','xmltree',path,'--file','AndroidManifest.xml']].map(async args => (await runner(tool,args,{timeout:60000,maxBuffer:16*1024*1024,encoding:'utf8',windowsHide:true})).stdout));
-      const failure=results.find(r=>r.status==='rejected');if(failure)throw failure.reason;
+      const commands = [
+        { label: 'dump badging', args: ['dump','badging',path] },
+        { label: 'dump xmltree', args: ['dump','xmltree',path,'--file','AndroidManifest.xml'] },
+      ];
+      const results = await Promise.allSettled(commands.map(async ({args}) => (await runner(tool,args,{timeout:60000,maxBuffer:16*1024*1024,encoding:'utf8',windowsHide:true})).stdout));
+      const failureIndex=results.findIndex(r=>r.status==='rejected');
+      if(failureIndex>=0){const failure=results[failureIndex].reason;throw new Error(`${commands[failureIndex].label}: ${String(failure.stderr||failure.message).slice(0,800)}`);}
       [badging,tree]=results.map(r=>r.value);
     } catch (error) { throw new Error(`AAPT2 解析失败：${String(error.stderr || error.message).slice(0,800)}`); }
     const manifest = parseApkManifest(badging, tree);

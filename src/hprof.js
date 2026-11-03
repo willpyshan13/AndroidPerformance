@@ -250,7 +250,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   function buildReverseGraph(){
     if(reverseGraph)return reverseGraph;
     const edges=new Map(), layouts=new Map();let edgeCount=0,incomplete=indexTruncated, skipped=0, missingTargets=0, limited=false;
-    const edgeLimit=750000;
+    const edgeLimit=1500000;
     function add(target,source,label,referenceKind=null){
       if(target===nullId)return;
       if(!index.has(target)){missingTargets++;incomplete=true;return;}

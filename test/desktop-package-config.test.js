@@ -50,6 +50,19 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const perfUpload=await readFile(new URL('../src/perf-upload.js',import.meta.url),'utf8');assert.match(perfUpload,/pythonPath=process\.env\.APW_PYTHON_PATH/);assert.match(perfUpload,/platform==='win32'\?\['python','py'\]:\['python3','python'\]/);assert.match(perfUpload,/command==='py'\?\['-3'\]:\[\]/);
 });
 
+test('large HPROF device fixture remains reproducible without entering desktop packages',async()=>{
+ const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+ const builder=await readFile(new URL('../scripts/build-hprof-load-fixture.js',import.meta.url),'utf8');
+ const activity=await readFile(new URL('../test/fixtures/hprof-load/HprofLoadActivity.java',import.meta.url),'utf8');
+ const manifest=await readFile(new URL('../test/fixtures/hprof-load/AndroidManifest.xml',import.meta.url),'utf8');
+ assert.match(pkg.scripts.check,/node --check scripts\/build-hprof-load-fixture\.js/);
+ assert.equal(pkg.scripts['build:hprof-load-fixture'],'node scripts/build-hprof-load-fixture.js');
+ assert.match(builder,/build-tools\/35\.0\.0/);assert.match(builder,/\bd8\b/);assert.match(builder,/\baapt\b/);assert.match(builder,/\bapksigner\b/);
+ assert.match(activity,/NODE_COUNT = 350_000/);assert.match(activity,/root = previous/);
+ assert.match(manifest,/android:debuggable="true"/);assert.match(manifest,/targetSdkVersion="25"/);
+ assert.ok(!JSON.stringify(pkg.build).includes('hprof-load'));
+});
+
 test('failed package smoke publishes a sanitized failure classification',async()=>{
  const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
  const apkSmoke=await readFile(new URL('../scripts/apk-tools-smoke.js',import.meta.url),'utf8');

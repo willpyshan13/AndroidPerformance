@@ -8,7 +8,7 @@
 ## Trace SQL 查询结果导出（2026-11-03）
 
 - 自定义 PerfettoSQL 查询结果可导出 UTF-8 CSV，保留列名、行顺序和完整结果；对引号、逗号、换行正确转义，对表格公式前缀做文本中和。导出遵循查询本身 500 行 / 50 列上限。
-- CSV 单元测试覆盖公式、逗号、引号、换行和行列边界拒绝。macOS ARM64 `.app` smoke 导入离线合成 Trace、运行 PerfettoSQL 并确认 CSV 导出入口出现；导出的数据来自当前 Trace Processor 查询结果。无真实设备或模拟器参与。
+- CSV 单元测试覆盖公式、逗号、引号、换行和行列边界拒绝。macOS ARM64 `.app` smoke 导入离线合成 Trace、运行 PerfettoSQL、触发导出并检查 Blob MIME、UTF-8 BOM 字节、列名和帧数据。macOS 打包脚本直接复用 npm 安装的 Electron 发行目录，避免 electron-builder 再次联网下载同一份 Electron。无真实设备或模拟器参与。
 
 ## 布局 Agent 采集区间映射到 FrameTimeline（2026-11-03）
 

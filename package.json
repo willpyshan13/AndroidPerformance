@@ -17,7 +17,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "desktop": "electron .",
-    "package:mac": "electron-builder --mac dir --arm64 --publish never",
+    "package:mac": "electron-builder --mac dir --arm64 --publish never --config.electronDist=node_modules/electron/dist",
     "package:mac:installers": "electron-builder --mac dmg pkg --arm64 --publish never",
     "package:mac:installers:x64": "electron-builder --mac dmg pkg --x64 --publish never",
     "package:dmg": "electron-builder --mac dmg --arm64 --publish never",

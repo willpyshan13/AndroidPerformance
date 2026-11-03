@@ -20,6 +20,35 @@ export function correlateComposeEventsToFrames(events, frames) {
   return {available:true,frames:timedFrames.filter(item=>item.events.length).map(({frame,events:matched})=>({index:frame.index,durationMs:frame.durationMs,overBudget:frame.overBudget,events:matched})),matchedEventCount,uniqueMatchedEventCount:matchedEventIndices.size,clockMismatchCount,invalidCount,frameCount:timedFrames.length};
 }
 
+export function correlateGfxFramesToTimeline(gfxFrames, timelineFrames, {sameDevice=false, api=null, packageName=null}={}) {
+  const unavailable=reason=>({available:false,reason,frames:[],matchedFrameCount:0,overlapPairs:0,ambiguousFrameCount:0,unmatchedFrameCount:0});
+  if(!sameDevice)return unavailable('需要两组数据都来自同一台已知设备；导入的追踪或 gfxinfo 文本没有设备身份，不能自动关联。');
+  if(!Number.isInteger(Number(api))||Number(api)<31)return unavailable('需要 Android 12（API 31）或更高版本的设备。');
+  if(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName))return unavailable('需要有效的目标应用包名。');
+  if(!Array.isArray(gfxFrames)||!gfxFrames.length||!Array.isArray(timelineFrames)||!timelineFrames.length)return unavailable('请同时读取逐帧 gfxinfo 和当前追踪的 FrameTimeline。');
+  const validTimeline=timelineFrames.flatMap((frame,index)=>{
+    if(typeof frame?.tsNs!=='string'||! /^-?\d{1,19}$/.test(frame.tsNs)||typeof frame?.durationNs!=='string'||! /^\d{1,19}$/.test(frame.durationNs)||BigInt(frame.durationNs)<=0n)return [];
+    if(typeof frame.process!=='string'||!(frame.process===packageName||frame.process.startsWith(`${packageName}:`)))return [];
+    const start=BigInt(frame.tsNs),end=start+BigInt(frame.durationNs);
+    return [{frame,index,start,end}];
+  });
+  if(!validTimeline.length)return unavailable('当前追踪没有该应用进程的有效 FrameTimeline 时间区间。');
+  const matched=[];let overlapPairs=0,ambiguousFrameCount=0,validGfxCount=0;
+  for(const frame of gfxFrames){
+    const startText=frame?.timestamps?.IntendedVsync||frame?.startNsExact,endText=frame?.timestamps?.FrameCompleted;
+    if(!/^\d{1,19}$/.test(startText||'')||!/^\d{1,19}$/.test(endText||''))continue;
+    const start=BigInt(startText),end=BigInt(endText);if(end<=start)continue;validGfxCount++;
+    const candidates=[];
+    for(const item of validTimeline){
+      const overlapStart=start>item.start?start:item.start,overlapEnd=end<item.end?end:item.end;
+      if(overlapEnd<=overlapStart)continue;
+      candidates.push({timelineIndex:item.index,process:item.frame.process,layer:item.frame.layer||'',tsNs:item.frame.tsNs,durationNs:item.frame.durationNs,jankType:item.frame.jankType||'',presentType:item.frame.presentType||'',overlapNs:(overlapEnd-overlapStart).toString()});
+    }
+    if(candidates.length){matched.push({gfxFrameIndex:frame.index,startNs:startText,endNs:endText,durationMs:frame.durationMs,overBudget:frame.overBudget,candidates});overlapPairs+=candidates.length;if(candidates.length>1)ambiguousFrameCount++;}
+  }
+  return {available:true,frames:matched,matchedFrameCount:matched.length,overlapPairs,ambiguousFrameCount,unmatchedFrameCount:Math.max(0,validGfxCount-matched.length),validGfxFrameCount:validGfxCount,note:'按同一设备上 gfxinfo IntendedVsync–FrameCompleted 与 FrameTimeline 时间区间重叠匹配。重叠是候选关系，不代表相同帧、因果或 Jank 来源；多图层可能产生多个候选。'};
+}
+
 export function correlateGpuStagesToFrames(stages, frames) {
   if (!Array.isArray(stages) || !Array.isArray(frames)) return {available:false,reason:'请先载入同一追踪的 GPU RenderStage 和 FrameTimeline 数据。',frames:[],matchedFrameCount:0,stageFramePairs:0};
   if (stages.length > 1000 || frames.length > 2000) throw new Error('GPU 与帧区间关联数据超出限制');

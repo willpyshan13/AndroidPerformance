@@ -1,5 +1,11 @@
 # 当前验证记录（2026-11-03）
 
+## gfxinfo 与 Perfetto FrameTimeline 关联（2026-11-03）
+
+- 帧分析页新增同设备来源门控的 gfxinfo / FrameTimeline 时间重叠候选：仅当帧数据和当前追踪都由本次桌面会话从同一 serial 采集、包名一致且 API 31+ 时启用；导入来源不会继承设备身份。结果显示重叠候选、超预算信息和 FrameTimeline Jank 标签，并可跳至对应追踪时间段。
+- 关联使用 BigInt 纳秒区间，过滤目标应用及其子进程；严格按半开区间求交集，保留一对多图层候选，并明确时间重叠不证明同一帧、因果或 Jank 来源。没有设备数据时用合成离线测试覆盖精度、来源门控、进程过滤、边界和无效值。
+- `test/gfx-frame-timeline-correlation.test.js` 与 `test/i18n.test.js` 定向测试通过；全量 `npm test` 为 349 项，333 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。本轮未连接设备、未启动模拟器，也未验证真实 FrameTimeline 轨道。
+
 ## Itanium 模板类型显示与源码候选（2026-11-03）
 
 - 解码常见 Itanium ABI 模板名中的内置类型和简单名称类型参数，例如 `_ZN4demo6WidgetIiE4drawEv` 显示为 `demo::Widget<int>::draw`；模板类和全局函数候选会保留模板显示名、按基础声明名查找。遇到未支持的模板编码会拒绝解析并提示文本搜索，不将未知特化静默当作通用类。

@@ -125,6 +125,24 @@ try {
     await writeFile(join(outDir, 'layout.xml'), layout.xml); await writeFile(join(outDir, 'screen.png'), png);
     evidence.layout = layout; return { nodes, screenshotBytes: png.length, warning: layout.warning };
   });
+  if (control) {
+    await check('heap-capture-and-analysis', async () => {
+      const data = await request('/heap', { serial, packageName }, true);
+      assert(data.subarray(0, 32).toString('ascii').startsWith('JAVA PROFILE 1.0.'));
+      const response = await fetch(`${origin}/api/heap/analyze`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'X-Heap-Role': 'current' }, body: data });
+      const analysis = await response.json();
+      if (!response.ok) throw new Error(analysis.error || 'HPROF 分析失败');
+      assert(analysis.objects > 0); assert(analysis.sessionId);
+      let shark = null;
+      if (analysis.sharkAvailable) {
+        const sharkResponse = await fetch(`${origin}/api/heap/shark-analysis`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: analysis.sessionId }) });
+        shark = await sharkResponse.json();
+        if (!sharkResponse.ok) throw new Error(shark.error || 'Shark 分析失败');
+        assert.equal(shark.success, true);
+      }
+      return { bytes: data.length, objects: analysis.objects, classes: analysis.classes?.length, sharkAvailable: analysis.sharkAvailable, shark: shark && { success: shark.success, version: shark.version, durationMs: shark.durationMs } };
+    });
+  }
   await check('perfetto-capture', async () => {
     let available = false;
     try { available = !!(await adb.shell(serial, ['which', 'perfetto'])).trim(); } catch {}

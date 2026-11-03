@@ -1,19 +1,29 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import pkg from '../package.json' with { type: 'json' };
 
 const outputDir = resolve(`dist/v${pkg.version}`);
-const files = await readdir(outputDir);
-const findInstaller = extension => files.filter(name => name.toLowerCase().endsWith(extension));
-const [msiName] = findInstaller('.msi');
-const [nsisName] = findInstaller('.exe');
-if (findInstaller('.msi').length !== 1) throw new Error(`Expected one MSI installer in ${outputDir}, found ${findInstaller('.msi').length}`);
-if (findInstaller('.exe').length !== 1) throw new Error(`Expected one NSIS installer in ${outputDir}, found ${findInstaller('.exe').length}`);
-const msiInstaller = join(outputDir, msiName);
-const nsisInstaller = join(outputDir, nsisName);
+const diagnosticPath = resolve('dist/windows-desktop-smoke.log');
+let files, msiInstaller, nsisInstaller;
+try {
+  files = await readdir(outputDir);
+  const findInstaller = extension => files.filter(name => name.toLowerCase().endsWith(extension));
+  const [msiName] = findInstaller('.msi');
+  const [nsisName] = findInstaller('.exe');
+  if (findInstaller('.msi').length !== 1) throw new Error(`Expected one MSI installer in ${outputDir}, found ${findInstaller('.msi').length}`);
+  if (findInstaller('.exe').length !== 1) throw new Error(`Expected one NSIS installer in ${outputDir}, found ${findInstaller('.exe').length}`);
+  msiInstaller = join(outputDir, msiName);
+  nsisInstaller = join(outputDir, nsisName);
+} catch (error) {
+  await mkdir(dirname(diagnosticPath), { recursive: true });
+  const detail = error?.stack || error?.message || String(error);
+  await writeFile(diagnosticPath, `${detail}\n`, 'utf8');
+  console.error(`Windows smoke initialization failed; diagnostic written to ${diagnosticPath}\n${detail}`);
+  throw error;
+}
 
 function runMsi(args) {
   return spawnSync('msiexec.exe', args, { encoding: 'utf8', timeout: 180_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
@@ -161,8 +171,7 @@ finally { await rm(tempRoot, { recursive: true, force: true }); }
 
 if (failure) {
   const rawDetail = failure.stack || failure.message || String(failure);
-  const logPath = join(outputDir, 'windows-desktop-smoke.log');
-  await writeFile(logPath, `${rawDetail}\n`, 'utf8');
+  await writeFile(diagnosticPath, `${rawDetail}\n`, 'utf8');
   const detail = rawDetail.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   console.log(`::error title=Windows installer smoke::${detail}`);
   throw failure;

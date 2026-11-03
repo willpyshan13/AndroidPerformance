@@ -154,7 +154,7 @@ jobs:
           name: android-performance-smoke-diagnostics-${{ matrix.label }}
           path: |
             dist/apw-apk-smoke.log
-            dist/v*/windows-desktop-smoke.log
+            dist/windows-desktop-smoke.log
           if-no-files-found: ignore
           retention-days: 14
       - uses: actions/upload-artifact@v7

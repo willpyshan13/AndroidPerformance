@@ -25,24 +25,46 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
       - run: npm ci
-      - run: node scripts/run-npm-task.js prepare:trace-processor
+      - name: Restore verified macOS ARM64 tools
+        id: prepared-tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/platform-tools
+            tools/apk-tools
+            tools/simpleperf
+            tools/trace-processor
+            tools/perfetto-ui
+            tools/shark-cli
+            tools/java-runtime
+            tools/java-runtime.tar.gz
+            tools/java25-runtime
+          key: macos-arm64-tools-v1-${{ hashFiles('scripts/prepare-adb.sh', 'scripts/prepare-sdk-tools.js', 'scripts/prepare-simpleperf.js', 'scripts/prepare-python-runtime.js', 'scripts/prepare-trace-processor.js', 'scripts/prepare-shark.js', 'scripts/prepare-inspector-runtime.js', 'scripts/prepare-perfetto-ui.js', 'src/trace-processor-artifacts.js', 'tools/simpleperf-legacy/**', 'package-lock.json') }}
+      - name: Prepare Trace Processor
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
+        run: node scripts/run-npm-task.js prepare:trace-processor
       - run: npm test
       - name: Identify individual failing test files
         if: failure()
         run: node scripts/diagnose-tests.js
       - run: npm run check
       - uses: actions/setup-java@v6
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
         with:
           packages: 'build-tools;35.0.0 platforms;android-35'
       - name: Install NDK for macOS simpleperf
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
         shell: bash
         run: sdkmanager 'ndk;27.2.12479018'
       - name: Prepare macOS tools
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
         shell: bash
         env:
           APW_ADHOC_ADB: '1'
@@ -56,8 +78,11 @@ jobs:
         run: npm run smoke:apk-tools
         id: apk-smoke-sdk
       - run: node scripts/run-npm-task.js prepare:shark
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
       - run: node scripts/run-npm-task.js prepare:inspector-runtime
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
+        if: steps.prepared-tools.outputs.cache-hit != 'true'
       - run: node scripts/run-npm-task.js package:dmg
       - name: Launch packaged macOS app and verify desktop startup
         run: node scripts/mac-desktop-smoke.js

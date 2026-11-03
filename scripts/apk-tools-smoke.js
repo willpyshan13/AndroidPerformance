@@ -38,6 +38,13 @@ try {
   assert.equal(result.manifest.minSdk, 21);
   assert.ok(result.files.some(file => file.path === 'AndroidManifest.xml'));
   console.log(`Real AAPT2 APK analysis smoke passed: ${result.packageName}, minSdk ${result.manifest.minSdk}, ${result.fileCount} ZIP entries`);
+} catch (error) {
+  const detail = error?.stack || error?.message || String(error);
+  const logPath = resolve(process.env.APK_SMOKE_LOG_PATH || 'dist/apw-apk-smoke.log');
+  await mkdir(dirname(logPath), { recursive: true });
+  await writeFile(logPath, `${detail}\n`, 'utf8');
+  console.error(`APK smoke failed; diagnostic written to ${logPath}\n${detail}`);
+  throw error;
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

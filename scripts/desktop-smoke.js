@@ -160,7 +160,10 @@ try {
 finally { await rm(tempRoot, { recursive: true, force: true }); }
 
 if (failure) {
-  const detail = (failure.stack || failure.message || String(failure)).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  const rawDetail = failure.stack || failure.message || String(failure);
+  const logPath = join(outputDir, 'windows-desktop-smoke.log');
+  await writeFile(logPath, `${rawDetail}\n`, 'utf8');
+  const detail = rawDetail.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   console.log(`::error title=Windows installer smoke::${detail}`);
   throw failure;
 }

@@ -124,9 +124,12 @@ jobs:
         if: matrix.linuxArm64
         env:
           AAPT2_PATH: ${{ github.workspace }}/tools/apk-tools/aapt2
+          APK_SMOKE_LOG_PATH: ${{ github.workspace }}/dist/apw-apk-smoke.log
         run: npm run smoke:apk-tools
       - name: Analyze a generated APK with the SDK AAPT2
         if: ${{ !matrix.linuxArm64 }}
+        env:
+          APK_SMOKE_LOG_PATH: ${{ github.workspace }}/dist/apw-apk-smoke.log
         run: npm run smoke:apk-tools
       - run: node scripts/run-npm-task.js prepare:trace-processor
       - run: npm run prepare:shark
@@ -144,6 +147,16 @@ jobs:
       - name: Launch packaged macOS app and verify desktop startup
         if: runner.os == 'macOS'
         run: node scripts/mac-desktop-smoke.js
+      - name: Upload failed smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-performance-smoke-diagnostics-${{ matrix.label }}
+          path: |
+            dist/apw-apk-smoke.log
+            dist/v*/windows-desktop-smoke.log
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v7
         with:
           name: android-performance-${{ matrix.label }}

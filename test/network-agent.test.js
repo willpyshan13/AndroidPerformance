@@ -53,6 +53,11 @@ test('agent source package is downloadable and contains the actual documented so
  const url=`http://127.0.0.1:${app.address().port}/api/network/agent-package`;assert.equal((await fetch(url)).status,403);
  const response=await fetch(url,{headers:{'X-Workbench-Token':'test'}});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/zip');const buffer=Buffer.from(await response.arrayBuffer());
  const entries=await new Promise((resolve,reject)=>yauzl.fromBuffer(buffer,{lazyEntries:true},(err,zip)=>{if(err)return reject(err);const files={};zip.on('error',reject);zip.on('end',()=>resolve(files));zip.on('entry',entry=>zip.openReadStream(entry,(error,stream)=>{if(error)return reject(error);const chunks=[];stream.on('data',chunk=>chunks.push(chunk));stream.on('error',reject);stream.on('end',()=>{files[entry.fileName]=Buffer.concat(chunks);zip.readEntry();});}));zip.readEntry();}));
- const paths=['README.md','src/main/java/dev/androidperformance/agent/NetworkEvents.java','src/main/java/dev/androidperformance/agent/LogcatSink.java'];assert.deepEqual(Object.keys(entries).sort(),paths.slice().sort());
- for(const path of paths)assert.deepEqual(entries[path],await readFile(new URL('../android-agent/'+path,import.meta.url)));
+ const sources={
+  'README.md':'README.md',
+  'src/debug/java/dev/androidperformance/agent/NetworkEvents.java':'src/main/java/dev/androidperformance/agent/NetworkEvents.java',
+  'src/debug/java/dev/androidperformance/agent/LogcatSink.java':'src/main/java/dev/androidperformance/agent/LogcatSink.java',
+ };
+ assert.deepEqual(Object.keys(entries).sort(),Object.keys(sources).sort());assert.ok(Object.keys(entries).every(path=>path==='README.md'||path.startsWith('src/debug/java/')),'network agent source must stay in the debug source set');
+ for(const [path,source] of Object.entries(sources))assert.deepEqual(entries[path],await readFile(new URL('../android-agent/'+source,import.meta.url)));
 });

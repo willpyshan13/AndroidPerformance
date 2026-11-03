@@ -1,7 +1,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { Adb, locateAdb, validateTarget } from '../src/adb.js';
 import { createApp } from '../src/server.js';
@@ -51,6 +51,36 @@ try {
   });
   await check('package-discovery', async () => {
     const { packages } = await request(`/packages?${query}`); assert(packages.includes(packageName)); return { count: packages.length, targetFound: true };
+  });
+  await check('battery-snapshot', async () => {
+    const snapshot = await request('/battery/snapshot', { serial, packageName });
+    assert.equal(snapshot.source, 'adb'); assert.equal(snapshot.serial, serial);
+    return { uid: snapshot.uid, packages: snapshot.packages, power: snapshot.power, network: snapshot.network, wakelocks: snapshot.wakelocks?.length || 0, deviceBattery: snapshot.battery, sessionStartAvailable: snapshot.sessionStart !== null };
+  });
+  await check('compilation-state', async () => {
+    const state = await request(`/compilation?${query}`);
+    assert.equal(state.source, 'adb'); assert.equal(state.serial, serial); assert.equal(state.packageName, packageName);
+    return { available: state.available, entries: state.entries?.length || 0, reason: state.reason || null };
+  });
+  await check('cpu-event-discovery', async () => {
+    const result = await request('/cpu-events', { serial });
+    assert.equal(result.source, 'simpleperf list'); assert(Array.isArray(result.events) && result.events.length > 0);
+    return { count: result.events.length, sample: result.events.slice(0, 8), traceOffCpuAvailable: result.traceOffCpuAvailable };
+  });
+  await check('cpu-profile-capture', async () => {
+    let data;
+    try { data = await request('/cpu-profile', { serial, packageName, captureId: randomUUID(), seconds: 3, events: ['cpu-clock:u'], frequencyHz: 99, callGraph: 'fp' }, true); }
+    catch (error) {
+      if (/doesn't exist or isn't debuggable\/profileable/i.test(error.message)) return { status: 'unsupported', reason: error.message };
+      throw error;
+    }
+    assert(data.length > 256); assert.equal(data.subarray(0, 8).toString('ascii'), 'PERFILE2');
+    return { bytes: data.length, signature: data.subarray(0, 8).toString('ascii'), sampleEvent: 'cpu-clock:u', durationSeconds: 3 };
+  });
+  await check('gpu-capabilities', async () => {
+    const result = await request('/gpu/capabilities', { serial });
+    assert.equal(result.source, 'adb'); assert.equal(result.serial, serial);
+    return { vulkanVersion: result.vulkanVersion, glesVersion: result.glesVersion, featureListAvailable: result.featureListAvailable, warnings: result.warnings };
   });
   await check('live-monitor', async () => {
     const samples = [];

@@ -77,7 +77,7 @@ try {
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     await delay(200);
   }
-  if (!ready) throw new Error('Packaged macOS app did not start its local service within 60 seconds');
+  if (!ready) throw new Error(`Packaged macOS app did not become ready within 60 seconds${childOutput ? `\n${childOutput}` : ''}`);
   if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify(ready.rendererState)}${childOutput ? `\n${childOutput}` : ''}`);
   const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
   const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
@@ -103,7 +103,7 @@ try {
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);
   const html = await page.text();
   if (!html.includes('<main id="main"') || !html.includes('/app.js')) throw new Error('Packaged macOS main page is missing the application shell');
-  for (const path of ['/app.js', '/demo.js', '/offline.js', '/heap-export.js', '/i18n.js']) {
+  for (const path of ['/app.js', '/demo.js', '/offline.js', '/heap-export.js', '/trace-export.js', '/i18n.js']) {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }

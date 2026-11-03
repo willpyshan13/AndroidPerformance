@@ -3,7 +3,12 @@
 ## 追踪独立显示相关布局证据（2026-11-03）
 
 - 帧页在已载入 FrameTimeline 时即可显示布局证据面板，不再要求先读取 gfxinfo。来源优先使用本机直接采集追踪的 serial / package / API；没有追踪设备身份时才回退到直接采集的 gfxinfo 身份。导入来源不建立可验证身份，映射按钮仅对同一追踪会话、已知设备及 API 31+ 开启。
-- `layoutFrameCorrelationContext` 回归覆盖 Trace-only 可见、Trace-only 开启映射、导入 Trace 拒绝映射、stale session 与 API 30 门控。全量 `npm test`：353 项，337 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `.app` 桌面 smoke 通过，导入合成 Trace 并确认没有 gfxinfo 时布局证据面板仍显示，同时保留“需要直接采集的帧数据及其设备序列号和目标包名”提示；也验证 16 个英文路由和现有关键功能。本轮没有连接设备或启动模拟器。
+- `layoutFrameCorrelationContext` 回归覆盖 Trace-only 可见、Trace-only 开启映射、导入 Trace 拒绝映射、stale session 与 API 30 门控。全量 `npm test`：356 项，340 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `.app` 桌面 smoke 通过，导入合成 Trace 并确认没有 gfxinfo 时布局证据面板仍显示，同时保留“需要直接采集的帧数据及其设备序列号和目标包名”提示；也验证 16 个英文路由和现有关键功能。本轮没有连接设备或启动模拟器。
+
+## Trace SQL 查询结果导出（2026-11-03）
+
+- 自定义 PerfettoSQL 查询结果可导出 UTF-8 CSV，保留列名、行顺序和完整结果；对引号、逗号、换行正确转义，对表格公式前缀做文本中和。导出遵循查询本身 500 行 / 50 列上限。
+- CSV 单元测试覆盖公式、逗号、引号、换行和行列边界拒绝。macOS ARM64 `.app` smoke 导入离线合成 Trace、运行 PerfettoSQL 并确认 CSV 导出入口出现；导出的数据来自当前 Trace Processor 查询结果。无真实设备或模拟器参与。
 
 ## 布局 Agent 采集区间映射到 FrameTimeline（2026-11-03）
 

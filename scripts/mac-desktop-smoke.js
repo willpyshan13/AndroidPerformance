@@ -80,6 +80,7 @@ try {
   if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
   if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
+  if(process.env.APW_SMOKE_APK_PATH&&!ready.rendererState.apkAnalysisSmoke?.ok)throw new Error(`Packaged macOS APK analysis UI smoke failed: ${JSON.stringify(ready.rendererState.apkAnalysisSmoke)}`);
   if(childOutput.includes('Renderer console error:'))throw new Error(`Packaged macOS renderer logged an error:\n${childOutput}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
@@ -90,7 +91,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, 50k CPU timeline raster, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,englishRoutes:routeChecks.demo.length})})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

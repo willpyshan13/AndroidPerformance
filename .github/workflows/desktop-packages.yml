@@ -67,6 +67,9 @@ jobs:
             linuxArm64: true
             mac: false
     runs-on: ${{ matrix.runner }}
+    env:
+      APK_SMOKE_OUTPUT_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
+      APW_SMOKE_APK_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

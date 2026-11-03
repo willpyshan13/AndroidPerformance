@@ -83,6 +83,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
     if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo)||!routeChecks.demo.find(result=>result.route==='#cpu-profile')?.stackTimeline)throw new Error(`${label}: desktop route/CPU stack chart smoke failed: ${JSON.stringify(routeChecks)}`);
     if(!rendererState.homeArtifactChecks?.section||!rendererState.homeArtifactChecks?.emptyState)throw new Error(`${label}: home artifact section/empty state failed: ${JSON.stringify(rendererState.homeArtifactChecks)}`);
+    if(process.env.APW_SMOKE_APK_PATH&&!rendererState.apkAnalysisSmoke?.ok)throw new Error(`${label}: APK analysis UI smoke failed: ${JSON.stringify(rendererState.apkAnalysisSmoke)}`);
     if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
@@ -94,7 +95,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
       if (!response.ok) throw new Error(`${label}: ${path} returned HTTP ${response.status}`);
     }
     await stat(join(profileDir, 'runtime', 'java-runtime', 'bin', 'java.exe'));
-    console.log(`${label} installed desktop smoke passed: ${origin}; renderer and Java runtime ready`);
+    console.log(`${label} installed desktop smoke passed: ${origin}; renderer, Java runtime${rendererState.apkAnalysisSmoke?.ok?', and APK analyzer UI':''} ready`);
   } finally {
     await stopChild(child);
   }

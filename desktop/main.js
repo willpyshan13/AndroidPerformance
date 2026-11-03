@@ -29,6 +29,54 @@ function navigate(route) {
 function openExternal(url) {
   if (allowedExternal.has(url)) shell.openExternal(url).catch(error => dialog.showErrorBox(nativeText(appearanceLanguage,'无法打开链接','Could not open link'), error.message));
 }
+async function smokeApkAnalyzerInRenderer(apkPath) {
+  const encoded = JSON.stringify(await readFile(apkPath, 'base64'));
+  return window.webContents.executeJavaScript(`(async encoded=>{
+    const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const fail=reason=>({ok:false,reason});
+    const input=document.querySelector('#apk-input');
+    if(!input)return fail('APK input missing');
+    location.hash='#apk';await settle();
+    const transfer=new DataTransfer(),bytes=Uint8Array.from(atob(encoded),char=>char.charCodeAt(0));
+    transfer.items.add(new File([bytes],'apw-smoke.apk',{type:'application/vnd.android.package-archive'}));
+    Object.defineProperty(input,'files',{configurable:true,value:transfer.files});
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    const uploadDeadline=performance.now()+30000;
+    while(!document.querySelector('[data-apk-tab]')&&performance.now()<uploadDeadline)await new Promise(resolve=>setTimeout(resolve,25));
+    const packageName=document.querySelector('.apk-app-title .mono')?.textContent?.trim();
+    if(packageName!=='dev.apw.smoke')return fail('APK import did not produce the expected package name: '+(packageName||'no analysis result'));
+    const tabs=['overview','files','permissions','components','dex','signing','manifest'],checks={};
+    for(const name of tabs){
+      const tab=document.querySelector('[data-apk-tab="'+name+'"]');if(!tab)return fail('Missing APK tab: '+name);
+      tab.click();await settle();
+      const content=document.querySelector('#apk-content'),text=content?.textContent||'';
+      const valid=tab.getAttribute('aria-selected')==='true'&&(
+        name==='overview'?!!content?.querySelector('.apk-stack'):
+        name==='files'?!!content?.querySelector('#apk-file-table tbody tr'):
+        name==='permissions'?!!content?.querySelector('.table-wrap table'):
+        name==='components'?!!content?.querySelector('#apk-component-table'):
+        name==='dex'?text.includes('method_ids'):
+        name==='signing'?text.includes('签名结构')||text.includes('Signature structure'):
+        name==='manifest'?!!content?.querySelector('.apk-manifest pre')?.textContent.includes('<manifest'):false);
+      checks[name]=valid;if(!valid)return fail('APK tab failed to render: '+name+'; '+text.slice(0,300));
+    }
+    const fileTab=document.querySelector('[data-apk-tab="files"]');fileTab.click();await settle();
+    const search=document.querySelector('#apk-search');search.value='AndroidManifest.xml';search.dispatchEvent(new Event('input',{bubbles:true}));await settle();
+    const filtered=Array.from(document.querySelectorAll('#apk-file-table tbody tr')).filter(row=>row.textContent.includes('AndroidManifest.xml')).length===1;
+    if(!filtered)return fail('APK file-path filter did not isolate AndroidManifest.xml');
+    let reportBlob=null;const createObjectURL=URL.createObjectURL,anchorClick=HTMLAnchorElement.prototype.click;
+    try{
+      URL.createObjectURL=blob=>{reportBlob=blob;return 'blob:apw-apk-report-smoke';};HTMLAnchorElement.prototype.click=()=>{};
+      document.querySelector('[data-action="export-apk"]')?.click();
+      const exportDeadline=performance.now()+5000;while(!reportBlob&&performance.now()<exportDeadline)await new Promise(resolve=>setTimeout(resolve,10));
+      if(!reportBlob)return fail('APK JSON report export did not create a Blob');
+      const report=JSON.parse(await reportBlob.text());
+      if(report.kind!=='apk'||report.packageName!=='dev.apw.smoke')return fail('APK JSON report did not preserve analyzer output');
+    }finally{URL.createObjectURL=createObjectURL;HTMLAnchorElement.prototype.click=anchorClick;}
+    location.hash='#overview';await settle();
+    return {ok:true,packageName,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
+  })(${encoded})`);
+}
 async function saveSettings(update) {
   const path=join(app.getPath('userData'),'settings.json');let current={};try{current=JSON.parse(await readFile(path,'utf8'));}catch{}
   await writeFile(path,JSON.stringify({...current,...update}),{mode:0o600});
@@ -83,9 +131,10 @@ function createWindow() {
       rendererState.heapCsvExport=await window.webContents.executeJavaScript(`(async()=>{const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),bytes=Uint8Array.from(atob('SkFWQSBQUk9GSUxFIDEuMC4zAAAAAAQAAAAAAAAAAAEAAAAAAAAAEwAAAAFjb20vZXhhbXBsZS9Gb28CAAAAAAAAABAAAAABAAAAAgAAAAAAAAABHAAAAAAAAAArIQAAAAMAAAAAAAAAAgAAAAQAAAAqIwAAAAQAAAAAAAAAAwgBAgP/AAAAAywAAAAAAAAAAA=='),character=>character.charCodeAt(0)),input=document.querySelector('#heap-input'),transfer=new DataTransfer();if(!input)return {ok:false,reason:'HPROF file input missing'};location.hash='#heap';await settle();transfer.items.add(new File([bytes],'smoke.hprof',{type:'application/octet-stream'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));const deadline=performance.now()+10000;while(!document.querySelector('[data-action=heap-export-csv]')&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));if(!document.querySelector('[data-action=heap-export-csv]'))return {ok:false,reason:'HPROF import did not render class table',files:input.files?.length,toast:document.querySelector('#toast')?.textContent,toastClass:document.querySelector('#toast')?.className};const search=document.querySelector('#heap-search');search.value='Foo';search.dispatchEvent(new Event('input',{bubbles:true}));await settle();let blob=null;const originalCreate=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;try{URL.createObjectURL=value=>{blob=value;return 'blob:heap-csv-smoke';};HTMLAnchorElement.prototype.click=()=>{};document.querySelector('[data-action=heap-export-csv]').click();if(!blob)return {ok:false,reason:'CSV export did not create a Blob'};const text=await blob.text(),signature=Array.from(new Uint8Array(await blob.slice(0,3).arrayBuffer()));const utf8Bom=signature.join(',')==='239,187,191';return {ok:blob.type.startsWith('text/csv')&&utf8Bom&&text.includes('com.example.Foo')&&!text.includes('byte[]'),type:blob.type,filteredClassIncluded:text.includes('com.example.Foo'),unfilteredClassExcluded:!text.includes('byte[]'),utf8Bom,bytes:blob.size};}finally{URL.createObjectURL=originalCreate;HTMLAnchorElement.prototype.click=originalClick;location.hash='#overview';await settle();}})()`);
       rendererState.layoutFindings=await window.webContents.executeJavaScript(`(async()=>{const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),xml='<hierarchy rotation="0"><node class="android.widget.Button" text="" content-desc="" clickable="true" bounds="[0,0][20,20]"/></hierarchy>',input=document.querySelector('#file-input'),transfer=new DataTransfer();if(!input)return {ok:false,reason:'layout file input missing'};location.hash='#layout';await settle();transfer.items.add(new File([xml],'smoke.xml',{type:'application/xml'}));const originalClick=HTMLInputElement.prototype.click;try{HTMLInputElement.prototype.click=function(){if(this.id==='file-input'){this.files=transfer.files;this.dispatchEvent(new Event('change',{bubbles:true}));}else originalClick.call(this);};document.querySelector('[data-action=import-layout]').click();const deadline=performance.now()+5000;while(!document.querySelector('#main')?.innerText.includes('UIA_UNLABELLED')&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));const text=document.querySelector('#main')?.innerText||'';return {ok:text.includes('UIA_UNLABELLED')&&text.includes('Warning')&&text.includes('High')&&text.includes('emptyLabelFields'),ruleId:text.includes('UIA_UNLABELLED'),severity:text.includes('Warning'),confidence:text.includes('High'),evidence:text.includes('emptyLabelFields')};}finally{HTMLInputElement.prototype.click=originalClick;location.hash='#overview';await settle();}})()`);
       rendererState.homeArtifactChecks=await window.webContents.executeJavaScript("(()=>{const text=document.querySelector('#main')?.innerText||'';return {section:text.includes('最近分析产物')||text.includes('Recent analysis artifacts'),emptyState:text.includes('暂无本地分析产物')||text.includes('No local analysis artifacts')};})()");
+      if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState;
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });

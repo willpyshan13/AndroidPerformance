@@ -94,6 +94,27 @@ async function smokeNetworkAgentPackageInRenderer() {
     return {ok:debugOnly,contentType:response.headers.get('content-type'),entryCount:paths.length,debugOnly,paths};
   })()`);
 }
+async function smokeNetworkAgentDeviceInRenderer(serial, packageName) {
+  const expectedSerial=JSON.stringify(serial),expectedPackage=JSON.stringify(packageName);
+  return window.webContents.executeJavaScript(`(async(serial,packageName)=>{
+    const waitFor=async(test,ms=15000)=>{const deadline=performance.now()+ms;while(performance.now()<deadline){const value=test();if(value)return value;await new Promise(resolve=>setTimeout(resolve,50));}return null;};
+    const fail=reason=>({ok:false,reason});
+    const mode=document.querySelector('#mode-btn');if(/exit demo|退出演示/i.test(mode?.textContent||'')){mode.click();await new Promise(resolve=>setTimeout(resolve,300));}
+    const device=await waitFor(()=>{const select=document.querySelector('#device-select');return Array.from(select?.options||[]).some(option=>option.value===serial)?select:null;});
+    if(!device)return fail('connected device is not present in the desktop selector');
+    device.value=serial;device.dispatchEvent(new Event('change',{bubbles:true}));
+    const packageOption=await waitFor(()=>Array.from(document.querySelector('#package-list')?.options||[]).some(option=>option.value===packageName));
+    if(!packageOption)return fail('target package did not load for the connected device');
+    const input=document.querySelector('#package-input');input.value=packageName;input.dispatchEvent(new Event('change',{bubbles:true}));
+    location.hash='#network';await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const start=document.querySelector('[data-action="network-agent-start"]');if(!start)return fail('network Agent start action is missing');start.click();
+    const waiting=await waitFor(()=>{const text=document.querySelector('#main')?.innerText||'';return text.includes('Waiting for requests from the configured Agent')?text:null;});
+    if(!waiting){document.querySelector('[data-action="network-agent-stop"]')?.click();return fail('desktop did not show the Agent waiting state after reading a device snapshot');}
+    document.querySelector('[data-action="network-agent-stop"]')?.click();
+    const empty=await waitFor(()=>{const text=document.querySelector('#main')?.innerText||'';return text.includes('No Agent requests received yet')?text:null;},5000);
+    return {ok:!!empty,serial,packageName,waitingState:true,emptyAgentState:!!empty,uidEvidence:(empty||waiting).match(/UID \\d+/)?.[0]||null};
+  })(${expectedSerial},${expectedPackage})`);
+}
 async function smokeSourceWorkspaceInRenderer() {
   if (!process.env.APW_SMOKE_SOURCE_DIR) return null;
   const expectedPath = JSON.stringify(process.env.APW_SMOKE_SOURCE_DIR);
@@ -188,10 +209,11 @@ function createWindow() {
       rendererState.homeArtifactChecks=await window.webContents.executeJavaScript("(()=>{const text=document.querySelector('#main')?.innerText||'';return {section:text.includes('最近分析产物')||text.includes('Recent analysis artifacts'),emptyState:text.includes('暂无本地分析产物')||text.includes('No local analysis artifacts')};})()");
       rendererState.sourceWorkspaceSmoke=await smokeSourceWorkspaceInRenderer();
       rendererState.networkAgentPackage=await smokeNetworkAgentPackageInRenderer();
+      if(process.env.APW_SMOKE_NETWORK_SERIAL&&process.env.APW_SMOKE_NETWORK_PACKAGE)rendererState.networkAgentDeviceSmoke=await smokeNetworkAgentDeviceInRenderer(process.env.APW_SMOKE_NETWORK_SERIAL,process.env.APW_SMOKE_NETWORK_PACKAGE);
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok)&&(!process.env.APW_SMOKE_NETWORK_SERIAL||rendererState.networkAgentDeviceSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });

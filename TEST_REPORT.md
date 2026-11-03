@@ -590,9 +590,10 @@ npm run test:device -- \
 
 ## macOS ARM64 单 job CI（2026-11-03）
 
-- 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。后续进一步缩短产物流程：只生成 DMG，不再额外生成 PKG；NDK 只安装 27.2，Android 7 兼容 simpleperf 使用仓库内置资源。
+- 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。后续进一步缩短产物流程：只生成 DMG，不再额外生成 PKG；NDK 保留 26.1 与 27.2：前者为 Android 7 设备准备旧版 simpleperf，后者提供当前主版本。
 - 更新 workflow 配置回归，确保只有一个 `macos-15` job、`npm ci` 与 Trace Processor 准备步骤各出现一次，且没有 Windows / Linux runner。此前拆分双 job 时，该回归因仍要求旧的 `tests` + `package` 双 job 而失败；更新断言后通过。
-- 本轮将 workflow 配置回归改为检查单一 DMG 产物和单一 NDK 安装；实际节省的分钟数需由下一次 Actions 执行确认。耗时主要来自完整自动测试，以及首次准备 Android SDK/NDK、分析运行时和 Electron DMG 资源；平台数已经是一个 macOS ARM64 job。
+- 本轮将 workflow 配置回归改为检查单一 DMG 产物，以及构建当前版和 Android 7 兼容版 simpleperf 所需的两套 NDK。耗时主要来自完整自动测试，以及首次准备 Android SDK/NDK、分析运行时和 Electron DMG 资源；平台数已经是一个 macOS ARM64 job。
+- 提交 `b135337` 的 Actions run `41588751361` 在 `Prepare macOS tools` 失败。公开 check annotation 定位为 `tools/simpleperf/versions.json` 缺失：该资源目录由 `.gitignore` 忽略，fresh runner 只安装 NDK 27 时不能读取本机生成的 legacy 版本清单。已恢复 NDK 26.1，用其生成 Android 7 兼容二进制；同时保留 NDK 27.2 作为现代版本。修复提交后的 CI 结果待确认。
 
 ## C/C++ 源码候选定位（2026-11-03）
 
@@ -606,3 +607,9 @@ npm run test:device -- \
 - 新增 300,001 节点链图回归，确认超过旧上限时完整可达对象数、支配子树计数和记录字节累计正确。HPROF 单元与会话接口通过；全量自动回归 336 项，320 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。
 - macOS arm64 `.app` 重建与打包 smoke 通过；smoke 在实际 Electron renderer 导入 HPROF、导出 CSV 并打开近似支配图，确认显示可达 / 已索引 / 引用边统计。Smoke HPROF 是极小 fixture，引用图按预期标记不完整，不作为支配关系正确性的样本；正确性由 HPROF 图样例、HTTP session 测试与 300,001 节点算法回归覆盖。
 - 尚未用超过 25 万对象的真实 HPROF 做端到端内存与耗时测量；支配关系仍基于有限解析的引用边，不是精确 retained size。
+
+## Network Agent 真机空状态（2026-11-03）
+
+- 网络页现在区分未导入、等待已接入 Agent 的请求、设备快照没有 Agent 记录、筛选无匹配与空 HAR，并提供对应中英文提示。新增纯函数回归覆盖五种状态。
+- 在 macOS arm64 打包应用中，使用 API 25 真机 `X3315A41621110053` / `com.xmotion.sui.debug` 完成只读 UI smoke：退出演示，选择设备与包，启动 Agent 轮询、读取 UID 10051 的日志快照并停止轮询；UI 正确显示“等待请求”和“尚未读取到 Agent 请求”。ADB 通过旧版 main-process PID 回退，PID 为 13662。该应用没有接入 Network Agent，日志中无 `APWNetwork` 事件，因此没有请求行；这验证空状态和读取链路，不表示真实业务请求捕获已验证。
+- 定向网络 / 本地化 / 打包配置测试 45 项通过；全量回归 337 项，321 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 通过。

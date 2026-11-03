@@ -183,6 +183,14 @@ export function mergeNetworkAgentSnapshot(accumulator,snapshot,limit=10000){
  return {state,result:{...snapshot,rows:combined,accumulated:state.rows.length,legacy:legacy.length,dropped:state.dropped,displayTruncated:state.rows.length+legacy.length>limit}};
 }
 
+export function networkRequestEmptyState({hasSnapshot,source,agentActive,totalRows,filteredRows}){
+ if(!hasSnapshot)return 'import';
+ if(filteredRows>0)return null;
+ if(totalRows>0)return 'filtered';
+ if(source==='adb')return agentActive?'agent-waiting':'agent-empty';
+ return 'no-requests';
+}
+
 // HAR's ssl is included in connect. Aggregate phases independently, without
 // inferring connection reuse from missing timing values.
 export function summarizeHarHosts(rows) {

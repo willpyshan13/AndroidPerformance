@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Adb} from '../src/adb.js';
 import {parseNetworkAgentLog} from '../src/network-agent.js';
-import {summarizeHarHosts,mergeNetworkAgentSnapshot} from '../public/offline.js';
+import {summarizeHarHosts,mergeNetworkAgentSnapshot,networkRequestEmptyState} from '../public/offline.js';
 const record={v:1,scheme:'https',host:'example.com',port:443,method:'GET',status:200,startedAtMs:10,elapsedNs:2000000,responseBytes:12,dnsNs:0,connectNs:1000000,tlsNs:500000,failed:true};
 test('agent records are validated, normalized and cannot leak additional fields',()=>{
  const data=parseNetworkAgentLog(`--------- beginning of main\n${JSON.stringify({...record,secret:'token',path:'/secret'})}\n{broken}\n${JSON.stringify({...record,host:'user:pass@evil.com'})}`);
@@ -24,6 +24,13 @@ test('v2 event identities preserve repeated identical calls across rolling snaps
  merged=mergeNetworkAgentSnapshot(merged.state,{rows:parse(b,c)},2);assert.deepEqual(merged.result.rows.map(r=>r.eventId),[b,c]);assert.equal(merged.result.dropped,1);
  merged=mergeNetworkAgentSnapshot(merged.state,{rows:parse(a,b,c)},2);assert.deepEqual(merged.result.rows.map(r=>r.eventId),[b,c]);assert.equal(merged.result.dropped,1);
  const legacy=parseNetworkAgentLog(JSON.stringify(record)).rows;merged=mergeNetworkAgentSnapshot(merged.state,{rows:legacy},2);assert.equal(merged.result.legacy,1);assert.equal(merged.result.displayTruncated,true);assert.deepEqual(merged.result.rows.map(r=>r.id),[1,2]);
+});
+test('network request empty state distinguishes agent wait, missing events, filters and empty imports',()=>{
+ const state=(overrides={})=>networkRequestEmptyState({hasSnapshot:true,source:'adb',agentActive:false,totalRows:0,filteredRows:0,...overrides});
+ assert.equal(networkRequestEmptyState({hasSnapshot:false,source:null,agentActive:false,totalRows:0,filteredRows:0}),'import');
+ assert.equal(state({agentActive:true}),'agent-waiting');assert.equal(state(),'agent-empty');
+ assert.equal(state({totalRows:3,filteredRows:0}),'filtered');assert.equal(state({totalRows:3,filteredRows:1}),null);
+ assert.equal(state({source:'import'}),'no-requests');
 });
 test('ADB agent snapshot scopes logcat to exact current-user UID and never interpolates shell input',async()=>{
  const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:calls.length===1?'package:com.example.other uid:10042\npackage:com.example.app uid:10043\n':JSON.stringify(record)+'\n'};});

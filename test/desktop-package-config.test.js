@@ -54,3 +54,14 @@ test('failed package smoke publishes a sanitized failure classification',async()
  assert.match(apkSmoke,/aapt2-dump-xmltree/);assert.match(apkSmoke,/aapt2-link-fixture/);assert.match(apkSmoke,/aapt2-modern-resource-table/);assert.match(apkSmoke,/aapt2-modern-table\.apk/);assert.match(apkSmoke,/aapt2-manifest-output/);assert.match(apkSmoke,/failure_code=\$\{failureCode\}/);assert.match(apkSmoke,/APK smoke diagnostic/);assert.match(apkSmoke,/replace\(\/\(\?:\[A-Za-z\]:\\\\\|\\\/\)\[\^\\s:\]\+\/g, '<path>'\)/);
  assert.match(desktopSmoke,/windows-msi-install-/);assert.match(desktopSmoke,/windows-nsis-uninstaller-missing/);assert.match(desktopSmoke,/error\.errors\.map/);assert.match(desktopSmoke,/failure_code=\$\{code\}/);
 });
+
+test('packaged desktop smoke exercises local source selection, snapshot, search, and file view',async()=>{
+ const desktopMain=await readFile(new URL('../desktop/main.js',import.meta.url),'utf8');
+ const windowsSmoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
+ const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
+ for(const source of [desktopMain,windowsSmoke,macSmoke])assert.match(source,/APW_SMOKE_SOURCE_DIR/);
+ assert.match(desktopMain,/smokeSourceWorkspaceInRenderer/);
+ assert.match(desktopMain,/LOCAL_SOURCE_WORKSPACE_SMOKE/);
+ assert.match(windowsSmoke,/source workspace smoke/);
+ assert.match(macSmoke,/source workspace smoke/);
+});

@@ -79,6 +79,35 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
     return {ok:true,packageName,expectedPackage,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
   })(${encoded})`);
 }
+async function smokeSourceWorkspaceInRenderer() {
+  if (!process.env.APW_SMOKE_SOURCE_DIR) return null;
+  const expectedPath = JSON.stringify(process.env.APW_SMOKE_SOURCE_DIR);
+  return window.webContents.executeJavaScript(`(async expectedPath=>{
+    const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const waitFor=async(test,ms=20000)=>{const deadline=performance.now()+ms;while(performance.now()<deadline){const value=test();if(value)return value;await new Promise(resolve=>setTimeout(resolve,25));}return null;};
+    const fail=reason=>({ok:false,reason});
+    location.hash='#source';await settle();
+    if(typeof window.desktop?.selectSourceDir!=='function')return fail('native source directory bridge is missing');
+    const chooser=document.querySelector('[data-action="source-choose"]');if(!chooser)return fail('source directory picker button is missing');
+    chooser.click();
+    const pathInput=await waitFor(()=>{const input=document.querySelector('#source-path');return input?.value===expectedPath?input:null;});
+    if(!pathInput)return fail('directory picker did not fill the selected path');
+    document.querySelector('[data-action="source-create"]')?.click();
+    const snapshotSelect=await waitFor(()=>{const select=document.querySelector('#source-snapshot');return select?.options.length>1&&select.value?select:null;},30000);
+    if(!snapshotSelect)return fail('local source snapshot was not created');
+    const snapshotFiles=Number(snapshotSelect.selectedOptions[0]?.textContent.match(/(\\d+) 文件/)?.[1]||snapshotSelect.selectedOptions[0]?.textContent.match(/(\\d+) files/)?.[1]||0);
+    const query=document.querySelector('#source-query');if(!query)return fail('source search controls are missing');
+    query.value='LOCAL_SOURCE_WORKSPACE_SMOKE';
+    document.querySelector('[data-action="source-search"]')?.click();
+    const match=await waitFor(()=>document.querySelector('[data-source-match]'),15000);
+    if(!match)return fail('local source text search found no fixture match');
+    const matchedPath=match.textContent.trim();match.click();
+    const opened=await waitFor(()=>Array.from(document.querySelectorAll('#main pre')).some(pre=>pre.textContent.includes('LOCAL_SOURCE_WORKSPACE_SMOKE')),10000);
+    if(!opened)return fail('source search result did not open the matching file');
+    location.hash='#overview';await settle();
+    return {ok:true,nativePickerBridge:true,pathSelected:true,snapshotFiles,searchMatch:true,matchedPath,fileOpened:true};
+  })(${expectedPath})`);
+}
 async function saveSettings(update) {
   const path=join(app.getPath('userData'),'settings.json');let current={};try{current=JSON.parse(await readFile(path,'utf8'));}catch{}
   await writeFile(path,JSON.stringify({...current,...update}),{mode:0o600});
@@ -133,10 +162,11 @@ function createWindow() {
       rendererState.heapCsvExport=await window.webContents.executeJavaScript(`(async()=>{const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),bytes=Uint8Array.from(atob('SkFWQSBQUk9GSUxFIDEuMC4zAAAAAAQAAAAAAAAAAAEAAAAAAAAAEwAAAAFjb20vZXhhbXBsZS9Gb28CAAAAAAAAABAAAAABAAAAAgAAAAAAAAABHAAAAAAAAAArIQAAAAMAAAAAAAAAAgAAAAQAAAAqIwAAAAQAAAAAAAAAAwgBAgP/AAAAAywAAAAAAAAAAA=='),character=>character.charCodeAt(0)),input=document.querySelector('#heap-input'),transfer=new DataTransfer();if(!input)return {ok:false,reason:'HPROF file input missing'};location.hash='#heap';await settle();transfer.items.add(new File([bytes],'smoke.hprof',{type:'application/octet-stream'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));const deadline=performance.now()+10000;while(!document.querySelector('[data-action=heap-export-csv]')&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));if(!document.querySelector('[data-action=heap-export-csv]'))return {ok:false,reason:'HPROF import did not render class table',files:input.files?.length,toast:document.querySelector('#toast')?.textContent,toastClass:document.querySelector('#toast')?.className};const search=document.querySelector('#heap-search');search.value='Foo';search.dispatchEvent(new Event('input',{bubbles:true}));await settle();let blob=null;const originalCreate=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;try{URL.createObjectURL=value=>{blob=value;return 'blob:heap-csv-smoke';};HTMLAnchorElement.prototype.click=()=>{};document.querySelector('[data-action=heap-export-csv]').click();if(!blob)return {ok:false,reason:'CSV export did not create a Blob'};const text=await blob.text(),signature=Array.from(new Uint8Array(await blob.slice(0,3).arrayBuffer()));const utf8Bom=signature.join(',')==='239,187,191';return {ok:blob.type.startsWith('text/csv')&&utf8Bom&&text.includes('com.example.Foo')&&!text.includes('byte[]'),type:blob.type,filteredClassIncluded:text.includes('com.example.Foo'),unfilteredClassExcluded:!text.includes('byte[]'),utf8Bom,bytes:blob.size};}finally{URL.createObjectURL=originalCreate;HTMLAnchorElement.prototype.click=originalClick;location.hash='#overview';await settle();}})()`);
       rendererState.layoutFindings=await window.webContents.executeJavaScript(`(async()=>{const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),xml='<hierarchy rotation="0"><node class="android.widget.Button" text="" content-desc="" clickable="true" bounds="[0,0][20,20]"/></hierarchy>',input=document.querySelector('#file-input'),transfer=new DataTransfer();if(!input)return {ok:false,reason:'layout file input missing'};location.hash='#layout';await settle();transfer.items.add(new File([xml],'smoke.xml',{type:'application/xml'}));const originalClick=HTMLInputElement.prototype.click;try{HTMLInputElement.prototype.click=function(){if(this.id==='file-input'){this.files=transfer.files;this.dispatchEvent(new Event('change',{bubbles:true}));}else originalClick.call(this);};document.querySelector('[data-action=import-layout]').click();const deadline=performance.now()+5000;while(!document.querySelector('#main')?.innerText.includes('UIA_UNLABELLED')&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));const text=document.querySelector('#main')?.innerText||'';return {ok:text.includes('UIA_UNLABELLED')&&text.includes('Warning')&&text.includes('High')&&text.includes('emptyLabelFields'),ruleId:text.includes('UIA_UNLABELLED'),severity:text.includes('Warning'),confidence:text.includes('High'),evidence:text.includes('emptyLabelFields')};}finally{HTMLInputElement.prototype.click=originalClick;location.hash='#overview';await settle();}})()`);
       rendererState.homeArtifactChecks=await window.webContents.executeJavaScript("(()=>{const text=document.querySelector('#main')?.innerText||'';return {section:text.includes('最近分析产物')||text.includes('Recent analysis artifacts'),emptyState:text.includes('暂无本地分析产物')||text.includes('No local analysis artifacts')};})()");
+      rendererState.sourceWorkspaceSmoke=await smokeSourceWorkspaceInRenderer();
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });
@@ -176,7 +206,7 @@ if (singleInstance) {
       authorizeGpuIpc(event);const defaults={theme:'system',scale:'1',language:'zh-CN'};try{const settings=JSON.parse(await readFile(join(app.getPath('userData'),'settings.json'),'utf8')),saved={};if(typeof settings.theme==='string')saved.theme=settings.theme;if(settings.scale!==undefined)saved.scale=settings.scale;if(typeof settings.language==='string')saved.language=settings.language;return {...defaults,...(Object.keys(saved).length?normalizeAppearance(saved):{})};}catch(error){if(error.code==='ENOENT')return defaults;return defaults;}
     });
     ipcMain.handle('workbench:save-appearance',async(event,value)=>{authorizeGpuIpc(event);const appearance=normalizeAppearance(value);await saveSettings(appearance);appearanceLanguage=appearance.language;installMenu(appearanceLanguage);return appearance;});
-    ipcMain.handle('workbench:source-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:nativeText(appearanceLanguage,'选择本地源码目录','Select Local Source Directory'),properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
+    ipcMain.handle('workbench:source-select',async event=>{authorizeGpuIpc(event);if(process.env.APW_SMOKE_READY_FILE&&process.env.APW_SMOKE_SOURCE_DIR)return process.env.APW_SMOKE_SOURCE_DIR;const result=await dialog.showOpenDialog(window,{title:nativeText(appearanceLanguage,'选择本地源码目录','Select Local Source Directory'),properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     ipcMain.handle('workbench:agi-select',async event=>{authorizeGpuIpc(event);const result=await dialog.showOpenDialog(window,{title:nativeText(appearanceLanguage,'选择 Android GPU Inspector 应用程序','Select Android GPU Inspector Application'),properties:['openFile'],...(process.platform==='darwin'?{defaultPath:'/Applications'}:{})});if(result.canceled)return null;const chosen=result.filePaths[0];await access(chosen);agiPath=chosen;await saveSettings({agiPath});return chosen;});
     ipcMain.handle('workbench:agi-launch',async event=>{authorizeGpuIpc(event);const path=await existingAgi();if(!path)throw new Error(nativeText(appearanceLanguage,'未找到 AGI，请先选择应用程序','AGI was not found. Select the application first.'));const error=await shell.openPath(path);if(error)throw new Error(error);return true;});
     ipcMain.handle('workbench:agi-open-artifact',async(event,id)=>{

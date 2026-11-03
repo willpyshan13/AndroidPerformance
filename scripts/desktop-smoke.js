@@ -20,7 +20,7 @@ async function publishFailureCode(error) {
     : /NSIS uninstallation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+|unknown)/i)[1]}`
     : /NSIS uninstaller was not found/i.test(message) ? 'windows-nsis-uninstaller-missing'
     : /temporary files could not be removed|EBUSY|EPERM|ENOTEMPTY.*nsis-installed-app/i.test(message) ? 'windows-temp-cleanup'
-    : /desktop route\/CPU stack chart|home is missing quick actions|home artifact section|APK analysis UI/i.test(message) ? 'windows-installed-app-ui'
+    : /desktop route\/CPU stack chart|home is missing quick actions|home artifact section|source workspace|APK analysis UI/i.test(message) ? 'windows-installed-app-ui'
     : /did not start|startup failed|renderer|Unable to start installed desktop app/i.test(message) ? 'windows-installed-app-startup'
     : 'windows-desktop-smoke-unknown';
   try { await appendFile(process.env.GITHUB_OUTPUT, `failure_code=${code}\n`, 'utf8'); } catch {}
@@ -101,7 +101,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   let childError;
   let childOutput = '';
   const child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
-    env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile },
+    env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile, APW_SMOKE_SOURCE_DIR: join(tempRoot, 'source-fixture') },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.once('error', error => { childError = error; childOutput = `${childOutput}${error.message}`.slice(-8000); });
@@ -116,6 +116,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     const routeChecks=rendererState.routeChecks;
     const hasBrokenRoutes=results=>!Array.isArray(results)||results.length!==16||results.some((result,index)=>!result.active||!result.heading||!result.hasContent||(index>0&&!result.changed));
     if(!routeChecks?.demoActive||hasBrokenRoutes(routeChecks.empty)||hasBrokenRoutes(routeChecks.demo)||!routeChecks.demo.find(result=>result.route==='#cpu-profile')?.stackTimeline)throw new Error(`${label}: desktop route/CPU stack chart smoke failed: ${JSON.stringify(routeChecks)}`);
+    if(!rendererState.sourceWorkspaceSmoke?.ok)throw new Error(`${label}: source workspace smoke failed: ${JSON.stringify(rendererState.sourceWorkspaceSmoke)}`);
     if(!rendererState.homeArtifactChecks?.section||!rendererState.homeArtifactChecks?.emptyState)throw new Error(`${label}: home artifact section/empty state failed: ${JSON.stringify(rendererState.homeArtifactChecks)}`);
     if(process.env.APW_SMOKE_APK_PATH&&!rendererState.apkAnalysisSmoke?.ok)throw new Error(`${label}: APK analysis UI smoke failed: ${JSON.stringify(rendererState.apkAnalysisSmoke)}`);
     if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
@@ -129,7 +130,7 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
       if (!response.ok) throw new Error(`${label}: ${path} returned HTTP ${response.status}`);
     }
     await stat(join(profileDir, 'runtime', 'java-runtime', 'bin', 'java.exe'));
-    console.log(`${label} installed desktop smoke passed: ${origin}; renderer, Java runtime${rendererState.apkAnalysisSmoke?.ok?', and APK analyzer UI':''} ready`);
+    console.log(`${label} installed desktop smoke passed: ${origin}; renderer, Java runtime, local source workspace${rendererState.apkAnalysisSmoke?.ok?', and APK analyzer UI':''} ready`);
   } finally {
     await stopChild(child);
   }
@@ -189,6 +190,9 @@ let tempRoot;
 let failure;
 try {
   tempRoot = await mkdtemp(join(tmpdir(), 'android-performance-smoke-'));
+  const sourceFixtureDir = join(tempRoot, 'source-fixture');
+  await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
+  await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');
   await smokeMsi(tempRoot);
   await smokeNsis(tempRoot);
 } catch (error) { failure = error; }

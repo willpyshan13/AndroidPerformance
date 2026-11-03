@@ -640,3 +640,10 @@ npm run test:device -- \
 - API 25 同一 fixture 的两次完整真机复测均无截断，支配图约 488,000 个已索引对象、481,000 个可达对象和 1,355,000 条边；Shark 2.14 均成功。macOS ARM64 Node 进程峰值 RSS 分别为 685,408,256 字节（约 654 MiB）和 704,708,608 字节（约 672 MiB），对照压缩前单次 723,714,048 字节（约 690 MiB）。样本快照和运行时波动尚不足以证明稳定的内存降幅；需要更多重复和更大 HPROF 验证。
 - HPROF 单元回归覆盖边标签、引用语义、根路径、批量路径和支配树；全量回归 338 项，322 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。
 - 代码提交 `4b10382` 的 macOS ARM64 CI 成功（run `41592701411`）。后续两个仅改验证记录的提交 `06ffe5b`、`85017f7` 都在 `npm test` 步骤失败；匿名 Actions 日志为 HTTP 403，失败诊断没有指出单个测试文件。本机全量并行重跑 3 次均通过；将默认测试改成单文件串行后再次通过，338 项中 322 通过、0 失败、16 项可选样本跳过，耗时约 6.5 秒（并行约 4.3 秒）。串行设置已加入 `npm test`；提交 `1669090` 的 macOS ARM64 单 job CI 全部通过（run `41594000587`），包含测试、DMG 构建与桌面启动 smoke。
+
+## macOS ARM64 clean-runner simpleperf 回退（2026-11-03）
+
+- clean runner 只安装当前 NDK 27，不保证本机已存在 NDK 26；此前 Android 7 的四 ABI simpleperf 二进制被写入 `.gitignore` 下的生成目录，因而干净 checkout 无法复制旧版二进制。将 Android NDK 26.1.10909125 的 arm、arm64、x86、x86_64 二进制、Apache NOTICE 和来源清单加入可打包的 `tools/simpleperf-legacy/`，现代 NDK 缺少旧版时直接使用仓库资源。
+- 针对准备脚本和单 job workflow 的测试 4 项通过；`npm run check` 通过；全量测试 339 项，323 通过、0 失败、16 项因未配置可选官方样本跳过。四个 bundled ELF 均以 `file` 确认为各自目标架构。本机安装了 NDK 26，因此本次本地准备命令验证的是现有旧版 NDK 路径，不是 clean-runner 回退路径。
+- 将 bundled arm64 二进制临时推送到 API 25 / rk3399-all 真机后，设备成功运行并报告 `Simpleperf version 1.build.9796343`；临时文件已删除。这个检查验证 Android 7 可执行性，不替代现代主版本 profiler 的完整采样测试。
+- 提交 `2105a7a` 已推送；GitHub Actions run `41600895526` 的 macOS ARM64 clean-runner 测试、DMG 构建和桌面 smoke 全部通过。

@@ -56,7 +56,9 @@ export function findRelatedLayoutCaptures({serial,packageName,timestamp,records=
   const add=(id,name,source,layout)=>{
     if(layout?.source!=='agent'||layout.serial!==serial||layout.packageName!==packageName||!Number.isSafeInteger(layout.timestamp)||layout.timestamp<=0)return;
     if(all.some(item=>item.id===id))return;
-    all.push({id,name:String(name||'布局快照').slice(0,200),source,timestamp:layout.timestamp,deltaMs:hasTime?layout.timestamp-timestamp:null});
+    const start=typeof layout.captureStartUptimeNs==='string'&&/^\d{1,19}$/.test(layout.captureStartUptimeNs)?layout.captureStartUptimeNs:null;
+    const end=typeof layout.captureEndUptimeNs==='string'&&/^\d{1,19}$/.test(layout.captureEndUptimeNs)&&(!start||BigInt(layout.captureEndUptimeNs)>=BigInt(start))?layout.captureEndUptimeNs:null;
+    all.push({id,name:String(name||'布局快照').slice(0,200),source,timestamp:layout.timestamp,deltaMs:hasTime?layout.timestamp-timestamp:null,captureStartUptimeNs:start&&end?start:null,captureEndUptimeNs:start&&end?end:null});
   };
   add('current','当前布局快照','agent',currentLayout);
   const list=Array.isArray(records)?records:[],truncated=list.length>1000;
@@ -101,6 +103,9 @@ export function createLayoutCaptureArchive(layout) {
     if (!width || !height || width * height > 50_000_000 || (layout.imageSize && (layout.imageSize.width !== width || layout.imageSize.height !== height))) throw new Error('当前布局截图尺寸无效或与元数据不一致');
     screenshot = layout.screenshot;
   }
+  const captureStartUptimeNs=typeof layout.captureStartUptimeNs==='string'&&/^\d{1,19}$/.test(layout.captureStartUptimeNs)?layout.captureStartUptimeNs:null;
+  const captureEndUptimeNs=typeof layout.captureEndUptimeNs==='string'&&/^\d{1,19}$/.test(layout.captureEndUptimeNs)?layout.captureEndUptimeNs:null;
+  const captureClockValid=!!captureStartUptimeNs&&!!captureEndUptimeNs&&BigInt(captureEndUptimeNs)>=BigInt(captureStartUptimeNs);
   return {
     schemaVersion: 1,
     type: LAYOUT_ARCHIVE_TYPE,
@@ -111,6 +116,8 @@ export function createLayoutCaptureArchive(layout) {
       serial: typeof layout.serial === 'string' ? layout.serial.slice(0, 256) : null,
       packageName: typeof layout.packageName === 'string' ? layout.packageName.slice(0, 256) : null,
       api: Number.isSafeInteger(layout.api) ? layout.api : null,
+      captureStartUptimeNs:captureClockValid?captureStartUptimeNs:null,
+      captureEndUptimeNs:captureClockValid?captureEndUptimeNs:null,
       densityDpi: Number.isSafeInteger(layout.densityDpi) ? layout.densityDpi : null,
       imageSize: layout.imageSize && Number.isSafeInteger(layout.imageSize.width) && Number.isSafeInteger(layout.imageSize.height) ? layout.imageSize : null,
       warning: typeof layout.warning === 'string' ? layout.warning.slice(0, 2000) : null,
@@ -126,6 +133,9 @@ export function parseLayoutCaptureArchive(document) {
   const capture = document.capture;
   if (typeof capture.xml !== 'string' || new TextEncoder().encode(capture.xml).length > MAX_LAYOUT_ARCHIVE_XML_BYTES || !capture.xml.includes('<hierarchy')) throw new Error('布局档案 XML 无效或超过 8 MiB');
   if (capture.timestamp !== null && capture.timestamp !== undefined && (!Number.isSafeInteger(capture.timestamp) || capture.timestamp < 0)) throw new Error('布局档案时间戳无效');
+  const captureStartUptimeNs=typeof capture.captureStartUptimeNs==='string'&&/^\d{1,19}$/.test(capture.captureStartUptimeNs)?capture.captureStartUptimeNs:null;
+  const captureEndUptimeNs=typeof capture.captureEndUptimeNs==='string'&&/^\d{1,19}$/.test(capture.captureEndUptimeNs)?capture.captureEndUptimeNs:null;
+  const captureClockValid=!!captureStartUptimeNs&&!!captureEndUptimeNs&&BigInt(captureEndUptimeNs)>=BigInt(captureStartUptimeNs);
   if (capture.densityDpi !== null && capture.densityDpi !== undefined && (!Number.isSafeInteger(capture.densityDpi) || capture.densityDpi < 72 || capture.densityDpi > 1000)) throw new Error('布局档案显示密度无效');
   if (capture.imageSize !== null && capture.imageSize !== undefined && (!Number.isSafeInteger(capture.imageSize.width) || !Number.isSafeInteger(capture.imageSize.height) || capture.imageSize.width < 1 || capture.imageSize.height < 1 || capture.imageSize.width * capture.imageSize.height > 50_000_000)) throw new Error('布局档案图像尺寸无效');
   let screenshot = null;
@@ -144,6 +154,8 @@ export function parseLayoutCaptureArchive(document) {
     serial: typeof capture.serial === 'string' ? capture.serial.slice(0, 256) : null,
     packageName: typeof capture.packageName === 'string' ? capture.packageName.slice(0, 256) : null,
     api: Number.isSafeInteger(capture.api) ? capture.api : null,
+    captureStartUptimeNs:captureClockValid?captureStartUptimeNs:null,
+    captureEndUptimeNs:captureClockValid?captureEndUptimeNs:null,
     densityDpi: capture.densityDpi ?? null,
     imageSize: capture.imageSize ?? null,
     warning: typeof capture.warning === 'string' ? capture.warning.slice(0, 2000) : null,

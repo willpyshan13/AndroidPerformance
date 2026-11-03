@@ -5,7 +5,7 @@ import { createLayoutCaptureArchive, parseLayoutCaptureArchive } from '../public
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/tL8AAAAASUVORK5CYII=';
 
 test('layout capture archive preserves XML, screenshot and safe metadata', () => {
-  const source = {source:'agent',timestamp:1700000000000,serial:'device-1',packageName:'dev.sample',api:34,densityDpi:420,imageSize:{width:1,height:1},warning:null,note:'evidence note',xml:'<?xml version="1.0"?><hierarchy><node class="TextView"/></hierarchy>',screenshot:png};
+  const source = {source:'agent',timestamp:1700000000000,serial:'device-1',packageName:'dev.sample',api:34,densityDpi:420,imageSize:{width:1,height:1},warning:null,note:'evidence note',captureStartUptimeNs:'9007199254740993',captureEndUptimeNs:'9007199254741993',xml:'<?xml version="1.0"?><hierarchy><node class="TextView"/></hierarchy>',screenshot:png};
   const archive = createLayoutCaptureArchive(source);
   assert.equal(archive.type,'android-performance-layout-capture');
   const restored = parseLayoutCaptureArchive(JSON.parse(JSON.stringify(archive)));

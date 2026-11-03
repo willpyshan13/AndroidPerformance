@@ -134,6 +134,7 @@ public final class LayoutAgent {
     }
 
     private static JSONObject capture() throws Exception {
+        long captureStartUptimeNs = System.nanoTime();
         Activity current = activity.get();
         if (current == null || current.isFinishing() || current.isDestroyed()) throw new IllegalStateException("No active Activity is available");
         View root = current.getWindow().getDecorView().getRootView();
@@ -146,6 +147,7 @@ public final class LayoutAgent {
         serializer.endTag(null, "hierarchy"); serializer.endDocument();
 
         JSONObject response = new JSONObject(); response.put("ok", true); response.put("xml", xml.toString("UTF-8"));
+        response.put("captureStartUptimeNs", Long.toString(captureStartUptimeNs));
         response.put("width", root.getWidth()); response.put("height", root.getHeight());
         int flags = current.getWindow().getAttributes().flags;
         if ((flags & WindowManager.LayoutParams.FLAG_SECURE) == 0 && (long)root.getWidth() * root.getHeight() <= 16000000L) {
@@ -167,6 +169,7 @@ public final class LayoutAgent {
         response.put("composeChangedStateReadsWarning", state.composeChangedStateReadsWarning);
         response.put("composeChangedStateOverflow", state.droppedChangedSnapshotStates);
         response.put("composeRuntimeWarning", state.composeRuntimeWarning); response.put("composeRuntimeDetail", safe(state.composeRuntimeDetail));
+        response.put("captureEndUptimeNs", Long.toString(System.nanoTime()));
         return response;
     }
 

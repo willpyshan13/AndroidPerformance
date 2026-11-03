@@ -331,6 +331,26 @@ export async function queryComposeFrameCorrelation(path,{events,packageName=null
  return {available:true,frames:frames.filter(frame=>frame.composeEvents.length),frameCount:frames.length,clockSnapshots:snapshots.length,mappedEvents,unmappedEvents,clockMismatchCount,matchedEventFramePairs,uniqueMatchedEvents:uniqueMatched.size,truncated:timeline.truncated,note:'Compose uptime 时间通过追踪内置 CLOCK_MONOTONIC 快照映射至 Perfetto 时间轴；只表示时间区间重合，不证明 State 更新导致该帧或 Jank。'};
 }
 
+export async function queryLayoutFrameCorrelation(path,{captureStartUptimeNs,captureEndUptimeNs,packageName,locator=locateTraceProcessor,runner=exec}={}){
+ if(typeof captureStartUptimeNs!=='string'||!/^[1-9]\d{0,18}$/.test(captureStartUptimeNs)||typeof captureEndUptimeNs!=='string'||!/^[1-9]\d{0,18}$/.test(captureEndUptimeNs)||BigInt(captureEndUptimeNs)<BigInt(captureStartUptimeNs))throw new Error('布局 Agent 单调时钟区间无效');
+ if(packageName!==null&&(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName)))throw new Error('布局帧关联包名无效');
+ const [timeline,snapshots]=await Promise.all([
+  queryFrameTimeline(path,{packageName,locator,runner}),
+  (async()=>{const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,MONOTONIC_CLOCK_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Monotonic 时钟查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseMonotonicClockSnapshots(result.stdout);})()
+ ]);
+ if(snapshots.length<2)return {available:false,reason:'追踪没有足够的 CLOCK_MONOTONIC 快照，不能将布局 Agent 采集时间映射到 FrameTimeline。',frames:[],clockSnapshots:snapshots.length,matchedFrameCount:0};
+ const traceStartNs=mapMonotonicToTraceNs(captureStartUptimeNs,snapshots),traceEndNs=mapMonotonicToTraceNs(captureEndUptimeNs,snapshots);
+ if(traceStartNs===null||traceEndNs===null)return {available:false,reason:'布局 Agent 采集时刻超出追踪 CLOCK_MONOTONIC 快照范围，不能安全外推。',frames:[],clockSnapshots:snapshots.length,matchedFrameCount:0};
+ const start=BigInt(traceStartNs),end=BigInt(traceEndNs);if(end<start)return {available:false,reason:'映射后的布局采集区间无效。',frames:[],clockSnapshots:snapshots.length,matchedFrameCount:0};
+ const frames=[];let overlapPairs=0;
+ for(const [timelineIndex,frame] of timeline.frames.entries()){
+  const frameStart=BigInt(frame.tsNs),frameEnd=frameStart+BigInt(frame.durationNs),overlapStart=start>frameStart?start:frameStart,overlapEnd=end<frameEnd?end:frameEnd;
+  if(overlapEnd<=overlapStart)continue;
+  frames.push({timelineIndex,process:frame.process,layer:frame.layer,tsNs:frame.tsNs,durationNs:frame.durationNs,jankType:frame.jankType,presentType:frame.presentType,overlapNs:(overlapEnd-overlapStart).toString(),processId:frame.processId});overlapPairs++;
+ }
+ return {available:true,frames,clockSnapshots:snapshots.length,traceStartNs,traceEndNs,matchedFrameCount:frames.length,overlapPairs,truncated:timeline.truncated,note:'将应用内 Debug Agent 的 System.nanoTime 采集区间经追踪 CLOCK_MONOTONIC 快照映射到 FrameTimeline；仅表示布局采集区间与帧时间重叠，不证明该布局状态导致帧表现或 Jank。'};
+}
+
 export async function queryCpuFrameCorrelation(path,{samples,clockId,packageName=null,locator=locateTraceProcessor,runner=exec}={}){
  if(!Array.isArray(samples)||samples.length>20000)throw new Error('CPU 关联最多支持 20,000 个采样点');
  if(clockId!=='monotonic')return {available:false,reason:'perf.data 未证明采样时间使用 CLOCK_MONOTONIC；当前时钟不能安全映射到 Perfetto。',clockId:typeof clockId==='string'?clockId:null};

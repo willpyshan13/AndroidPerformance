@@ -1,5 +1,11 @@
 # 当前验证记录（2026-11-03）
 
+## 布局 Agent 采集区间映射到 FrameTimeline（2026-11-03）
+
+- 新版 Android Layout Agent 在 View 树与截图采集期间记录 `System.nanoTime()` 起止值，作为十进制字符串进入本机采集档案；旧 Agent 返回缺少/无效时保留空值。帧分析页仅对同设备、本机追踪和 API 31+ 数据开放映射操作。
+- 新增 Perfetto CLOCK_MONOTONIC 快照到 FrameTimeline 的区间映射；拒绝将采集时刻外推到 trace 快照范围之外；展示帧与布局采集区间的交叠时长并可跳转 trace。文案明确交叠不证明同一帧、因果或 Jank 成因。
+- 合成 Trace Processor 测试验证大于安全整数范围的时钟字符串、区间投影、匹配帧、越界拒绝；Agent 协议与布局档案测试验证时钟字段精确保留及旧数据兼容。`npm test`：352 项，336 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check`、`git diff --check` 通过。macOS ARM64 `.app` 打包及桌面 smoke 通过，检查 renderer、打包内 Java runtime 与 Trace Processor、Perfetto UI、APK 分析、布局线索、50,000 个 CPU 时间线样本及 16 个英文路由。本轮没有连接设备、没有启动模拟器；尚未在真实设备 trace 上验证时钟快照与 Agent 数据的对应关系。
+
 ## gfxinfo 与 Perfetto FrameTimeline 关联（2026-11-03）
 
 - 帧分析页新增同设备来源门控的 gfxinfo / FrameTimeline 时间重叠候选：仅当帧数据和当前追踪都由本次桌面会话从同一 serial 采集、包名一致且 API 31+ 时启用；导入来源不会继承设备身份。结果显示重叠候选、超预算信息和 FrameTimeline Jank 标签，并可跳至对应追踪时间段。

@@ -177,7 +177,7 @@ test('Compose uptime maps through monotonic clock snapshots without extrapolatio
 });
 
 test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline frames',async(t)=>{
- const {queryComposeFrameCorrelation,queryCpuFrameCorrelation,queryFrameTimeline}=await import('../src/trace-analysis.js');
+ const {queryComposeFrameCorrelation,queryCpuFrameCorrelation,queryLayoutFrameCorrelation,queryFrameTimeline}=await import('../src/trace-analysis.js');
  const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const v=n=>{n=BigInt(n);const b=[];do{let x=Number(n&127n);n>>=7n;if(n)x|=128;b.push(x);}while(n);return Buffer.from(b);};
@@ -195,6 +195,8 @@ test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline fram
  ]);
  const dir=await mkdtemp(join(tmpdir(),'compose-frame-correlation-')),path=join(dir,'sample.trace');try{
   await writeFile(path,data);const result=await queryComposeFrameCorrelation(path,{events:[{elapsedNs:'515000000',clock:'uptime',name:'HomeScreen',measurement:'side-effect'}]});assert.equal(result.available,true,JSON.stringify(result));assert.equal(result.clockSnapshots,2);assert.equal(result.mappedEvents,1);assert.equal(result.uniqueMatchedEvents,1);assert.equal(result.matchedEventFramePairs,1);assert.equal(result.frames.length,1);assert.equal(result.frames[0].composeEvents[0].traceNs,'1015000000');
+  const layout=await queryLayoutFrameCorrelation(path,{packageName:null,captureStartUptimeNs:'510000000',captureEndUptimeNs:'520000000'});assert.equal(layout.available,true,JSON.stringify(layout));assert.equal(layout.traceStartNs,'1010000000');assert.equal(layout.traceEndNs,'1020000000');assert.equal(layout.matchedFrameCount,1,JSON.stringify(layout));assert.equal(layout.frames[0].overlapNs,'10000000');assert.equal(layout.frames[0].layer,'example layer');
+  const outOfRange=await queryLayoutFrameCorrelation(path,{packageName:null,captureStartUptimeNs:'400000000',captureEndUptimeNs:'410000000'});assert.equal(outOfRange.available,false);assert.match(outOfRange.reason,/不能安全外推/);
   const cpu=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:1000,tid:43,weight:'123',name:'MainActivity.draw'}]});assert.equal(cpu.available,true,JSON.stringify(cpu));assert.equal(cpu.mappedSamples,1);assert.equal(cpu.matchedSamples,1);assert.equal(cpu.frames.length,1);assert.equal(cpu.frames[0].sampleWeight,'123');assert.deepEqual(cpu.frames[0].functions,[{name:'MainActivity.draw',count:1,weight:'123'}]);
   const wrongPid=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:99,tid:100,weight:'123',name:'Other.draw'}]});assert.equal(wrongPid.available,true);assert.equal(wrongPid.mappedSamples,1);assert.equal(wrongPid.matchedSamples,0);assert.equal(wrongPid.frames.length,0);
   const unknown=await queryCpuFrameCorrelation(path,{clockId:null,samples:[]});assert.equal(unknown.available,false);assert.match(unknown.reason,/CLOCK_MONOTONIC/);

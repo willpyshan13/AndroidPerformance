@@ -21,9 +21,14 @@ async function harness(t,response){
 }
 
 test('layout debug agent forwards a read-only View snapshot and always removes ADB forwarding',async t=>{
- const h=await harness(t,{ok:true,xml:'<hierarchy><node class="android.view.View" bounds="[0,0][1080,1920]"/></hierarchy>',screenshot:png.toString('base64'),truncated:false});
+ const h=await harness(t,{ok:true,xml:'<hierarchy><node class="android.view.View" bounds="[0,0][1080,1920]"/></hierarchy>',screenshot:png.toString('base64'),truncated:false,captureStartUptimeNs:'9007199254740993',captureEndUptimeNs:'9007199254741993'});
  const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);
- assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.equal(result.composeHosts,0);assert.equal(result.composeNodes,0);assert.match(result.note,/不读取 State 值/);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
+ assert.equal(result.source,'agent');assert.equal(result.imageSize.width,1080);assert.equal(result.imageSize.height,1920);assert.equal(result.densityDpi,440);assert.equal(result.truncated,false);assert.equal(result.composeHosts,0);assert.equal(result.composeNodes,0);assert.equal(result.captureStartUptimeNs,'9007199254740993');assert.equal(result.captureEndUptimeNs,'9007199254741993');assert.match(result.note,/不读取 State 值/);assert.match(result.xml,/<hierarchy/);assert.equal(h.removed,true);
+});
+
+test('layout debug agent treats missing or malformed monotonic timestamps as unavailable',async t=>{
+ const h=await harness(t,{ok:true,xml:'<hierarchy/>',screenshot:null,captureStartUptimeNs:'900',captureEndUptimeNs:'bad'});
+ const result=await captureLayoutFromAgent(h.adb,serial,packageName,token);assert.equal(result.captureStartUptimeNs,null);assert.equal(result.captureEndUptimeNs,null);
 });
 
 test('layout agent reports Compose Semantics counts and runtime incompatibility',async t=>{

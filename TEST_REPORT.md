@@ -4,7 +4,7 @@
 
 - 帧分析页新增同设备来源门控的 gfxinfo / FrameTimeline 时间重叠候选：仅当帧数据和当前追踪都由本次桌面会话从同一 serial 采集、包名一致且 API 31+ 时启用；导入来源不会继承设备身份。结果显示重叠候选、超预算信息和 FrameTimeline Jank 标签，并可跳至对应追踪时间段。
 - 关联使用 BigInt 纳秒区间，过滤目标应用及其子进程；严格按半开区间求交集，保留一对多图层候选，并明确时间重叠不证明同一帧、因果或 Jank 来源。没有设备数据时用合成离线测试覆盖精度、来源门控、进程过滤、边界和无效值。
-- `test/gfx-frame-timeline-correlation.test.js` 与 `test/i18n.test.js` 定向测试通过；全量 `npm test` 为 349 项，333 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。本轮未连接设备、未启动模拟器，也未验证真实 FrameTimeline 轨道。
+- `test/gfx-frame-timeline-correlation.test.js` 与 `test/i18n.test.js` 定向测试通过；全量 `npm test` 为 349 项，333 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。macOS ARM64 重新打包后运行 `node scripts/mac-desktop-smoke.js` 通过，覆盖 renderer 和 16 个英文导航路由；修复 smoke 暴露的动态来源提示英文翻译遗漏。本轮未连接设备、未启动模拟器，也未验证真实 FrameTimeline 轨道。
 
 ## Itanium 模板类型显示与源码候选（2026-11-03）
 

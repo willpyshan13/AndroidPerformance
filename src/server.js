@@ -20,6 +20,7 @@ import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFil
 import {createRemoteSourceSnapshot} from './source-git.js';
 import {buildAgentPackage,buildLayoutAgentPackage} from './agent-package.js';
 import { runMacrobenchmark } from './macrobenchmark.js';
+import { resolveGradleJavaPath } from './java-runtime.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export const VERSION = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
@@ -410,7 +411,8 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           macrobenchmarkBusy = true;
           macrobenchmarkArtifacts.clear();
           try {
-            const runtimeJava = javaPath || sharkJavaPath || (desktop && process.resourcesPath ? join(process.resourcesPath, 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : join(root, 'tools', 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java'));
+            const bundledJava = javaPath || sharkJavaPath || (desktop && process.resourcesPath ? join(process.resourcesPath, 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : join(root, 'tools', 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java'));
+            const runtimeJava = javaPath || await resolveGradleJavaPath({ fallbackJavaPath: bundledJava });
             const result=await macrobenchmarkRunner({ javaPath: runtimeJava, projectPath: body.projectPath, task: body.task, serial: body.serial || '' });
             const artifacts=[];
             for(const artifact of result.artifacts||[]){

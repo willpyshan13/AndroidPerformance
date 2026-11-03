@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat, readdir, readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 
 const TASK_PATTERN = /^:?[A-Za-z0-9_][A-Za-z0-9_.:-]{0,179}$/;
 const MAX_OUTPUT = 1024 * 1024;
@@ -39,7 +39,9 @@ async function findFreshOutputs(projectRoot, startedAt) {
       if (entry.name === '.git' || entry.name === '.gradle' || entry.name === 'node_modules') continue;
       const path = join(dir, entry.name);
       if (entry.isDirectory()) { stack.push({ dir: path, depth: depth + 1 }); continue; }
-      if (!entry.isFile() || !/^(benchmarkData.*\.json|.*\.(?:trace|perfetto-trace))$/i.test(entry.name)) continue;
+      const benchmarkReport = /(?:^|[-.])benchmarkData[^/]*\.json$/i.test(entry.name);
+      const traceFile = /\.(?:trace|perfetto-trace)$/i.test(entry.name);
+      if (!entry.isFile() || (!benchmarkReport && !traceFile)) continue;
       const rel = relative(projectRoot, path).split(sep);
       if (!rel.includes('connected_android_test_additional_output')) continue;
       try {
@@ -58,7 +60,9 @@ export async function runMacrobenchmark({ javaPath, projectPath, task, serial = 
   if (serial && (typeof serial !== 'string' || !/^[\w.:[\]-]{1,200}$/.test(serial))) throw new Error('设备序列号无效');
   const startedAt = Date.now();
   const args = ['-classpath', project.wrapperJar, 'org.gradle.wrapper.GradleWrapperMain', '--no-daemon', project.task];
-  const env = { ...process.env, ...(serial ? { ANDROID_SERIAL: serial } : {}) };
+  const realJavaPath = await realpath(javaPath).catch(() => javaPath);
+  const javaHome = basename(dirname(realJavaPath)) === 'bin' ? dirname(dirname(realJavaPath)) : null;
+  const env = { ...process.env, ...(javaHome ? { JAVA_HOME: javaHome } : {}), ...(serial ? { ANDROID_SERIAL: serial } : {}) };
   const output = [];
   let outputBytes = 0, timedOut = false;
   const child = spawn(javaPath, args, { cwd: project.root, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });

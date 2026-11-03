@@ -1,9 +1,26 @@
-import {mkdir,realpath,rename,rm,stat} from 'node:fs/promises';
+import {access,mkdir,realpath,rename,rm,stat} from 'node:fs/promises';
 import {dirname,join,isAbsolute} from 'node:path';
+import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 
 const run=promisify(execFile);
+
+export async function resolveGradleJavaPath({fallbackJavaPath,env=process.env,platform=process.platform,home=homedir(),javaHomeResolver=async()=>{const {stdout}=await run('/usr/libexec/java_home',['-v','17'],{timeout:3000,maxBuffer:4096});return stdout.trim();}}={}){
+ const candidates=[];
+ if(platform==='darwin'){
+  try{const javaHome=await javaHomeResolver();if(javaHome)candidates.push(javaHome);}catch{}
+ }
+ if(typeof env.JAVA_HOME==='string'&&env.JAVA_HOME)candidates.push(env.JAVA_HOME);
+ if(platform==='darwin'){
+  candidates.push(join(home,'Applications','Android Studio.app','Contents','jbr','Contents','Home'),'/Applications/Android Studio.app/Contents/jbr/Contents/Home');
+ }
+ for(const candidate of [...new Set(candidates)]){
+  const java=join(candidate,'bin',platform==='win32'?'java.exe':'java'),javac=join(candidate,'bin',platform==='win32'?'javac.exe':'javac');
+  try{if((await stat(java)).isFile()&&(await stat(javac)).isFile()){await access(java);await access(javac);return java;}}catch{}
+ }
+ return fallbackJavaPath;
+}
 
 export async function ensureWindowsJavaRuntime(archive,destination,{runner=run,tar=process.platform==='win32'?'tar.exe':'tar'}={}){
  const executable=join(destination,'bin','java.exe');

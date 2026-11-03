@@ -187,9 +187,10 @@ test('English translations cover literal state-dependent UI labels without rewri
 
 test('Benchmark page has English translations for every literal Chinese label and its full capability guidance',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),start=app.indexOf('function renderBenchmark()'),end=app.indexOf('\nconst bytes =',start),source=app.slice(start,end);
+  assert.match(source,/state\.macroTask\|\|':macrobenchmark:connectedBenchmarkAndroidTest'/);
   const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)))];
   const guidance=[
-    '选择包含 Gradle Wrapper 的 Android 工程，执行连接设备的 Android 测试任务。常见任务为 :macrobenchmark:connectedBenchmarkReleaseAndroidTest；任务会构建并安装测试 APK、启动目标应用，可能运行数分钟。Gradle 可能按项目配置下载依赖。结果只从本次运行更新的 connected_android_test_additional_output 中读取。',
+    '选择包含 Gradle Wrapper 的 Android 工程，执行连接设备的 Android 测试任务。常见任务为 :macrobenchmark:connectedBenchmarkAndroidTest；任务会构建并安装测试 APK、启动目标应用，可能运行数分钟。Gradle 可能按项目配置下载依赖。结果只从本次运行更新的 connected_android_test_additional_output 中读取。',
     '需要先在设备安装 benchmark 测试 APK。运行 instrumentation 会启动目标应用并操作手机，可能持续数分钟。完成后会检查标准 AndroidX Benchmark 报告是否在本次运行期间更新；无法确认新鲜度时不会自动载入。工具不会安装 APK 或配置测试。超时或断线时设备上的测试可能仍在运行。',
     '输入测试包 Android/media 目录中的 JSON 完整路径，读取后作为当前运行。设备文件可能来自较早的测试；请自行核对生成时间、测试参数和设备，工具不自动认定它属于刚才的运行。其他位置的报告请手动导入。',
   ];

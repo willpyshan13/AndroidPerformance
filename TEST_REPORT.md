@@ -1,4 +1,12 @@
-# 当前验证记录（2026-11-02）
+# 当前验证记录（2026-11-03）
+
+## Macrobenchmark 真机执行链路（2026-11-03）
+
+- 在 API 25 / rk3399-all 真机上，用临时 AndroidX Macrobenchmark 工程（AGP 8.7.3、Gradle 8.9、AndroidX Macrobenchmark 1.4.1）调用产品 `/api/benchmark/gradle/run` 路由执行 `:macrobenchmark:connectedBenchmarkAndroidTest`。macOS JDK 17 自动发现后，单次冷启动 instrumentation 构建、安装和执行成功，端到端用时约 35 秒；AndroidX 生成 `dev.apw.macrobenchmark-benchmarkData.json`（经 `parseBenchmark` 解析为 1 项 TTID 指标）和 1 个 1,875,144 字节 Perfetto trace。目标 APK 加入 ProfileInstaller 1.4.1 后通过 shader-cache 清理前置步骤。
+- 首轮验证发现标准报告文件名为 `dev.apw.macrobenchmark-benchmarkData.json`，而扫描器只认 `benchmarkData` 开头的文件；已改为识别包含标准 `-benchmarkData` 后缀的 JSON，并用真实设备复跑确认产品执行器自动返回解析后的报告及 trace。对应单测覆盖该 AndroidX 文件名，Macrobenchmark 单测 2/2 通过。
+- 通过本机受控产物 API 下载同次真实 trace：HTTP 200、1,875,144 字节，SHA-256 与原始 trace 一致。这个验证覆盖运行、结果发现、报告解析和 trace 文件安全交付；没有把旧设备上的结果当作跨设备性能结论，也尚未核对报告和 trace 中的设备身份关联。
+- 此测试同时发现内置 Temurin JRE 缺少 `javac`，无法构建 Android 工程。新增 Gradle JDK 选择：优先使用完整 `JAVA_HOME`，macOS 再查询已注册的 Java 17 / Android Studio JBR，未发现时回退到内置 runtime；Gradle 进程的 `JAVA_HOME` 与实际启动的 JDK 保持一致。
+- 最新 macOS ARM64 `.app` 由 `npm run package:mac` 构建成功；`node scripts/mac-desktop-smoke.js` 通过，验证 Electron renderer、13 个主页快捷入口、16 个英文导航路由及 HPROF、布局、源码、Network Agent、50k CPU 时间线和 APK 分析 smoke。此包使用本机 ad-hoc 签名，未公证。
 
 ## Compose 编译器自动执行观测
 

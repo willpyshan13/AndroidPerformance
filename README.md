@@ -171,7 +171,7 @@ CPU 采样提供按叶函数汇总的时间分布图，点击时间段可查看�
 
 Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围；新导入的 sampledMetrics 保留迭代分组，旧记录可能没有分组。这些描述性统计不能证明显著性。
 
-在“基准对比”页可以选择 Macrobenchmark 工程目录，默认任务为 `:macrobenchmark:connectedBenchmarkReleaseAndroidTest`，也可按项目修改为实际的模块和变体任务。工程需包含 `gradlew` 使用的 Gradle Wrapper 文件及 Android Benchmark 模块，设备需已连接并可被 Android Gradle Plugin 识别；应用会通过本机 Java Runtime 调用 Wrapper，不经 Shell。Gradle 按工程配置构建、安装测试 APK 并执行测试，首次运行可能下载 Gradle 和项目依赖。运行结束后仅自动读取本次更新的 `connected_android_test_additional_output` 中 `benchmarkData*.json`；发现 trace 文件后，可从结果区选择并安全导入追踪分析。若工程使用自定义报告目录或输出名称，请手动导入 JSON。运行前请确认所选工程及 Gradle 脚本可信，因为 Gradle 构建会执行工程代码。
+在“基准对比”页可以选择 Macrobenchmark 工程目录，Android Gradle Plugin 常见任务为 `:macrobenchmark:connectedBenchmarkAndroidTest`，也可按项目修改为实际的模块和变体任务。工程需包含 `gradle/wrapper` 下的 Wrapper 文件及 Android Benchmark 模块，设备需已连接并可被 Android Gradle Plugin 识别；应用优先使用 `JAVA_HOME` 或 Android Studio 的完整 JDK 调用 Wrapper，并在未找到时回退到内置 Java Runtime，不经 Shell。Gradle 按工程配置构建、安装测试 APK 并执行测试，首次运行可能下载 Gradle 和项目依赖。运行结束后会自动读取本次更新的 `connected_android_test_additional_output` 中 AndroidX 生成的 `*benchmarkData*.json`；发现 trace 文件后，可从结果区选择并安全导入追踪分析。若工程使用自定义报告目录或输出名称，请手动导入 JSON。运行前请确认所选工程及 Gradle 脚本可信，因为 Gradle 构建会执行工程代码。
 
 电池页面在系统提供 `pwi` UID 数据时展示累计 mAh 估计及原始精度；该值可能包含共享 UID，依赖系统模型和取整，不作为两次快照之间的精确实验耗电。
 

@@ -2,11 +2,11 @@ import {constants} from 'node:fs';
 import {lstat, mkdir, open, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {basename, extname, isAbsolute, join, relative, sep} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
-import {parseSourceSymbol,findSourceDeclarations,deobfuscateJavaMethod} from './source-symbols.js';
+import {parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod} from './source-symbols.js';
 
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const digestPattern=/^[a-f0-9]{64}$/;
-const extensions=new Set(['.kt','.kts','.java','.xml','.gradle','.c','.cc','.cpp','.h','.hpp','.aidl','.rs','.proto','.properties','.toml']);
+const extensions=new Set(['.kt','.kts','.java','.xml','.gradle','.c','.cc','.cpp','.cxx','.c++','.h','.hh','.hpp','.hxx','.h++','.ipp','.inl','.aidl','.rs','.proto','.properties','.toml']);
 const excluded=new Set(['.git','.gradle','.idea','node_modules','build','dist','out','.cxx']);
 const maxFiles=5000,maxFile=512*1024,maxTotal=32*1024*1024,maxEntries=50000;
 const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
@@ -63,15 +63,15 @@ export async function searchSource(root,id,query){
  return {matches,truncated};
 }
 export async function resolveSourceSymbol(root,id,symbol){
- const parsed=parseSourceSymbol(symbol),meta=await getSourceSnapshot(root,id),matches=[];let total=0;const mappingFiles=meta.files.filter(file=>file.path.split('/').at(-1).toLowerCase()==='mapping.txt'),deobfuscated=[];let mappingTruncated=false;
+ const parsed=parseSourceSymbol(symbol),meta=await getSourceSnapshot(root,id),matches=[];let total=0;const mappingFiles=parsed.isNative?[]:meta.files.filter(file=>file.path.split('/').at(-1).toLowerCase()==='mapping.txt'),deobfuscated=[];let mappingTruncated=false;
  for(const mappingFile of mappingFiles){const mapping=await readIndexedFile(root,id,mappingFile);for(const entry of deobfuscateJavaMethod(mapping.text,parsed)){if(deobfuscated.length===200){mappingTruncated=true;break;}deobfuscated.push({...entry,path:mappingFile.path});}if(mappingTruncated)break;}
  const targets=deobfuscated.length?deobfuscated.map(mapping=>({parsed:parseSourceSymbol(`${mapping.originalClass}${mapping.originalMethod?`.${mapping.originalMethod}()` : ''}`),mapping})): [{parsed,mapping:null}];
  const uniqueMatches=new Map();
  for(const file of meta.files){
-  if(!['.java','.kt','.kts'].includes(extname(file.path).toLowerCase()))continue;
+  const extension=extname(file.path).toLowerCase(),sourceExtensions=parsed.isNative?['.c','.cc','.cpp','.cxx','.c++','.h','.hh','.hpp','.hxx','.h++','.ipp','.inl']:['.java','.kt','.kts'];if(!sourceExtensions.includes(extension))continue;
   const content=await readIndexedFile(root,id,file);
   for(const target of targets){
-   const found=findSourceDeclarations(content.text,file.path,target.parsed);total+=found.length;
+   const found=target.parsed.isNative?findNativeSourceDeclarations(content.text,file.path,target.parsed):findSourceDeclarations(content.text,file.path,target.parsed);total+=found.length;
    for(const candidate of found){const mapping=target.mapping,result={...candidate,score:candidate.score+(mapping?60:0),mapping:mapping?{obfuscatedClass:mapping.obfuscatedClass,obfuscatedMethod:mapping.obfuscatedMethod,originalClass:mapping.originalClass,originalMethod:mapping.originalMethod,path:mapping.path,line:mapping.line}:null};uniqueMatches.set(`${candidate.path}\0${candidate.line}\0${mapping?.path||''}\0${mapping?.line||''}`,result);}
   }
  }

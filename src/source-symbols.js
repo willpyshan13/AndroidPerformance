@@ -19,7 +19,12 @@ export function maskSource(text){
 }
 export function parseSourceSymbol(symbol){
  if(typeof symbol!=='string'||!symbol.trim()||symbol.length>500)throw new Error('符号名称无效');
- const raw=symbol.trim();if(raw.includes('::'))throw new Error('当前候选定位仅支持 Java/Kotlin 符号；原生符号可使用文本搜索');
+ const raw=symbol.trim();
+ if(raw.includes('::')){
+  const normalized=raw.replace(/\s*\([^)]*\).*$/,'').replace(/\+0x[\da-f]+$/i,'').trim(),parts=normalized.split('::');
+  if(parts.length<2||parts.some(part=>!/^~?[A-Za-z_][\w$]*$/.test(part)))throw new Error('原生符号格式无法识别；可使用文本搜索');
+  return {raw,normalized,method:parts.at(-1),className:parts.at(-2),qualifiers:parts.slice(0,-1),packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+ }
  const obfuscatedLineMatch=raw.match(/\((?:[^():]*:)?(\d+)\)\s*$/),obfuscatedLine=obfuscatedLineMatch?Number(obfuscatedLineMatch[1]):null;
  let normalized=raw.replace(/\s*\([^)]*\).*$/,'').replace(/\+0x[\da-f]+$/i,'').trim().replace(/\$/g,'.');
  const parts=normalized.split('.');if(parts.some(p=>!/^[$A-Za-z_][\w$]*$/.test(p)))throw new Error('符号格式无法识别；可使用文本搜索');
@@ -40,6 +45,20 @@ export function findSourceDeclarations(text,path,symbol){
   const kind=kt.test(line)?'kotlin-function':java.test(line)?'java-method':classDecl.test(line)?'class':null;if(!kind)continue;
   const reasons=['声明名匹配'];if(exactClass)reasons.push('文件中包含匹配类名');if(exactPackage)reasons.push('包名匹配');
   results.push({path,line:i+1,preview:original[i].slice(0,300),kind,packageName:pkg,score:20+(exactClass?30:0)+(exactPackage?50:0),reasons});
+ }
+ return results;
+}
+export function findNativeSourceDeclarations(text,path,symbol){
+ const masked=maskSource(text),lines=masked.split(/\r?\n/),original=text.split(/\r?\n/),name=escapeRegExp(symbol.method);
+ const declaration=new RegExp(`^\\s*(?:(?:inline|static|virtual|constexpr|consteval|extern|friend|explicit|register|thread_local)\\s+)*(?:[\\w~:<>,*&]+\\s+)+(?:(?:[\\w~]+)::)*${name}\\s*\\(`);
+ const classes=new Set([...masked.matchAll(/\b(?:class|struct|union)\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
+ const namespaces=new Set([...masked.matchAll(/\bnamespace\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
+ const qualifiers=symbol.qualifiers||[],scopeMatches=qualifiers.filter(scope=>classes.has(scope)||namespaces.has(scope));
+ const results=[];
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],trim=line.trim();if(!trim||/^(return|throw|new)\b/.test(trim)||!declaration.test(line))continue;
+  const reasons=['原生函数名匹配'];if(scopeMatches.length)reasons.push(`作用域名匹配：${scopeMatches.join('::')}`);
+  results.push({path,line:i+1,preview:original[i].slice(0,300),kind:'native-function',packageName:null,score:20+scopeMatches.length*30,reasons});
  }
  return results;
 }

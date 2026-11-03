@@ -593,3 +593,9 @@ npm run test:device -- \
 - 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。
 - 更新 workflow 配置回归，确保只有一个 `macos-15` job、`npm ci` 与 Trace Processor 准备步骤各出现一次，且没有 Windows / Linux runner。此前拆分双 job 时，该回归因仍要求旧的 `tests` + `package` 双 job 而失败；更新断言后通过。
 - `npm test`：333 项，317 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。CI 实际耗时仍受 SDK/NDK 与打包资源下载影响，需观察下一次 GitHub Actions 执行确认节省时间。
+
+## C/C++ 源码候选定位（2026-11-03）
+
+- 源码工作区现在能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选；候选过程会忽略注释、字符串和普通调用点。无法识别的 `operator` 等复杂格式仍回退为原始文本搜索。它不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
+- API 25 真机不参与此离线功能。源码解析、快照 HTTP API、英文证据翻译与打包配置定向测试均通过；完整测试 334 项，318 通过、0 失败、16 项可选官方样本跳过。
+- 当前 macOS arm64 打包 app 的 `node scripts/mac-desktop-smoke.js` 通过：创建包含 Java 和 C++ fixture 的只读快照，文本搜索并打开 Java 文件，再解析 `apw::SmokeWorker::run`、显示英文匹配证据并打开 C++ 文件；同时既有 renderer、HPROF CSV、布局线索、Network Agent ZIP、50,000 样本 CPU Canvas 和 16 页英文扫描通过。CPU 栅格本轮约 49.7 ms，仅是当前主机观测。

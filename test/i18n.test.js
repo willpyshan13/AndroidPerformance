@@ -10,6 +10,11 @@ test('language selector supports Chinese and English while preserving user conte
   assert.equal(translate('CPU 调用栈采样','en-US'),'CPU call stack sampling');
   assert.equal(translate('导入 HAR，或读取已接入的 OkHttp Agent。','en-US'),'Import a HAR file or read from a configured OkHttp Agent.');
   assert.equal(translate('完整 Compose Inspector','en-US'),'Full Compose Inspector');
+  assert.equal(translate('原生函数名匹配','en-US'),'Native function name match');
+  assert.equal(translate('作用域名匹配','en-US'),'Namespace or class scope match');
+  assert.equal(translate('声明名匹配','en-US'),'Declaration name match');
+  assert.equal(translate('文件中包含匹配类名','en-US'),'File contains the matching class name');
+  assert.equal(translate('包名匹配','en-US'),'Package name match');
   assert.equal(translate('概览','zh-CN'),'概览');
   assert.equal(translate('com.example.app','en-US'),'com.example.app');
 });

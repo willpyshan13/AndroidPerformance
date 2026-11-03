@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {maskSource,parseSourceSymbol,findSourceDeclarations,deobfuscateJavaMethod} from '../src/source-symbols.js';
+import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod} from '../src/source-symbols.js';
 
 test('symbol declarations ignore comments, strings and ordinary call sites',()=>{
  const text=`package com.example;
@@ -21,8 +21,25 @@ test('Kotlin overloads and class names yield candidates without pretending to id
  assert.deepEqual(findSourceDeclarations(text,'Screen.kt',parseSourceSymbol('com.example.Screen.render(int)')).map(x=>x.line),[3,4]);
  const cls=findSourceDeclarations(text,'Screen.kt',parseSourceSymbol('com.example.Screen'));
  assert.equal(cls[0].line,2);assert.equal(cls[0].score,100);
- assert.throws(()=>parseSourceSymbol('native::method'),/原生符号/);
+ const native=parseSourceSymbol('demo::NativeWorker::run(int)');assert.equal(native.isNative,true);assert.equal(native.method,'run');assert.deepEqual(native.qualifiers,['demo','NativeWorker']);
  assert.throws(()=>parseSourceSymbol(''),/无效/);
+});
+
+test('native C++ declaration candidates match qualified definitions and ignore comments, strings and call sites',()=>{
+ const text=`namespace demo {
+class NativeWorker {
+ public:
+  void run(int value);
+  void caller() { run(1); }
+};
+// void demo::NativeWorker::run(int value) {}
+void demo::NativeWorker::run(int value) { const char* text = "void run("; }
+}`;
+ const matches=findNativeSourceDeclarations(text,'native.cpp',parseSourceSymbol('demo::NativeWorker::run(int)'));
+ assert.deepEqual(matches.map(match=>match.line),[4,8]);
+ assert.equal(matches[0].kind,'native-function');assert.equal(matches[0].score,80);
+ assert.deepEqual(matches[0].reasons,['原生函数名匹配','作用域名匹配：demo::NativeWorker']);
+ assert.throws(()=>parseSourceSymbol('native::operator<<'),/原生符号格式/);
 });
 
 test('R8 and ProGuard mappings resolve obfuscated Java frames and filter by obfuscated line range',()=>{

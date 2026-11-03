@@ -52,6 +52,7 @@ try {
   await mkdir(profileDir, { recursive: true });
   await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
   await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');
+  await writeFile(join(sourceFixtureDir, 'src', 'native.cpp'), 'namespace apw { class SmokeWorker { public: void run(); }; }\nvoid apw::SmokeWorker::run() {}\n', 'utf8');
   await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
     env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile, APW_SMOKE_SOURCE_DIR: sourceFixtureDir },
@@ -86,7 +87,7 @@ try {
   if(!ready.rendererState.cpuLargeTimeline?.ok||ready.rendererState.cpuLargeTimeline.totalMs>30_000)throw new Error(`Packaged macOS 50k CPU timeline raster smoke failed: ${JSON.stringify(ready.rendererState.cpuLargeTimeline)}`);
   if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
   if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
-  if(!ready.rendererState.sourceWorkspaceSmoke?.ok)throw new Error(`Packaged macOS source workspace smoke failed: ${JSON.stringify(ready.rendererState.sourceWorkspaceSmoke)}`);
+  if(!ready.rendererState.sourceWorkspaceSmoke?.ok||!ready.rendererState.sourceWorkspaceSmoke.nativeSymbolResolve||!ready.rendererState.sourceWorkspaceSmoke.nativeCandidateLocalized||!ready.rendererState.sourceWorkspaceSmoke.nativeFileOpened)throw new Error(`Packaged macOS source workspace smoke failed: ${JSON.stringify(ready.rendererState.sourceWorkspaceSmoke)}`);
   if(!ready.rendererState.networkAgentPackage?.ok)throw new Error(`Packaged macOS Network Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.networkAgentPackage)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
   if(process.env.APW_SMOKE_APK_PATH&&!ready.rendererState.apkAnalysisSmoke?.ok)throw new Error(`Packaged macOS APK analysis UI smoke failed: ${JSON.stringify(ready.rendererState.apkAnalysisSmoke)}`);

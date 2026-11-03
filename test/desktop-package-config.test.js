@@ -67,6 +67,8 @@ test('packaged desktop smoke exercises local source selection, snapshot, search,
  for(const source of [desktopMain,windowsSmoke,macSmoke])assert.match(source,/APW_SMOKE_SOURCE_DIR/);
  assert.match(desktopMain,/smokeSourceWorkspaceInRenderer/);
  assert.match(desktopMain,/LOCAL_SOURCE_WORKSPACE_SMOKE/);
+ assert.match(desktopMain,/nativeSymbolResolve:true/);assert.match(desktopMain,/Native function name match/);
+ assert.match(windowsSmoke,/SmokeWorker::run/);assert.match(macSmoke,/SmokeWorker::run/);assert.match(macSmoke,/nativeFileOpened/);
  assert.match(windowsSmoke,/source workspace smoke/);
  assert.match(macSmoke,/source workspace smoke/);
 });

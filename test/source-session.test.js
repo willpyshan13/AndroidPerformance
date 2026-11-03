@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {once} from 'node:events';
 import {createApp} from '../src/server.js';
 test('source workspace HTTP flow creates, lists, searches and retrieves immutable snapshots',async t=>{
- const base=await mkdtemp(join(tmpdir(),'apw-source-api-')),src=join(base,'project');await mkdir(src);await writeFile(join(src,'Screen.kt'),'class Screen {\n fun render() = 1\n}\n');
+ const base=await mkdtemp(join(tmpdir(),'apw-source-api-')),src=join(base,'project');await mkdir(src);await writeFile(join(src,'Screen.kt'),'class Screen {\n fun render() = 1\n}\n');await writeFile(join(src,'native.cpp'),'namespace demo { class NativeWorker { public: void run(); }; }\nvoid demo::NativeWorker::run() {}\n');await writeFile(join(src,'NativeWorker.hh'),'namespace demo {\nclass NativeWorker {\n public:\n  void run();\n};\n}\n');
  const app=createApp({adb:{path:'adb'},dataDir:join(base,'data'),token:'test'});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(r=>app.close(r));await rm(base,{recursive:true,force:true});});
  const url=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'test','Content-Type':'application/json'};
  const post=(path,body)=>fetch(url+path,{method:'POST',headers,body:JSON.stringify(body)});
@@ -14,7 +14,7 @@ test('source workspace HTTP flow creates, lists, searches and retrieves immutabl
  const list=await (await fetch(url+'/source/snapshots',{headers})).json();assert.equal(list.snapshots[0].id,snap.id);
  const search=await (await post('/source/search',{id:snap.id,query:'render'})).json();assert.equal(search.matches[0].line,2);
  const resolved=await (await post('/source/resolve',{id:snap.id,symbol:'Screen.render()'})).json();assert.equal(resolved.matches[0].line,2);assert.equal(resolved.mode,'resolve');
- assert.equal((await post('/source/resolve',{id:snap.id,symbol:'native::method'})).status,400);
+ const native=await (await post('/source/resolve',{id:snap.id,symbol:'demo::NativeWorker::run()'})).json();assert.equal(native.mode,'resolve');assert.equal(native.matches[0].kind,'native-function');assert.equal(native.matches[0].path,'native.cpp');assert.equal(native.matches[0].line,2);assert.deepEqual(native.matches.map(match=>match.path),['native.cpp','NativeWorker.hh']);
  await writeFile(join(src,'Screen.kt'),'mutated');const file=await (await post('/source/file',{id:snap.id,path:'Screen.kt'})).json();assert.match(file.text,/render/);
  assert.equal((await post('/source/file',{id:snap.id,path:'../outside'})).status,400);assert.equal((await post('/source/search',{id:snap.id,query:''})).status,400);
  assert.equal((await post('/source/remote',{url:'https://example.invalid/repo',ref:'main'})).status,400);

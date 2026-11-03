@@ -16,6 +16,8 @@ if (!args.includes('--serial') || !args.includes('--package')) {
 const serial = option('--serial'), packageName = option('--package');
 validateTarget(serial, packageName);
 const control = args.includes('--allow-app-control');
+const only = option('--only');
+if (only && only !== 'heap-capture-and-analysis') throw new Error(`Unsupported --only check: ${only}`);
 const outDir = resolve(args.includes('--out') ? option('--out') : `data/device-test-${Date.now()}`);
 await mkdir(outDir, { recursive: true });
 const adb = new Adb(await locateAdb());
@@ -34,6 +36,7 @@ async function request(path, body, binary = false) {
   return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
 }
 async function check(name, work) {
+  if (only && name !== only) { report.tests.push({ name, status: 'skipped', reason: `--only ${only}` }); return; }
   const start = Date.now();
   try {
     const detail = await work();
@@ -155,6 +158,8 @@ try {
       const analysis = await response.json();
       if (!response.ok) throw new Error(analysis.error || 'HPROF 分析失败');
       assert(analysis.objects > 0); assert(analysis.sessionId);
+      const dominators = await request('/heap/dominators', { sessionId: analysis.sessionId, limit: 25 });
+      assert(dominators.indexed > 0); assert(dominators.reachable > 0); assert(Array.isArray(dominators.items));
       let shark = null;
       if (analysis.sharkAvailable) {
         const sharkResponse = await fetch(`${origin}/api/heap/shark-analysis`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: analysis.sessionId }) });
@@ -162,7 +167,8 @@ try {
         if (!sharkResponse.ok) throw new Error(shark.error || 'Shark 分析失败');
         assert.equal(shark.success, true);
       }
-      return { bytes: data.length, objects: analysis.objects, classes: analysis.classes?.length, sharkAvailable: analysis.sharkAvailable, shark: shark && { success: shark.success, version: shark.version, durationMs: shark.durationMs } };
+      evidence.heap = { bytes: data.length, objects: analysis.objects, classes: analysis.classes?.length, dominators: { indexed: dominators.indexed, reachable: dominators.reachable, edges: dominators.edgeCount, rootItems: dominators.items.length, incomplete: dominators.incomplete, edgeLimitReached: dominators.edgeLimitReached } };
+      return { ...evidence.heap, sharkAvailable: analysis.sharkAvailable, shark: shark && { success: shark.success, version: shark.version, durationMs: shark.durationMs } };
     });
   }
   await check('perfetto-capture', async () => {
@@ -225,6 +231,10 @@ try {
 } finally {
   report.finishedAt = new Date().toISOString();
   report.summary = report.tests.reduce((s, t) => ({ ...s, [t.status]: (s[t.status] || 0) + 1 }), {});
+  if (only && !report.tests.some(t => t.name === only && ['pass','fail','unsupported'].includes(t.status))) {
+    report.tests.push({ name: only, status: 'fail', error: 'Selected device smoke check did not run; pass --allow-app-control.' });
+    report.summary.fail = (report.summary.fail || 0) + 1;
+  }
   await writeFile(join(outDir, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`REPORT ${outDir}/report.json ${JSON.stringify(report.summary)}`);
   await new Promise(r => server.close(r));

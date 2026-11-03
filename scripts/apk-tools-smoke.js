@@ -46,6 +46,7 @@ try {
   const message = error?.message || String(error);
   const failureCode = /dump badging/i.test(message) ? 'aapt2-dump-badging'
     : /dump xmltree/i.test(message) ? 'aapt2-dump-xmltree'
+    : /未返回有效 Manifest|Manifest 节点数量或深度超过限制/i.test(message) ? 'aapt2-manifest-output'
     : /AAPT2|aapt2/i.test(message) ? 'aapt2-analysis'
     : /APK ZIP|AndroidManifest|APK smoke/i.test(message) ? 'apk-input-or-generation'
     : 'apk-smoke-unknown';

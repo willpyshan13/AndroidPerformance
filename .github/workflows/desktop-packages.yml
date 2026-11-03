@@ -84,14 +84,14 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: 'build-tools;35.0.0 platforms;android-35'
-      - name: Install NDK versions for macOS simpleperf
+      - name: Install NDK for macOS simpleperf
         if: matrix.mac
         shell: bash
-        run: sdkmanager 'ndk;26.3.11579264' 'ndk;27.2.12479018'
+        run: sdkmanager 'ndk;27.2.12479018'
       - name: Install NDK versions for Windows and Linux x64 simpleperf
         if: ${{ !matrix.mac && !matrix.linuxArm64 }}
         shell: pwsh
-        run: sdkmanager 'ndk;26.3.11579264' 'ndk;27.2.12479018'
+        run: sdkmanager 'ndk;27.2.12479018'
       - name: Install AppImage runtime dependency
         if: matrix.label == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64

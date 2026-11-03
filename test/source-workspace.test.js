@@ -29,3 +29,24 @@ test('source snapshots include only R8 mapping files from build outputs and reso
  assert.equal(result.deobfuscated.length,1);assert.equal(result.deobfuscated[0].originalMethod,'render');
  assert.equal(result.matches[0].path,'src/main/java/com/example/Screen.java');assert.equal(result.matches[0].line,3);assert.equal(result.matches[0].mapping.path,'app/build/outputs/mapping/release/mapping.txt');
 });
+test('source snapshots resolve native overload and conversion-operator declarations',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'apw-source-operators-')),source=join(base,'project'),store=join(base,'store');t.after(()=>rm(base,{recursive:true,force:true}));
+ await mkdir(join(source,'src/main/cpp'),{recursive:true});
+ await writeFile(join(source,'src/main/cpp/Widget.cpp'),`namespace demo {
+class Widget {
+ public:
+  Widget& operator<<(int value);
+  int operator[](int index) const;
+  bool operator()(int value) const;
+  explicit operator bool() const;
+};
+Widget& Widget::operator<<(int value) { return *this; }
+int Widget::operator[](int index) const { return index; }
+bool Widget::operator()(int value) const { return value != 0; }
+Widget::operator bool() const { return true; }
+}`);
+ const snapshot=await createSourceSnapshot(source,store);
+ for(const [symbol,lines] of [['demo::Widget::operator<<(int)',[4,9]],['demo::Widget::operator[](int) const',[5,10]],['demo::Widget::operator()(int) const',[6,11]],['demo::Widget::operator bool() const',[7,12]]]){
+  const result=await resolveSourceSymbol(store,snapshot.id,symbol);assert.deepEqual(result.matches.map(match=>match.line),lines);assert.ok(result.matches.every(match=>match.path==='src/main/cpp/Widget.cpp'));
+ }
+});

@@ -605,7 +605,7 @@ npm run test:device -- \
 
 ## C/C++ 源码候选定位（2026-11-03）
 
-- 源码工作区现在能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选，支持跨多行签名；候选过程会忽略注释、字符串和普通调用点。无法识别的 `operator` 等复杂格式仍回退为原始文本搜索。它不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
+- 源码工作区能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选，支持跨多行签名；候选过程会忽略注释、字符串和普通调用点。新增 `operator<<`、`operator[]`、`operator()` 与 `operator bool` 声明 / 定义候选，解析器与本地快照端到端回归通过。它仍不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
 - API 25 真机不参与此离线功能。解析、跨行签名、快照 HTTP API、英文证据翻译与打包配置定向测试均通过；最新完整测试 335 项，319 通过、0 失败、16 项可选官方样本跳过。
 - 最新 macOS arm64 打包 app smoke 使用 `.cxx` 跨行 C++ fixture：创建只读快照、文本搜索并打开 Java 文件，再解析 `apw::SmokeWorker::run`、显示英文匹配证据并打开 C++ 文件；同时既有 renderer、HPROF CSV、布局线索、Network Agent ZIP、50,000 样本 CPU Canvas 和 16 页英文扫描通过。CPU 栅格约 52.5 ms，是当前主机观测。
 
@@ -658,4 +658,9 @@ npm run test:device -- \
 ## macOS ARM64 文档提交触发优化（2026-11-03）
 
 - `.github/workflows/desktop-packages.yml` 现在对 push 与 pull request 中仅修改 Markdown 的变更跳过完整 DMG 打包；代码、测试、资源和 workflow 变更仍进入原有 macOS ARM64 单 job。
-- 配置回归断言两种事件均有 Markdown 忽略规则。规则随提交 `ef722b2` 的 macOS ARM64 Actions run `41605693946` 通过；该 run 的测试、工具准备、DMG 构建及桌面启动 smoke 全部成功。Markdown-only 的实际跳过行为待下一次纯文档提交后检查 GitHub 是否创建 workflow run。
+- 配置回归断言两种事件均有 Markdown 忽略规则。规则随提交 `ef722b2` 的 macOS ARM64 Actions run `41605693946` 通过；该 run 的测试、工具准备、DMG 构建及桌面启动 smoke 全部成功。纯文档提交 `d0a8e7f` 推送后，Actions 最近运行列表没有创建该提交的新 workflow run，确认文档-only 跳过生效。
+
+## C/C++ 重载运算符源码定位（2026-11-03）
+
+- 源码符号解析新增 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明 / 定义候选；本地快照集成回归验证符号解析能返回头文件式声明与实现候选。候选仍是文本启发式，不解析 ELF、DWARF 或 mangled symbols。
+- 源码符号及快照集成测试 10 项通过；完整回归 342 项，326 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接或操作设备。

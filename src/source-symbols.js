@@ -21,7 +21,15 @@ export function parseSourceSymbol(symbol){
  if(typeof symbol!=='string'||!symbol.trim()||symbol.length>500)throw new Error('符号名称无效');
  const raw=symbol.trim();
  if(raw.includes('::')){
-  const normalized=raw.replace(/\s*\([^)]*\).*$/,'').replace(/\+0x[\da-f]+$/i,'').trim(),parts=normalized.split('::');
+  const withoutAddress=raw.replace(/\+0x[\da-f]+$/i,'').trim();
+  const operatorMatch=withoutAddress.match(/(?:^|::)(operator\s*(?:\(\)|\[\]|new(?:\[\])?|delete(?:\[\])?|[!%&*+\-\/<=>^|~,]+|[A-Za-z_]\w*))(?=\s*(?:\(|$|const\b|noexcept\b|&|&&))/);
+  if(operatorMatch){
+   const prefix=withoutAddress.slice(0,operatorMatch.index).replace(/::$/,''),method=operatorMatch[1].replace(/\s+/g,' ').trim(),qualifiers=prefix?prefix.split('::'):[];
+   if(qualifiers.some(part=>!/^~?[A-Za-z_][\w$]*$/.test(part)))throw new Error('原生符号格式无法识别；可使用文本搜索');
+   const normalized=[...qualifiers,method].join('::');
+   return {raw,normalized,method,className:qualifiers.at(-1)||null,qualifiers,packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+  }
+  const normalized=withoutAddress.replace(/\s*\([^)]*\).*$/,'').trim(),parts=normalized.split('::');
   if(parts.length<2||parts.some(part=>!/^~?[A-Za-z_][\w$]*$/.test(part)))throw new Error('原生符号格式无法识别；可使用文本搜索');
   return {raw,normalized,method:parts.at(-1),className:parts.at(-2),qualifiers:parts.slice(0,-1),packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
  }
@@ -49,8 +57,10 @@ export function findSourceDeclarations(text,path,symbol){
  return results;
 }
 export function findNativeSourceDeclarations(text,path,symbol){
- const masked=maskSource(text),lines=masked.split(/\r?\n/),original=text.split(/\r?\n/),name=escapeRegExp(symbol.method);
- const declaration=new RegExp(`^\\s*(?:(?:inline|static|virtual|constexpr|consteval|extern|friend|explicit|register|thread_local)\\s+)*(?:[\\w~:<>,*&]+\\s+)+(?:(?:[\\w~]+)::)*${name}\\s*\\(`);
+ const masked=maskSource(text),lines=masked.split(/\r?\n/),original=text.split(/\r?\n/);
+ const name=symbol.method.startsWith('operator')?`operator\\s*${escapeRegExp(symbol.method.slice('operator'.length).trim())}`:escapeRegExp(symbol.method);
+ const modifiers='(?:(?:inline|static|virtual|constexpr|consteval|extern|friend|explicit|register|thread_local)\\s+)*',returnType='(?:[\\w~:<>,*&]+\\s+)+',scope='(?:(?:[\\w~]+)::)*';
+ const conversionOperator=/^operator\s+[A-Za-z_]\w*$/.test(symbol.method),declaration=new RegExp(`^\\s*${modifiers}${conversionOperator?'':returnType}${scope}${name}\\s*\\(`);
  const classes=new Set([...masked.matchAll(/\b(?:class|struct|union)\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
  const namespaces=new Set([...masked.matchAll(/\bnamespace\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
  const qualifiers=symbol.qualifiers||[],scopeMatches=qualifiers.filter(scope=>classes.has(scope)||namespaces.has(scope));

@@ -39,7 +39,27 @@ void demo::NativeWorker::run(int value) { const char* text = "void run("; }
  assert.deepEqual(matches.map(match=>match.line),[4,8]);
  assert.equal(matches[0].kind,'native-function');assert.equal(matches[0].score,80);
  assert.deepEqual(matches[0].reasons,['原生函数名匹配','作用域名匹配：demo::NativeWorker']);
- assert.throws(()=>parseSourceSymbol('native::operator<<'),/原生符号格式/);
+ assert.equal(parseSourceSymbol('native::operator<<').method,'operator<<');
+});
+
+test('native C++ overloaded and conversion operators resolve declaration candidates',()=>{
+ const text=`namespace demo {
+class Widget {
+ public:
+  Widget& operator<<(int value);
+  int operator[](int index) const;
+  bool operator()(int value) const;
+  explicit operator bool() const;
+};
+Widget& Widget::operator<<(int value) { return *this; }
+int Widget::operator[](int index) const { return index; }
+bool Widget::operator()(int value) const { return value != 0; }
+Widget::operator bool() const { return true; }
+}`;
+ const symbols=['demo::Widget::operator<<(int)','demo::Widget::operator[](int) const','demo::Widget::operator()(int) const','demo::Widget::operator bool() const'];
+ const matches=symbols.map(symbol=>findNativeSourceDeclarations(text,'widget.cpp',parseSourceSymbol(symbol)));
+ assert.deepEqual(matches.map(found=>found.map(match=>match.line)),[[4,9],[5,10],[6,11],[7,12]]);
+ for(const found of matches)assert.ok(found.every(match=>match.reasons.includes('作用域名匹配：demo::Widget')));
 });
 
 test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{

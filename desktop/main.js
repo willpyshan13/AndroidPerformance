@@ -31,6 +31,7 @@ function openExternal(url) {
 }
 async function smokeApkAnalyzerInRenderer(apkPath) {
   const encoded = JSON.stringify(await readFile(apkPath, 'base64'));
+  const expectedPackage = JSON.stringify(process.env.APW_SMOKE_EXPECTED_PACKAGE || 'dev.apw.smoke');
   return window.webContents.executeJavaScript(`(async encoded=>{
     const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     const fail=reason=>({ok:false,reason});
@@ -44,7 +45,8 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
     const uploadDeadline=performance.now()+30000;
     while(!document.querySelector('[data-apk-tab]')&&performance.now()<uploadDeadline)await new Promise(resolve=>setTimeout(resolve,25));
     const packageName=document.querySelector('.apk-app-title .mono')?.textContent?.trim();
-    if(packageName!=='dev.apw.smoke')return fail('APK import did not produce the expected package name: '+(packageName||'no analysis result'));
+    const expectedPackage=${expectedPackage};
+    if(packageName!==expectedPackage)return fail('APK import did not produce the expected package name '+expectedPackage+': '+(packageName||'no analysis result'));
     const tabs=['overview','files','permissions','components','dex','signing','manifest'],checks={};
     for(const name of tabs){
       const tab=document.querySelector('[data-apk-tab="'+name+'"]');if(!tab)return fail('Missing APK tab: '+name);
@@ -71,10 +73,10 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
       const exportDeadline=performance.now()+5000;while(!reportBlob&&performance.now()<exportDeadline)await new Promise(resolve=>setTimeout(resolve,10));
       if(!reportBlob)return fail('APK JSON report export did not create a Blob');
       const report=JSON.parse(await reportBlob.text());
-      if(report.kind!=='apk'||report.packageName!=='dev.apw.smoke')return fail('APK JSON report did not preserve analyzer output');
+      if(report.kind!=='apk'||report.packageName!==expectedPackage)return fail('APK JSON report did not preserve analyzer output');
     }finally{URL.createObjectURL=createObjectURL;HTMLAnchorElement.prototype.click=anchorClick;}
     location.hash='#overview';await settle();
-    return {ok:true,packageName,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
+    return {ok:true,packageName,expectedPackage,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
   })(${encoded})`);
 }
 async function saveSettings(update) {

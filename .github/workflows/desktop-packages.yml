@@ -143,7 +143,11 @@ jobs:
         run: npm run smoke:linux:arm64:packages
       - name: Install Windows MSI and NSIS packages and verify desktop startup
         if: runner.os == 'Windows'
-        run: node scripts/desktop-smoke.js
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          node scripts/desktop-smoke.js 2>&1 | Tee-Object -FilePath dist/windows-desktop-smoke-console.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Launch packaged macOS app and verify desktop startup
         if: runner.os == 'macOS'
         run: node scripts/mac-desktop-smoke.js
@@ -155,6 +159,7 @@ jobs:
           path: |
             dist/apw-apk-smoke.log
             dist/windows-desktop-smoke.log
+            dist/windows-desktop-smoke-console.log
           if-no-files-found: ignore
           retention-days: 14
       - uses: actions/upload-artifact@v7

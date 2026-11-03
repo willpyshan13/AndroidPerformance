@@ -51,6 +51,8 @@ try {
     : /APK ZIP|AndroidManifest|APK smoke/i.test(message) ? 'apk-input-or-generation'
     : 'apk-smoke-unknown';
   if (process.env.GITHUB_OUTPUT) try { await appendFile(process.env.GITHUB_OUTPUT, `failure_code=${failureCode}\n`, 'utf8'); } catch {}
+  const safeDiagnostic = message.replace(/(?:[A-Za-z]:\\|\/)[^\s:]+/g, '<path>').replace(/\s+/g, ' ').slice(0, 500);
+  console.error(`::error title=APK smoke diagnostic::${safeDiagnostic.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   console.error(`APK smoke failed; diagnostic written to ${logPath}\n${detail}`);
   throw error;
 } finally {

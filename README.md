@@ -12,20 +12,15 @@
 
 ### 安装桌面版
 
-GitHub Actions 原生 runner 已构建并上传以下安装包（artifact 保留 14 天）：
+GitHub Actions 目前只构建 macOS Apple Silicon 版本，上传 DMG 安装包（artifact 保留 14 天）：
 
 | 平台 | 安装包 | CI 产物 |
 | --- | --- | --- |
-| macOS Apple Silicon | DMG、PKG | `android-performance-macos-arm64` |
-| macOS Intel | DMG、PKG | `android-performance-macos-x64` |
-| Windows x64 | NSIS EXE、MSI | `android-performance-windows-x64` |
-| Linux x64 | AppImage、DEB、RPM | `android-performance-linux-x64` |
-| Linux arm64 | DEB、RPM（验证中，尚未发布） | — |
+| macOS Apple Silicon (arm64) | DMG | `android-performance-macos-arm64` |
 
-[查看本轮跨平台构建结果](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS PKG 目前未签名；应用使用 ad-hoc 签名，未使用 Apple Developer 证书或公证。
-安装包包含 Electron、平台原生 ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。Windows 首次启动会把 Java runtime 解压到应用数据目录，以供 Shark 和 Compose Inspector 使用。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
+应用使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。安装包包含 Electron、ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
-Windows Java runtime 解压逻辑通过自动测试；当前 CI 验证了安装包构建和上传。当前环境已对 macOS arm64 桌面包执行 headless 启动冒烟，并确认本机首页及 JavaScript 返回 HTTP 200；尚未在可见桌面逐项检查窗口，也未在 Windows/Linux 上逐一安装启动。macOS 使用 ad-hoc 签名，尚未使用 Apple Developer 证书或公证。
+CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查、DMG 构建和打包启动 smoke。
 
 ### 连接 Android 设备
 
@@ -89,15 +84,10 @@ ADB_PATH=/path/to/platform-tools/adb PORT=4319 npm start
 ```sh
 npm run check         # 语法检查
 npm test              # 自动测试
-npm run package:mac                 # macOS arm64 .app
-npm run package:mac:installers      # macOS arm64 DMG + PKG
-npm run package:mac:installers:x64  # macOS x64 DMG + PKG
-npm run package:win:installers      # Windows x64 NSIS + MSI
-npm run package:linux:installers   # Linux x64 AppImage + DEB + RPM
-npm run package:linux:arm64:installers # Linux arm64 DEB + RPM
+npm run package:dmg      # macOS arm64 DMG
 ```
 
-GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 原生 job 正在验证 DEB 与 RPM，并检查包内 ADB/AAPT2；最近一次运行在 staged AAPT2 APK 分析 smoke 失败，因此尚未验证或发布该架构。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)。Windows runtime 曾通过 MSI 安装 smoke；最新交叉平台运行的 Windows 安装器 smoke 失败，原因待查。macOS / Windows 安装包尚未使用开发者签名证书。
+GitHub Actions 只生成并上传 macOS arm64 DMG。`package:*` 中保留的其他平台脚本不属于当前 CI 发布流程。
 
 ## 数据与隐私
 

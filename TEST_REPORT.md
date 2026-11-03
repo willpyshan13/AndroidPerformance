@@ -590,9 +590,9 @@ npm run test:device -- \
 
 ## macOS ARM64 单 job CI（2026-11-03）
 
-- 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。
+- 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。后续进一步缩短产物流程：只生成 DMG，不再额外生成 PKG；NDK 只安装 27.2，Android 7 兼容 simpleperf 使用仓库内置资源。
 - 更新 workflow 配置回归，确保只有一个 `macos-15` job、`npm ci` 与 Trace Processor 准备步骤各出现一次，且没有 Windows / Linux runner。此前拆分双 job 时，该回归因仍要求旧的 `tests` + `package` 双 job 而失败；更新断言后通过。
-- `npm test`：333 项，317 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。CI 实际耗时仍受 SDK/NDK 与打包资源下载影响，需观察下一次 GitHub Actions 执行确认节省时间。
+- 本轮将 workflow 配置回归改为检查单一 DMG 产物和单一 NDK 安装；实际节省的分钟数需由下一次 Actions 执行确认。耗时主要来自完整自动测试，以及首次准备 Android SDK/NDK、分析运行时和 Electron DMG 资源；平台数已经是一个 macOS ARM64 job。
 
 ## C/C++ 源码候选定位（2026-11-03）
 

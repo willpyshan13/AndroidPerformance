@@ -37,7 +37,7 @@ jobs:
           packages: 'build-tools;35.0.0 platforms;android-35'
       - name: Install NDK for macOS simpleperf
         shell: bash
-        run: sdkmanager 'ndk;26.1.10909125' 'ndk;27.2.12479018'
+        run: sdkmanager 'ndk;27.2.12479018'
       - name: Prepare macOS tools
         shell: bash
         env:
@@ -53,7 +53,7 @@ jobs:
         id: apk-smoke-sdk
       - run: node scripts/run-npm-task.js prepare:shark
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
-      - run: node scripts/run-npm-task.js package:mac:installers
+      - run: node scripts/run-npm-task.js package:dmg
       - name: Launch packaged macOS app and verify desktop startup
         run: node scripts/mac-desktop-smoke.js
       - name: Upload failed smoke diagnostics
@@ -71,6 +71,5 @@ jobs:
           name: android-performance-macos-arm64
           path: |
             dist/v*/*.dmg
-            dist/v*/*.pkg
           if-no-files-found: error
           retention-days: 14

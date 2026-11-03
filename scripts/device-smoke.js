@@ -5,7 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { Adb, locateAdb, validateTarget } from '../src/adb.js';
 import { createApp } from '../src/server.js';
-import { parseHar, parseBenchmark, compareBenchmarks } from '../public/offline.js';
+import { parseHar, parseBenchmark, compareBenchmarks, parseFoldedStacks, buildSampleTimeline, sampleStackTimeline } from '../public/offline.js';
 
 const args = process.argv.slice(2);
 const option = name => args[args.indexOf(name) + 1];
@@ -26,6 +26,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const query = new URLSearchParams({ serial, package: packageName });
 const report = { startedAt: new Date().toISOString(), serial, packageName, allowAppControl: control, tests: [] };
 const evidence = {};
+let capturedPerfData = null;
 async function request(path, body, binary = false) {
   const response = await fetch(`${origin}/api${path}`, { method: body === undefined ? 'GET' : 'POST',
     headers: { 'X-Workbench-Token': token, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -83,7 +84,28 @@ try {
       throw error;
     }
     assert(data.length > 256); assert.equal(data.subarray(0, 8).toString('ascii'), 'PERFILE2');
+    capturedPerfData = data;
+    await writeFile(join(outDir, 'cpu.perf.data'), data);
     return { bytes: data.length, signature: data.subarray(0, 8).toString('ascii'), sampleEvent: 'cpu-clock:u', durationSeconds: 3 };
+  });
+  await check('cpu-profile-analysis', async () => {
+    assert(capturedPerfData, 'CPU 采样没有生成可分析的 perf.data');
+    const response = await fetch(`${origin}/api/cpu-profile/analyze`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'X-Perf-Event': encodeURIComponent('cpu-clock:u') }, body: capturedPerfData });
+    const result = await response.json();
+    if (!response.ok && /没有可用调用栈|没有可用样本/.test(result.error || '')) {
+      await writeFile(join(outDir, 'cpu-analysis.json'), JSON.stringify({ status: 'unsupported', reason: '设备采样文件有效，但目标应用在本次短采样窗口内没有可解析的 CPU 样本', analyzerMessage: result.error }, null, 2));
+      return { status: 'unsupported', reason: '设备采样文件有效，但目标应用在本次短采样窗口内没有可解析的 CPU 样本', analyzerMessage: result.error };
+    }
+    if (!response.ok) throw new Error(result.error || 'simpleperf 解析失败');
+    const profile = parseFoldedStacks(result.folded);
+    assert(profile.root.weight > 0, '折叠调用栈没有有效采样权重');
+    const timeline = result.timeline ? buildSampleTimeline(result.timeline) : null;
+    if (!timeline?.available || !timeline.samples.length) return { status: 'unsupported', reason: '折叠调用栈可读，但真实样本不足以构建时间线' };
+    const projection = sampleStackTimeline(timeline);
+    assert(projection.renderedSamples > 0);
+    evidence.cpuProfile = { stacks: profile.stacks, weight: profile.root.weight, symbols: profile.symbols.length, samples: timeline.samples.length, renderedSamples: projection.renderedSamples, event: timeline.event, clockId: timeline.clockId, warning: result.warning };
+    await writeFile(join(outDir, 'cpu-analysis.json'), JSON.stringify(evidence.cpuProfile, null, 2));
+    return evidence.cpuProfile;
   });
   await check('gpu-capabilities', async () => {
     const result = await request('/gpu/capabilities', { serial });

@@ -161,16 +161,22 @@ async function smokeNsis(tempRoot) {
   if (failure || uninstallFailure) throw failure || uninstallFailure;
 }
 
-const tempRoot = await mkdtemp(join(tmpdir(), 'android-performance-smoke-'));
+let tempRoot;
 let failure;
 try {
+  tempRoot = await mkdtemp(join(tmpdir(), 'android-performance-smoke-'));
   await smokeMsi(tempRoot);
   await smokeNsis(tempRoot);
 } catch (error) { failure = error; }
-finally { await rm(tempRoot, { recursive: true, force: true }); }
+finally {
+  if (tempRoot) try { await rm(tempRoot, { recursive: true, force: true }); }
+  catch (error) { failure = failure ? new AggregateError([failure, error], 'Windows smoke failed and its temporary files could not be removed') : error; }
+}
 
 if (failure) {
-  const rawDetail = failure.stack || failure.message || String(failure);
+  const rawDetail = failure instanceof AggregateError
+    ? `${failure.message}\n${failure.errors.map(error => error?.stack || error?.message || String(error)).join('\n--- cleanup error ---\n')}`
+    : failure.stack || failure.message || String(failure);
   await writeFile(diagnosticPath, `${rawDetail}\n`, 'utf8');
   const detail = rawDetail.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   console.log(`::error title=Windows installer smoke::${detail}`);

@@ -79,6 +79,21 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
     return {ok:true,packageName,expectedPackage,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
   })(${encoded})`);
 }
+async function smokeNetworkAgentPackageInRenderer() {
+  return window.webContents.executeJavaScript(`(async()=>{
+    const response=await fetch('/api/network/agent-package',{headers:{'X-Workbench-Token':document.querySelector('meta[name="api-token"]')?.content||''}});
+    if(!response.ok)return {ok:false,reason:'Agent package returned HTTP '+response.status};
+    if(response.headers.get('content-type')!=='application/zip')return {ok:false,reason:'Agent package did not return a ZIP'};
+    const bytes=new Uint8Array(await response.arrayBuffer()),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),decoder=new TextDecoder(),paths=[];let offset=0;
+    while(offset+30<=bytes.length&&view.getUint32(offset,true)===0x04034b50){
+      const method=view.getUint16(offset+8,true),size=view.getUint32(offset+18,true),nameLength=view.getUint16(offset+26,true),extraLength=view.getUint16(offset+28,true),nameStart=offset+30;
+      if(method!==0||nameStart+nameLength+extraLength+size>bytes.length)return {ok:false,reason:'Agent ZIP entry uses unexpected compression or bounds'};
+      paths.push(decoder.decode(bytes.subarray(nameStart,nameStart+nameLength)));offset=nameStart+nameLength+extraLength+size;
+    }
+    const debugOnly=paths.length===3&&paths.includes('README.md')&&paths.includes('src/debug/java/dev/androidperformance/agent/NetworkEvents.java')&&paths.includes('src/debug/java/dev/androidperformance/agent/LogcatSink.java')&&paths.every(path=>path==='README.md'||path.startsWith('src/debug/java/'));
+    return {ok:debugOnly,contentType:response.headers.get('content-type'),entryCount:paths.length,debugOnly,paths};
+  })()`);
+}
 async function smokeSourceWorkspaceInRenderer() {
   if (!process.env.APW_SMOKE_SOURCE_DIR) return null;
   const expectedPath = JSON.stringify(process.env.APW_SMOKE_SOURCE_DIR);
@@ -163,10 +178,11 @@ function createWindow() {
       rendererState.layoutFindings=await window.webContents.executeJavaScript(`(async()=>{const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),xml='<hierarchy rotation="0"><node class="android.widget.Button" text="" content-desc="" clickable="true" bounds="[0,0][20,20]"/></hierarchy>',input=document.querySelector('#file-input'),transfer=new DataTransfer();if(!input)return {ok:false,reason:'layout file input missing'};location.hash='#layout';await settle();transfer.items.add(new File([xml],'smoke.xml',{type:'application/xml'}));const originalClick=HTMLInputElement.prototype.click;try{HTMLInputElement.prototype.click=function(){if(this.id==='file-input'){this.files=transfer.files;this.dispatchEvent(new Event('change',{bubbles:true}));}else originalClick.call(this);};document.querySelector('[data-action=import-layout]').click();const deadline=performance.now()+5000;while(!document.querySelector('#main')?.innerText.includes('UIA_UNLABELLED')&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));const text=document.querySelector('#main')?.innerText||'';return {ok:text.includes('UIA_UNLABELLED')&&text.includes('Warning')&&text.includes('High')&&text.includes('emptyLabelFields'),ruleId:text.includes('UIA_UNLABELLED'),severity:text.includes('Warning'),confidence:text.includes('High'),evidence:text.includes('emptyLabelFields')};}finally{HTMLInputElement.prototype.click=originalClick;location.hash='#overview';await settle();}})()`);
       rendererState.homeArtifactChecks=await window.webContents.executeJavaScript("(()=>{const text=document.querySelector('#main')?.innerText||'';return {section:text.includes('最近分析产物')||text.includes('Recent analysis artifacts'),emptyState:text.includes('暂无本地分析产物')||text.includes('No local analysis artifacts')};})()");
       rendererState.sourceWorkspaceSmoke=await smokeSourceWorkspaceInRenderer();
+      rendererState.networkAgentPackage=await smokeNetworkAgentPackageInRenderer();
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });

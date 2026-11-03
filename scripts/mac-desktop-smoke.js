@@ -87,6 +87,7 @@ try {
   if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
   if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
   if(!ready.rendererState.sourceWorkspaceSmoke?.ok)throw new Error(`Packaged macOS source workspace smoke failed: ${JSON.stringify(ready.rendererState.sourceWorkspaceSmoke)}`);
+  if(!ready.rendererState.networkAgentPackage?.ok)throw new Error(`Packaged macOS Network Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.networkAgentPackage)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
   if(process.env.APW_SMOKE_APK_PATH&&!ready.rendererState.apkAnalysisSmoke?.ok)throw new Error(`Packaged macOS APK analysis UI smoke failed: ${JSON.stringify(ready.rendererState.apkAnalysisSmoke)}`);
   if(childOutput.includes('Renderer console error:'))throw new Error(`Packaged macOS renderer logged an error:\n${childOutput}`);
@@ -99,7 +100,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, local source workspace, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,source:ready.rendererState.sourceWorkspaceSmoke,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length})})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, local source workspace, debug-only Network Agent ZIP, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,source:ready.rendererState.sourceWorkspaceSmoke,networkAgentPackage:ready.rendererState.networkAgentPackage,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

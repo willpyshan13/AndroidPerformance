@@ -587,3 +587,9 @@ npm run test:device -- \
 - `scripts/device-smoke.js` 现分别验证普通分析记录与 CPU 原始采样档案：CPU 摘要不再误传给仅接受 monitor / frames / startup / layout / network 等类型的会话接口；perf.data 使用产品支持的 `.trace` 档案接口，执行上传、列表读取、完整性校验和字节相等回读。
 - 完整受控 smoke：24 项通过、0 项失败、1 项 unsupported。除上述 CPU 外，还通过 Activity 启动、进程监控、1 条 gfxinfo 帧、布局截图、约 12.4 MB HPROF（约 141,744 个对象，Shark 2.14 成功）、冷/温/热启动及记录持久化。API 25 设备没有 `perfetto`，该项按能力标为 unsupported；设备不返回 LaunchState，启动模式不据 TotalTime 推断。测试结束后已卸载临时 APK 并删除采样和报告文件。
 - 全量自动化回归：331 项，315 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。
+
+## macOS ARM64 单 job CI（2026-11-03）
+
+- 按用户要求，桌面 CI 仅运行 macOS ARM64 workflow。测试和打包合并到同一 runner，复用 checkout、Node 依赖和 Trace Processor 准备结果；仍执行完整测试、APK smoke、macOS 安装包构建与打包启动 smoke。
+- 更新 workflow 配置回归，确保只有一个 `macos-15` job、`npm ci` 与 Trace Processor 准备步骤各出现一次，且没有 Windows / Linux runner。此前拆分双 job 时，该回归因仍要求旧的 `tests` + `package` 双 job 而失败；更新断言后通过。
+- `npm test`：333 项，317 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。CI 实际耗时仍受 SDK/NDK 与打包资源下载影响，需观察下一次 GitHub Actions 执行确认节省时间。

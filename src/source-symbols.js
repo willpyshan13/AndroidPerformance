@@ -19,20 +19,23 @@ export function maskSource(text){
 }
 const ITANIUM_OPERATORS={nw:'new',na:'new[]',dl:'delete',da:'delete[]',ps:'+',ng:'-',ad:'&',de:'*',co:'~',pl:'+',mi:'-',ml:'*',dv:'/',rm:'%',an:'&',or:'|',eo:'^',aS:'=',pL:'+=',mI:'-=',mL:'*=',dV:'/=',rM:'%=',aN:'&=',oR:'|=',eO:'^=',ls:'<<',rs:'>>',lS:'<<=',rS:'>>=',eq:'==',ne:'!=',lt:'<',gt:'>',le:'<=',ge:'>=',ss:'<=>',nt:'!',aa:'&&',oo:'||',cm:',',pm:'->*',pt:'->',cl:'()',ix:'[]',qu:'?'};
 const ITANIUM_TYPES={v:'void',b:'bool',c:'char',a:'signed char',h:'unsigned char',s:'short',t:'unsigned short',i:'int',j:'unsigned int',l:'long',m:'unsigned long',x:'long long',y:'unsigned long long',f:'float',d:'double',e:'long double'};
-function skipItaniumTemplateArguments(value,start){
- if(value[start]!=='I')return start;
- let index=start+1,templates=1,nestedNames=0;
- while(index<value.length&&templates){
-  const c=value[index];
-  if(c==='N'){nestedNames++;index++;continue;}
-  if(c==='E'){if(nestedNames)nestedNames--;else templates--;index++;continue;}
-  if(c==='I'){templates++;index++;continue;}
-  if(/[0-9]/.test(c)){let end=index;while(/[0-9]/.test(value[end]||''))end++;const length=Number(value.slice(index,end));if(!Number.isSafeInteger(length)||length<=0||end+length>value.length)return -1;index=end+length;continue;}
-  if(c==='S'){index+=value[index+1]==='_'?2:3;continue;}
-  if(c==='T'){const underscore=value.indexOf('_',index+1);if(underscore<0)return -1;index=underscore+1;continue;}
-  index++;
+function parseItaniumTemplateArguments(value,start){
+ if(value[start]!=='I')return {index:start,text:''};
+ let index=start+1;const args=[];
+ while(index<value.length&&value[index]!=='E'){
+  const code=value[index],type=ITANIUM_TYPES[code];
+  if(type){args.push(type);index++;continue;}
+  if(/[0-9]/.test(code)){
+   let end=index;while(/[0-9]/.test(value[end]||''))end++;
+   const length=Number(value.slice(index,end));if(!Number.isSafeInteger(length)||length<=0||end+length>value.length)return null;
+   args.push(value.slice(end,end+length));index=end+length;continue;
+  }
+  // Keep unsupported template encodings out of source resolution instead of
+  // silently turning a specialization into a candidate for the primary type.
+  return null;
  }
- return templates?-1:index;
+ if(value[index]!=='E'||!args.length)return null;
+ return {index:index+1,text:`<${args.join(', ') }>`};
 }
 export function demangleItaniumSymbol(symbol){
  if(typeof symbol!=='string'||symbol.length>500)return null;
@@ -49,7 +52,7 @@ export function demangleItaniumSymbol(symbol){
   }else if(/[0-9]/.test(c)){
    while(/[0-9]/.test(value[index]||''))index++;const length=Number(value.slice(start,index));if(!Number.isSafeInteger(length)||length<=0||index+length>value.length)return null;part=value.slice(index,index+length);index+=length;
   }else return null;
-  const afterTemplate=skipItaniumTemplateArguments(value,index);if(afterTemplate<0)return null;index=afterTemplate;parts.push(part);if(!nested)break;
+  const template=parseItaniumTemplateArguments(value,index);if(!template)return null;index=template.index;parts.push(`${part}${template.text}`);if(!nested)break;
  }
  if((nested&&(index>value.length||value[index-1]!=='E'||parts.length<2))||(!nested&&parts.length!==1))return null;
  return parts.join('::');
@@ -68,9 +71,9 @@ export function parseSourceSymbol(symbol){
    const normalized=[...qualifiers,method].join('::');
    return {raw,normalized,method,className:qualifiers.at(-1)||null,qualifiers,packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
   }
-  const normalized=withoutAddress.replace(/\s*\([^)]*\).*$/,'').trim(),parts=normalized.split('::');
-  if(parts.length<2||parts.some(part=>!/^~?[A-Za-z_][\w$]*$/.test(part)))throw new Error('原生符号格式无法识别；可使用文本搜索');
-  return {raw,normalized,method:parts.at(-1),className:parts.at(-2),qualifiers:parts.slice(0,-1),packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+  const normalized=withoutAddress.replace(/\s*\([^)]*\).*$/,'').trim(),parts=normalized.split('::'),baseParts=parts.map(part=>part.replace(/<.*$/,''));
+  if(parts.length<2||parts.some((part,index)=>!/^~?[A-Za-z_][\w$]*(?:<[^<>]+>)?$/.test(part)||!baseParts[index]))throw new Error('原生符号格式无法识别；可使用文本搜索');
+  return {raw,normalized,method:baseParts.at(-1),className:baseParts.at(-2),qualifiers:baseParts.slice(0,-1),packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
  }
  const obfuscatedLineMatch=raw.match(/\((?:[^():]*:)?(\d+)\)\s*$/),obfuscatedLine=obfuscatedLineMatch?Number(obfuscatedLineMatch[1]):null;
  let normalized=raw.replace(/\s*\([^)]*\).*$/,'').replace(/\+0x[\da-f]+$/i,'').trim().replace(/\$/g,'.');
@@ -98,8 +101,8 @@ export function findSourceDeclarations(text,path,symbol){
 export function findNativeSourceDeclarations(text,path,symbol){
  const masked=maskSource(text),lines=masked.split(/\r?\n/),original=text.split(/\r?\n/);
  const name=symbol.method.startsWith('operator')?`operator\\s*${escapeRegExp(symbol.method.slice('operator'.length).trim())}`:escapeRegExp(symbol.method);
- const modifiers='(?:(?:inline|static|virtual|constexpr|consteval|extern|friend|explicit|register|thread_local)\\s+)*',returnType='(?:[\\w~:<>,*&]+\\s+)+',scope='(?:(?:[\\w~]+)::)*';
- const conversionOperator=/^operator\s+[A-Za-z_]\w*$/.test(symbol.method),declaration=new RegExp(`^\\s*${modifiers}${conversionOperator?'':returnType}${scope}${name}\\s*\\(`);
+ const templatePrefix='(?:template\\s*<[^>]*>\\s*)?',modifiers='(?:(?:inline|static|virtual|constexpr|consteval|extern|friend|explicit|register|thread_local)\\s+)*',returnType='(?:[\\w~:<>,*&]+\\s+)+',scope='(?:(?:[\\w~]+(?:<[^<>]*>)?)::)*';
+ const conversionOperator=/^operator\s+[A-Za-z_]\w*$/.test(symbol.method),declaration=new RegExp(`^\\s*${templatePrefix}${modifiers}${conversionOperator?'':returnType}${scope}${name}\\s*\\(`);
  const classes=new Set([...masked.matchAll(/\b(?:class|struct|union)\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
  const namespaces=new Set([...masked.matchAll(/\bnamespace\s+([A-Za-z_$][\w$]*)/g)].map(match=>match[1]));
  const qualifiers=symbol.qualifiers||[],scopeMatches=qualifiers.filter(scope=>classes.has(scope)||namespaces.has(scope));

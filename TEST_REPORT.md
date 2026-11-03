@@ -1,5 +1,11 @@
 # 当前验证记录（2026-11-03）
 
+## Itanium 模板类型显示与源码候选（2026-11-03）
+
+- 解码常见 Itanium ABI 模板名中的内置类型和简单名称类型参数，例如 `_ZN4demo6WidgetIiE4drawEv` 显示为 `demo::Widget<int>::draw`；候选定位同时保留模板显示名并按 `Widget` 基础类名匹配声明。遇到未支持的模板编码会拒绝解析并提示文本搜索，不将未知特化静默当作通用类。
+- `test/source-symbols.test.js` 与 `test/source-workspace.test.js` 定向回归 12/12 通过；完整 `npm test` 344 项，328 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。本轮未连接设备或启动模拟器。
+- 先前已推送提交 `55e2f5b` 的 macOS ARM64 CI run `41608493308` 全部通过，包含全量测试、DMG 打包和 packaged desktop smoke。本节所述模板增强尚待提交后 CI 验证。
+
 ## Macrobenchmark 真机执行链路（2026-11-03）
 
 - 在 API 25 / rk3399-all 真机上，用临时 AndroidX Macrobenchmark 工程（AGP 8.7.3、Gradle 8.9、AndroidX Macrobenchmark 1.4.1）调用产品 `/api/benchmark/gradle/run` 路由执行 `:macrobenchmark:connectedBenchmarkAndroidTest`。macOS JDK 17 自动发现后，单次冷启动 instrumentation 构建、安装和执行成功，端到端用时约 35 秒；AndroidX 生成 `dev.apw.macrobenchmark-benchmarkData.json`（经 `parseBenchmark` 解析为 1 项 TTID 指标）和 1 个 1,875,144 字节 Perfetto trace。目标 APK 加入 ProfileInstaller 1.4.1 后通过 shader-cache 清理前置步骤。

@@ -69,13 +69,31 @@ test('Itanium ABI demangling resolves nested methods and common operator encodin
   ['_ZN4demo6WidgetclEi','demo::Widget::operator()'],
   ['_ZNK4demo6WidgetcvbEv','demo::Widget::operator bool'],
   ['_ZN4demo6Widget4drawEi','demo::Widget::draw'],
-  ['_ZN4demo6WidgetIiE4drawEv','demo::Widget::draw'],
+  ['_ZN4demo6WidgetIiE4drawEv','demo::Widget<int>::draw'],
   ['_Z3fooi','foo'],
   ['_Zplii','operator+'],
   ['_Znwm','operator new']
  ];
  for(const [mangled,expected] of examples){assert.equal(demangleItaniumSymbol(mangled),expected);assert.equal(parseSourceSymbol(`${mangled}+0x10`).normalized,expected);}
  assert.equal(parseSourceSymbol('_Z3fooi').isNative,true);assert.throws(()=>parseSourceSymbol('_ZNbroken'),/Itanium/);
+});
+
+test('Itanium template specializations preserve display names while matching the base declaration scope',()=>{
+ const symbol=parseSourceSymbol('_ZN4demo6WidgetIiE4drawEv');
+ assert.equal(symbol.normalized,'demo::Widget<int>::draw');
+ assert.equal(symbol.className,'Widget');
+ assert.deepEqual(symbol.qualifiers,['demo','Widget']);
+ const source=`namespace demo {
+template<class T>
+class Widget {
+ public:
+  void draw();
+};
+template<class T> void Widget<T>::draw() {}
+}`;
+ const candidates=findNativeSourceDeclarations(source,'widget.cpp',symbol);
+ assert.deepEqual(candidates.map(candidate=>candidate.line),[5,7]);
+ assert.ok(candidates.every(candidate=>candidate.reasons.includes('作用域名匹配：demo::Widget')));
 });
 
 test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{

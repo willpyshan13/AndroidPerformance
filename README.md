@@ -38,7 +38,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
 | CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
-| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取目标应用 Logcat 中的 LeakCanary 实时事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Shark、Perfetto heapprofd |
+| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间并查看重叠候选 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
@@ -107,6 +107,7 @@ GitHub Actions 只生成并上传 macOS arm64 DMG。`package:*` 中保留的其�
 - **帧与启动**：gfxinfo 历史缓冲区与平台累计 janky frames 的范围可能不同；超过自选预算不等同于平台 Jank。连续帧分组仅包含同一 PROFILEDATA 段中原始记录相邻、起始间隔不超过 100 ms 的超预算帧；缺失或无效记录会打断分组。FrameTimeline 模式要求 Android 12 及以上，请求系统帧数据源；有数据的真实设备录制尚待验证。普通追踪中是否包含该数据取决于设备的 Perfetto 版本。启动 TotalTime 不等同于 TTFD，温 / 热启动的实际状态以设备返回的 LaunchState 为准。编译状态读取设备报告的 Dexopt 数据，不证明 Baseline Profile 生效；兼容性尚待更多真机验证。冷启动会 force-stop 目标应用；帧分析建议先重置统计、重现操作，再读取数据。
 - **布局与基准**：UIAutomator 提供可访问性层级，不是完整 View / Compose 树；截图与层级顺序采集，动画期间可能不一致。Benchmark 单份报告变化是描述性比较；多份独立保存报告可估算报告级中位数差异的 Bootstrap 区间，但它是探索性估计，不是显著性检验或因果结论。使用者需确认报告来自独立运行；sampledMetrics 如未提供中位数，会计算合并样本的中位数，单份报告内的 runs 不等于独立实验。
 - **堆分析**：采集通常需要可调试应用；字段和数组元素数据字节不等于浅大小或保留大小，支持分页查看已索引实例、跟随引用、查找有限的候选根路径和浏览近似支配图。最多索引 100 万个对象；支配图用 CSR 类型化数组计算，最多读取 150 万条引用边，超限会标记结果不完整。支配图基于可见 GC 根、字段、数组、类及静态字段关系；不区分强弱引用，可能缺少运行时关系。记录数据字节不含对象头、对齐等信息，不能作为保留大小；快照对比或路径结果都不能证明泄漏。
+- **实时生命周期观察**：内存页可下载可选 Debug Agent 源码包，将其合并进目标 app 的 debug source set 后，按弱引用观察已销毁 Activity，并在 5 秒、30 秒、2 分钟报告仍可达的候选；不会强制 GC 或持有 Activity 强引用。该轻量观察不读取对象图，不覆盖 Fragment 或任意对象，候选不等于确认泄漏；确认分析请使用 HPROF / LeakCanary Shark。
 - **GPU**：桌面版可选择或启动本机安装的 AGI；导出 `.gfxtrace` 后需在 AGI 中手动打开。校验仅检测导入后文件是否变化，不能验证来源或格式；单个产物上限 512 MiB，交给内置追踪分析器的上限为 256 MiB。此功能不采集 GPU 数据。
 - **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照包含受支持的文本源码，并在 Gradle 工程中额外收集 `build/outputs/mapping/**/mapping.txt`；其他构建产物和符号链接会跳过。最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位会优先使用 R8 / ProGuard 映射文件还原混淆类名、方法名及可用的行号范围，再按源码声明生成候选；没有映射时按声明名、类名和包名排序。C/C++ 支持常见源码符号及部分 Itanium ABI 嵌套函数名解码；简单内置类型和名称模板实参会保留在显示符号中，全局函数与模板类候选按基础声明名查找。函数参数和完整 ABI substitution 仍未解码，复杂编码会提示改用文本搜索；工具不解析 ELF/DWARF，源码候选不证明构建版本、重载或内联位置精确对应。
 - **APK**：一次分析一个 APK；split APK 的结果只涵盖导入的文件。证书页面展示签名结构和证书信息，**不验证签名完整性或证书信任链**。

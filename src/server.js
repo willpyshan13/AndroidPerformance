@@ -18,7 +18,7 @@ import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact 
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
 import {createRemoteSourceSnapshot} from './source-git.js';
-import {buildAgentPackage,buildLayoutAgentPackage} from './agent-package.js';
+import {buildAgentPackage,buildLayoutAgentPackage,buildLeakCanaryAgentPackage} from './agent-package.js';
 import { runMacrobenchmark } from './macrobenchmark.js';
 import { resolveGradleJavaPath } from './java-runtime.js';
 
@@ -97,6 +97,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
+        if(path==='/api/heap/leakcanary-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-leakcanary-agent.zip"'});return res.end(data);}
         if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);

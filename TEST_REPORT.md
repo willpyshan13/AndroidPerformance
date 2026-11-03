@@ -124,9 +124,11 @@
 ## LeakCanary 实时日志观察
 
 - 堆分析页新增可启动 / 停止的事件轮询，读取目标应用 UID 范围内的 Logcat；旧设备不支持 UID 过滤时按目标主进程 PID 回退。显示开始观察、对象保留、堆转储、分析及对象清除等可识别事件。
-- 解析器丢弃非 LeakCanary 标签和未识别日志内容，只保留匹配事件并限制单次读取与界面累计数量；UI 明确说明没有事件不代表没有泄漏，也要求应用已集成 LeakCanary。
+- 解析器丢弃非 Agent / LeakCanary 标签和未识别日志内容，只保留匹配事件并限制单次读取与界面累计数量；读取目标 UID，旧设备回退 PID。原有 LeakCanary 事件与 Debug Agent 生命周期事件显示各自来源。
 - 单元测试覆盖事件分类、无关行丢弃、事件数量上限、UID 查询、旧设备 PID 回退和目标包校验；HTTP 测试覆盖 token 鉴权及解析结果。
 - 完整 `npm test`：279 项，263 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。macOS arm64 桌面包重新构建且代码签名验证通过。当前无已连接设备，尚无真机日志验证。
+- Debug 生命周期 Agent 下载包仅包含 `src/debug` Java 与 Manifest：监视已销毁 Activity 的弱引用，按 5 秒、30 秒、2 分钟报告候选，并在收集后记录清除；最多跟踪 500 个、10 分钟后过期，不强制 GC 或读取对象图。候选不是已确认泄漏，且不覆盖 Fragment / 任意对象。
+- 本次增量验证：`node --test test/leakcanary-live.test.js` 6 项通过；`npm run check`、`git diff --check` 通过；两个 Agent Java 文件使用 Android API 35 `android.jar` 编译通过。未运行目标 app 或设备验证。
 
 ## HPROF 快照对比增量
 

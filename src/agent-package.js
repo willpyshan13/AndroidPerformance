@@ -18,6 +18,14 @@ export async function buildAgentPackage(){
 export async function buildLayoutAgentPackage(){
  return buildZip(layoutPaths);
 }
+export async function buildLeakCanaryAgentPackage(){
+ return buildZip([
+  'LEAKCANARY_AGENT_README.md',
+  {source:'src/main/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java'},
+  {source:'src/main/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java',path:'src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java'},
+  'src/debug/AndroidManifest.xml',
+ ]);
+}
 async function buildZip(files){
  const local=[],central=[];let offset=0;
  for(const file of files){

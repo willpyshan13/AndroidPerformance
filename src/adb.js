@@ -141,13 +141,13 @@ export class Adb {
     validateTarget(serial,packageName);
     const uid=await this.packageUid(serial,packageName);
     let raw,pid=null,processScope='uid';
-    try { raw=await this.shell(serial,['logcat','-b','main','-t','2000','-v','epoch',`--uid=${uid}`,'-s','LeakCanary:V'],{timeout:30000,maxBuffer:4*1024*1024}); }
+    try { raw=await this.shell(serial,['logcat','-b','main','-t','2000','-v','epoch',`--uid=${uid}`,'-s','LeakCanary:V','APWLeakCanary:I'],{timeout:30000,maxBuffer:4*1024*1024}); }
     catch(error) {
       if(!/unrecognized option|unknown option/i.test(error.message))throw error;
       const pids=(await this.shell(serial,['pidof',packageName])).trim().split(/\s+/).filter(value=>/^\d+$/.test(value));
       if(!pids.length)throw new Error('设备 Logcat 不支持 UID 过滤，且目标应用主进程未运行，无法读取 LeakCanary 事件');
       pid=pids[0];processScope='main-process';
-      raw=await this.shell(serial,['logcat','-b','main','-t','2000','-v','epoch',`--pid=${pid}`,'-s','LeakCanary:V'],{timeout:30000,maxBuffer:4*1024*1024});
+      raw=await this.shell(serial,['logcat','-b','main','-t','2000','-v','epoch',`--pid=${pid}`,'-s','LeakCanary:V','APWLeakCanary:I'],{timeout:30000,maxBuffer:4*1024*1024});
     }
     return {source:'adb-logcat',serial,packageName,uid,pid:pid?Number(pid):null,processScope,timestamp:Date.now(),...parseLeakCanaryLog(raw)};
   }

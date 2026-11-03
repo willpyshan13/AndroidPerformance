@@ -40,7 +40,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
 | 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取目标应用 Logcat 中的 LeakCanary 实时事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、LeakCanary Logcat、Shark、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
-| 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选，并跳转追踪 | `dumpsys gfxinfo framestats`、Perfetto |
+| 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪，也可打开同设备、同包名的 Agent 布局快照 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；UIAutomator 检查线索附有规则 ID、严重级别、置信度和节点证据；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |

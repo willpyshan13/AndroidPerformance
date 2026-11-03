@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {correlateGfxFramesToTimeline} from '../public/offline.js';
+import {correlateGfxFramesToTimeline,findRelatedLayoutCaptures} from '../public/offline.js';
 
 const pkg='com.example.app';
 const gfx=(index,start,end)=>({index,durationMs:Number(BigInt(end)-BigInt(start))/1e6,overBudget:false,timestamps:{IntendedVsync:start,FrameCompleted:end}});
@@ -44,4 +44,27 @@ test('does not treat touching interval boundaries as overlap and skips invalid t
 test('reports absent or unusable source data without attempting a match',()=>{
  assert.match(correlateGfxFramesToTimeline([],[],provenance).reason,/同时读取/);
  assert.match(correlateGfxFramesToTimeline([gfx(1,'100','200')],[timeline('100','0')],provenance).reason,/没有该应用进程/);
+});
+
+test('related layout evidence is limited to declared same-device Agent captures and sorted by capture proximity',()=>{
+ const capture=(timestamp,serial='device-1',packageName=pkg)=>({source:'agent',timestamp,serial,packageName});
+ const result=findRelatedLayoutCaptures({serial:'device-1',packageName:pkg,timestamp:5000,
+  currentLayout:capture(5001),records:[
+   {id:'near',kind:'layout',source:'agent',name:'near',timestamp:4900,payload:capture(4900)},
+   {id:'other-device',kind:'layout',source:'agent',payload:capture(5000,'device-2')},
+   {id:'wrong-package',kind:'layout',source:'agent',payload:capture(5000,'device-1','com.other.app')},
+   {id:'imported',kind:'layout',source:'import',payload:capture(5000)},
+   {id:'ui-automator',kind:'layout',source:'adb',payload:{...capture(5000),source:'adb'}},
+  ],
+ });
+ assert.equal(result.available,true);
+ assert.deepEqual(result.captures.map(row=>row.id),['current','near']);
+ assert.deepEqual(result.captures.map(row=>row.deltaMs),[1,-100]);
+ assert.match(result.note,/不能由此确定布局快照对应哪一帧/);
+});
+
+test('related layout evidence refuses imported frame data without device identity',()=>{
+ const result=findRelatedLayoutCaptures({packageName:pkg,records:[]});
+ assert.equal(result.available,false);
+ assert.match(result.reason,/设备序列号/);
 });

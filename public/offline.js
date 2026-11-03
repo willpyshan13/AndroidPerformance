@@ -49,6 +49,22 @@ export function correlateGfxFramesToTimeline(gfxFrames, timelineFrames, {sameDev
   return {available:true,frames:matched,matchedFrameCount:matched.length,overlapPairs,ambiguousFrameCount,unmatchedFrameCount:Math.max(0,validGfxCount-matched.length),validGfxFrameCount:validGfxCount,note:'按同一设备上 gfxinfo IntendedVsync–FrameCompleted 与 FrameTimeline 时间区间重叠匹配。重叠是候选关系，不代表相同帧、因果或 Jank 来源；多图层可能产生多个候选。'};
 }
 
+export function findRelatedLayoutCaptures({serial,packageName,timestamp,records=[],currentLayout=null}={}){
+  const unavailable=reason=>({available:false,reason,captures:[],truncated:false});
+  if(typeof serial!=='string'||!serial||typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName))return unavailable('需要直接采集的帧数据及其设备序列号和目标包名。');
+  const hasTime=Number.isSafeInteger(timestamp)&&timestamp>0,all=[];
+  const add=(id,name,source,layout)=>{
+    if(layout?.source!=='agent'||layout.serial!==serial||layout.packageName!==packageName||!Number.isSafeInteger(layout.timestamp)||layout.timestamp<=0)return;
+    if(all.some(item=>item.id===id))return;
+    all.push({id,name:String(name||'布局快照').slice(0,200),source,timestamp:layout.timestamp,deltaMs:hasTime?layout.timestamp-timestamp:null});
+  };
+  add('current','当前布局快照','agent',currentLayout);
+  const list=Array.isArray(records)?records:[],truncated=list.length>1000;
+  for(const session of list.slice(0,1000))if(session?.kind==='layout'&&session.source==='agent')add(session.id,session.name,session.source,session.payload);
+  all.sort((a,b)=>hasTime?Math.abs(a.deltaMs)-Math.abs(b.deltaMs)||b.timestamp-a.timestamp:b.timestamp-a.timestamp);
+  return {available:true,captures:all,truncated,note:'仅按采集元数据中的设备序列号和应用包名筛选，按布局快照与 gfxinfo 读取时刻的近似先后排序；gfxinfo 是有限历史缓冲区，不能由此确定布局快照对应哪一帧。'};
+}
+
 export function correlateGpuStagesToFrames(stages, frames) {
   if (!Array.isArray(stages) || !Array.isArray(frames)) return {available:false,reason:'请先载入同一追踪的 GPU RenderStage 和 FrameTimeline 数据。',frames:[],matchedFrameCount:0,stageFramePairs:0};
   if (stages.length > 1000 || frames.length > 2000) throw new Error('GPU 与帧区间关联数据超出限制');

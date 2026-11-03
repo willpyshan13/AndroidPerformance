@@ -6,6 +6,12 @@
 - 关联使用 BigInt 纳秒区间，过滤目标应用及其子进程；严格按半开区间求交集，保留一对多图层候选，并明确时间重叠不证明同一帧、因果或 Jank 来源。没有设备数据时用合成离线测试覆盖精度、来源门控、进程过滤、边界和无效值。
 - `test/gfx-frame-timeline-correlation.test.js` 与 `test/i18n.test.js` 定向测试通过；全量 `npm test` 为 349 项，333 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。macOS ARM64 重新打包后运行 `node scripts/mac-desktop-smoke.js` 通过，覆盖 renderer 和 16 个英文导航路由；修复 smoke 暴露的动态来源提示英文翻译遗漏。本轮未连接设备、未启动模拟器，也未验证真实 FrameTimeline 轨道。
 
+## 帧分析打开相关布局证据（2026-11-03）
+
+- 帧页新增“相关布局证据”列表，只接受当前进程中直接采集的 gfxinfo 设备身份，并列出 serial 与包名都匹配的应用内 Debug Agent 布局快照；按两次采集的本机时间戳近似排序，可打开当前快照或载入本地记录。
+- 这里是相邻证据导航，不建立布局快照与某一帧的时间映射；gfxinfo 是有限历史缓冲区，布局采集时间接近不证明它对应缓冲区里的帧或造成帧变化。导入帧数据、UIAutomator 前台窗口快照、演示数据和导入来源都不会被当成已验证的同设备应用布局。
+- 新增 helper 测试覆盖 serial/package/source 筛选、时间排序与导入来源拒绝；全量 `npm test` 为 351 项，335 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check`、`git diff --check` 和 macOS ARM64 `.app` 打包 smoke（16 个英文路由）均通过。本轮未连接设备或启动模拟器。
+
 ## Itanium 模板类型显示与源码候选（2026-11-03）
 
 - 解码常见 Itanium ABI 模板名中的内置类型和简单名称类型参数，例如 `_ZN4demo6WidgetIiE4drawEv` 显示为 `demo::Widget<int>::draw`；模板类和全局函数候选会保留模板显示名、按基础声明名查找。遇到未支持的模板编码会拒绝解析并提示文本搜索，不将未知特化静默当作通用类。

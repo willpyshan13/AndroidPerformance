@@ -179,6 +179,13 @@
 - 真机页面：已连接的 rk3399 all / Android 7.1.2 / API 25 显示 Native 模式同时因低于 API 29、没有 Perfetto 而禁用；切换到 ART 模式显示需要 API 31+ 并禁用。未尝试运行设备采样。
 - **真实 Native / ART heapprofd 采集尚未验证**：当前设备版本过旧且没有 Perfetto。支持设备上的系统 debuggable/profileable 条件、权限、结果样本质量仍待实机验证。
 
+## 设备全功能回归（2026-11-03）
+
+- 对 `X3315A41621110053`（rk3399-all、Android 7.1.2 / API 25、arm64-v8a）运行 `npm run test:device -- --serial X3315A41621110053 --package com.xmotion.sui.debug --allow-app-control`：23 项通过、2 项因设备能力不支持、0 项失败。报告位于 `/tmp/apw-device-smoke-continuation-20261103/report.json`。
+- 设备发现、目标启动、battery snapshot、编译状态读取、1,092 个 CPU 事件枚举、实时监控、gfxinfo 导入、112 节点布局树与 291,868 字节截图、HPROF 分析与 Shark 2.14、冷/温/热启动、HAR 脱敏、Benchmark 比较、记录保存和 perf.data 归档完整性均通过。简单启动均有 `TotalTime`，但设备未返回 LaunchState；帧读取仅 2 帧，不能据此评价目标应用的稳定帧表现。
+- simpleperf 生成 26,336 字节有效 `PERFILE2`，但短采样窗口未读到目标应用可解析调用栈；设备没有 `perfetto`，采集按 unsupported 正确返回。该结论保留为能力边界，不表示解析失败或 Perfetto 支持。
+- 此次 smoke 在 `--allow-app-control` 下启动目标应用、重置 gfxinfo 计数并采集 HPROF；没有清除应用数据或卸载目标应用。设备临时文件与采集锁检查通过。
+
 ## 布局、电池与真机 HPROF 增量
 
 - 完整 `npm test`：181 项，166 通过、0 失败、15 项因未配置外部官方样本而跳过。

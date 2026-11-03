@@ -101,16 +101,10 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   await stat(join(simpleperfDir,'bin','windows','x86_64','libsimpleperf_report.dll'));
   await stat(join(simpleperfDir,'bin','android','arm64','simpleperf'));
   await stat(join(simpleperfDir,'legacy','android','arm64','simpleperf'));
-  let simpleperfLoaded=false,lastPythonError;
-  for(const [command,args] of [[process.env.APW_PYTHON_PATH||'python',[]],['py',['-3']]]){
-    if(simpleperfLoaded)break;
-    if(command==='python'&&process.env.APW_PYTHON_PATH)args.splice(0,args.length);
-    const result=spawnSync(command,[...args,'-c','from simpleperf_report_lib import ReportLib; report = ReportLib(); report.Close()'],{cwd:simpleperfDir,encoding:'utf8',timeout:30_000,windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
-    if(result.error?.code==='ENOENT'){lastPythonError=result.error;continue;}
-    if(result.error||result.status!==0)throw new Error(`${label}: simpleperf host parser failed to load: ${result.stderr||result.error?.message||`exit code ${result.status}`}`);
-    simpleperfLoaded=true;
-  }
-  if(!simpleperfLoaded)throw new Error(`${label}: simpleperf host parser requires Python 3 (set APW_PYTHON_PATH); ${lastPythonError?.message||'interpreter unavailable'}`);
+  const pythonPath=join(simpleperfDir,'python','python.exe');
+  await access(pythonPath);
+  const pythonSmoke=spawnSync(pythonPath,['-c','from simpleperf_report_lib import ReportLib; report = ReportLib(); report.Close()'],{cwd:simpleperfDir,encoding:'utf8',timeout:30_000,windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
+  if(pythonSmoke.error||pythonSmoke.status!==0)throw new Error(`${label}: bundled Python/simpleperf host parser failed to load: ${pythonSmoke.stderr||pythonSmoke.error?.message||`exit code ${pythonSmoke.status}`}`);
   await mkdir(profileDir, { recursive: true });
   await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   let childError;

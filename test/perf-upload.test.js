@@ -1,13 +1,23 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
-import {access,readFile} from 'node:fs/promises';
-import {analyzePerfUpload,runPython} from '../src/perf-upload.js';
+import {access,readFile,mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {analyzePerfUpload,runPython,locateBundledPython} from '../src/perf-upload.js';
 function request(chunks,headers={}){const r=Readable.from(chunks);r.headers=headers;return r;}
 test('simpleperf analysis resolves a Windows Python interpreter and supports an explicit executable path',async()=>{
  const calls=[],runner=async(command,args)=>{calls.push({command,args});if(command==='python')throw Object.assign(new Error('not found'),{code:'ENOENT'});return {stdout:'python 3'};};
  const result=await runPython(['converter.py'],{},runner,{platform:'win32',pythonPath:null});assert.equal(result.stdout,'python 3');assert.deepEqual(calls,[{command:'python',args:['converter.py']},{command:'py',args:['-3','converter.py']}]);
  calls.length=0;await runPython(['converter.py'],{},async(command,args)=>{calls.push({command,args});return {stdout:'ok'};},{platform:'win32',pythonPath:'C:\\Python\\python.exe'});assert.deepEqual(calls,[{command:'C:\\Python\\python.exe',args:['converter.py']}]);
+});
+test('bundled Python is selected from the staged platform runtime when present',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'apw-python-runtime-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'python','bin'),{recursive:true});
+ const unix=join(root,'python','bin','python3.11');await writeFile(unix,'');
+ assert.equal(await locateBundledPython(root,'darwin'),unix);assert.equal(await locateBundledPython(root,'linux'),unix);
+ const windows=join(root,'python','python.exe');await writeFile(windows,'');assert.equal(await locateBundledPython(root,'win32'),windows);
+ assert.equal(await locateBundledPython(root,'freebsd'),null);
 });
 test('perf upload validates magic, invokes the converter with argument array and cleans the file',async()=>{
  let temporary;

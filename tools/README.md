@@ -19,7 +19,7 @@ npm run prepare:adb
 
 ## simpleperf
 
-macOS 打包前执行 `npm run prepare:simpleperf`，从本机 Android NDK 复制 simpleperf、报告库和对应 NOTICE。需要稳定版 NDK 与 r26 或更早版本；后者用于 Android 7 设备。可通过 `SIMPLEPERF_NDK` 和 `SIMPLEPERF_LEGACY_NDK` 指定 NDK 目录。资源位于忽略提交的 `tools/simpleperf/`，打包时保留两份 NDK NOTICE。CPU 采样无需额外安装 NDK，但 perf.data 导入仍需本机 Python 3。
+打包前执行 `npm run prepare:simpleperf`，从本机 Android NDK 复制 simpleperf、报告库及 NOTICE，并下载经 SHA-256 校验的 Python 3.11.18 standalone 运行时。需要稳定版 NDK；Android 7 兼容设备二进制已随仓库提供，可通过 `SIMPLEPERF_NDK` 和 `SIMPLEPERF_LEGACY_NDK` 指定 NDK 目录。资源位于忽略提交的 `tools/simpleperf/`，打包时保留上游许可证。安装包内置 Python，不要求用户另行安装；开发源码可用 `APW_PYTHON_PATH` 覆盖。
 
 ## Perfetto Trace Processor
 

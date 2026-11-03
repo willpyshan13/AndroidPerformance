@@ -125,7 +125,7 @@ jobs:
         env:
           ADB_PATH: /usr/bin/adb
           AAPT2_PATH: /usr/bin/aapt2
-        run: npm run prepare:linux:arm64-tools
+        run: npm run prepare:linux:arm64-tools && npm run prepare:python-runtime
       - name: Analyze a generated APK with staged ARM64 AAPT2
         if: matrix.linuxArm64
         env:

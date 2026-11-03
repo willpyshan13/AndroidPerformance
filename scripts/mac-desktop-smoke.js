@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -45,6 +45,10 @@ try {
   await stat(join(resources, 'java-runtime', 'bin', 'java'));
   await stat(join(resources, 'trace-processor', 'trace_processor_shell'));
   await stat(join(resources, 'perfetto-ui', 'index.html'));
+  const simpleperfDir=join(resources,'simpleperf'),pythonPath=join(simpleperfDir,'python','bin','python3.11');
+  await access(pythonPath);
+  const pythonSmoke=spawnSync(pythonPath,['-c','from simpleperf_report_lib import ReportLib; report = ReportLib(); report.Close()'],{cwd:simpleperfDir,encoding:'utf8',timeout:30_000,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
+  if(pythonSmoke.error||pythonSmoke.status!==0)throw new Error(`Bundled Python/simpleperf parser failed to load: ${pythonSmoke.stderr||pythonSmoke.error?.message||`exit code ${pythonSmoke.status}`}`);
   await mkdir(profileDir, { recursive: true });
   await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
   await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');

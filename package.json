@@ -87,7 +87,9 @@
       "scripts/simpleperf_format.py",
       "android-agent/README.md",
       "android-agent/LAYOUT_AGENT_README.md",
-      "android-agent/src/**"
+      "android-agent/LEAKCANARY_AGENT_README.md",
+      "android-agent/src/**",
+      "android-agent/optional-androidx/**"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
@@ -168,7 +170,9 @@
       "scripts/simpleperf_format.py",
       "android-agent/README.md",
       "android-agent/LAYOUT_AGENT_README.md",
-      "android-agent/src/**"
+      "android-agent/LEAKCANARY_AGENT_README.md",
+      "android-agent/src/**",
+      "android-agent/optional-androidx/**"
     ]
   },
   "devDependencies": {

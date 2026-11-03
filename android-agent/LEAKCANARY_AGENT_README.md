@@ -12,6 +12,10 @@ The provider and source only enter the debug variant. Keep them out of release b
 
 ## What the events mean
 
-When an Activity is destroyed, the agent keeps only a `WeakReference` and reports if it remains reachable after 5 seconds, 30 seconds, and 2 minutes. It reports when the reference is collected, and expires watches after 10 minutes. It does not force garbage collection, keep an Activity strongly reachable, inspect the heap, or trace retaining references. A retained candidate can be intentional or temporary and is **not proof of a memory leak**. Fragment lifecycle and non-Activity objects are not observed. The watch list is capped at 500 items.
+When an Activity is destroyed, the agent keeps only a `WeakReference` and reports if it remains reachable after 5 seconds, 30 seconds, and 2 minutes. It reports when the reference is collected, and expires watches after 10 minutes. It does not force garbage collection, keep an object strongly reachable, inspect the heap, or trace retaining references. A retained candidate can be intentional or temporary and is **not proof of a memory leak**. The watch list is capped at 500 items.
 
-This lightweight signal helps identify suspicious lifecycles; use an HPROF analysis tool or LeakCanary's object graph analysis to confirm a leak.
+### Optional AndroidX Fragment observation
+
+The ZIP also includes `optional-androidx/src/debug/java/.../ApwAndroidXFragmentLeakAgent.java`. It is outside the app source set so projects without AndroidX Fragment do not need an extra dependency. In a project that already uses AndroidX Fragment, copy the file to `src/debug/java/dev/androidperformance/agent/`. The base agent detects `FragmentActivity` and registers the callback automatically. Destroyed Fragment instances use the same weak-reference checks as Activities; nested fragments are covered by recursive callback registration.
+
+This lightweight signal helps identify suspicious lifecycles; use an HPROF analysis tool or LeakCanary's object graph analysis to confirm a leak. Arbitrary non-Activity/non-Fragment objects are not watched.

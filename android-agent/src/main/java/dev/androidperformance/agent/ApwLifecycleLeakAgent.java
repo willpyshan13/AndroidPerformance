@@ -23,9 +23,9 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
     private static final int MAX_WATCHED = 500;
     private static final long EXPIRE_AFTER_MS = TimeUnit.MINUTES.toMillis(10);
     private static final long[] CHECKPOINTS_MS = {5_000L, 30_000L, 120_000L};
-    private static ApwLifecycleLeakAgent instance;
+    private static volatile ApwLifecycleLeakAgent instance;
 
-    private final ReferenceQueue<Activity> collected = new ReferenceQueue<>();
+    private final ReferenceQueue<Object> collected = new ReferenceQueue<>();
     private final LinkedHashMap<String, Watch> watches = new LinkedHashMap<>();
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "apw-lifecycle-leak-agent");
@@ -45,8 +45,18 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
     private ApwLifecycleLeakAgent() {}
 
     @Override public void onActivityDestroyed(Activity activity) {
+        track(activity);
+    }
+
+    static void track(Object instance) {
+        if (instance == null) return;
+        ApwLifecycleLeakAgent agent = ApwLifecycleLeakAgent.instance;
+        if (agent != null) agent.watch(instance);
+    }
+
+    private void watch(Object instance) {
         String id = UUID.randomUUID().toString();
-        String className = activity.getClass().getName();
+        String className = instance.getClass().getName();
         long now = SystemClock.uptimeMillis();
         synchronized (watches) {
             while (watches.size() >= MAX_WATCHED) {
@@ -55,14 +65,30 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
                 String removed = iterator.next(); iterator.remove();
                 Log.w(TAG, "watch limit reached; dropped candidate id=" + removed);
             }
-            watches.put(id, new Watch(id, className, now, new ActivityReference(activity, collected, id)));
+            watches.put(id, new Watch(id, className, now, new TrackedReference(instance, collected, id)));
         }
         Log.i(TAG, "Watching object id=" + id + " class=" + className);
     }
 
+    @Override public void onActivityCreated(Activity activity, Bundle state) {
+        try {
+            ClassLoader loader = activity.getClassLoader();
+            Class<?> fragmentActivity = Class.forName("androidx.fragment.app.FragmentActivity", false, loader);
+            if (!fragmentActivity.isInstance(activity)) return;
+            Object manager = fragmentActivity.getMethod("getSupportFragmentManager").invoke(activity);
+            Class<?> fragmentManager = Class.forName("androidx.fragment.app.FragmentManager", false, loader);
+            Class<?> bridge = Class.forName("dev.androidperformance.agent.ApwAndroidXFragmentLeakAgent", true, loader);
+            bridge.getMethod("install", fragmentManager).invoke(null, manager);
+        } catch (ClassNotFoundException ignored) {
+            // AndroidX Fragment or the optional callback is not part of this debug app.
+        } catch (ReflectiveOperationException error) {
+            Log.w(TAG, "Could not register optional AndroidX Fragment callback", error);
+        }
+    }
+
     private void inspect() {
-        ActivityReference reference;
-        while ((reference = (ActivityReference) collected.poll()) != null) {
+        TrackedReference reference;
+        while ((reference = (TrackedReference) collected.poll()) != null) {
             synchronized (watches) {
                 Watch watch = watches.remove(reference.id);
                 if (watch != null) Log.i(TAG, "Object was collected id=" + watch.id + " class=" + watch.className);
@@ -90,19 +116,18 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
     private static final class Watch {
         final String id, className;
         final long destroyedAt;
-        final ActivityReference reference;
+        final TrackedReference reference;
         int reported;
-        Watch(String id, String className, long destroyedAt, ActivityReference reference) {
+        Watch(String id, String className, long destroyedAt, TrackedReference reference) {
             this.id = id; this.className = className; this.destroyedAt = destroyedAt; this.reference = reference;
         }
     }
 
-    private static final class ActivityReference extends WeakReference<Activity> {
+    private static final class TrackedReference extends WeakReference<Object> {
         final String id;
-        ActivityReference(Activity activity, ReferenceQueue<Activity> queue, String id) { super(activity, queue); this.id = id; }
+        TrackedReference(Object instance, ReferenceQueue<Object> queue, String id) { super(instance, queue); this.id = id; }
     }
 
-    @Override public void onActivityCreated(Activity activity, Bundle state) {}
     @Override public void onActivityStarted(Activity activity) {}
     @Override public void onActivityResumed(Activity activity) {}
     @Override public void onActivityPaused(Activity activity) {}

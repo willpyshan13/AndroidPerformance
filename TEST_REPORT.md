@@ -127,8 +127,8 @@
 - 解析器丢弃非 Agent / LeakCanary 标签和未识别日志内容，只保留匹配事件并限制单次读取与界面累计数量；读取目标 UID，旧设备回退 PID。原有 LeakCanary 事件与 Debug Agent 生命周期事件显示各自来源。
 - 单元测试覆盖事件分类、无关行丢弃、事件数量上限、UID 查询、旧设备 PID 回退和目标包校验；HTTP 测试覆盖 token 鉴权及解析结果。
 - 完整 `npm test`：279 项，263 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 与 `git diff --check` 通过。macOS arm64 桌面包重新构建且代码签名验证通过。当前无已连接设备，尚无真机日志验证。
-- Debug 生命周期 Agent 下载包仅包含 `src/debug` Java 与 Manifest：监视已销毁 Activity 的弱引用，按 5 秒、30 秒、2 分钟报告候选，并在收集后记录清除；最多跟踪 500 个、10 分钟后过期，不强制 GC 或读取对象图。候选不是已确认泄漏，且不覆盖 Fragment / 任意对象。
-- 本次增量验证：`node --test test/leakcanary-live.test.js` 6 项通过；`npm run check`、`git diff --check` 通过；两个 Agent Java 文件使用 Android API 35 `android.jar` 编译通过。未运行目标 app 或设备验证。
+- Debug 生命周期 Agent 下载包包含 Activity 观察器及 Debug Manifest；可选 AndroidX Fragment callback 放在独立目录，应用已有 AndroidX Fragment 时才需复制进 debug source set。已销毁对象按 5 秒、30 秒、2 分钟报告弱引用候选，收集后记录清除；最多跟踪 500 个、10 分钟后过期，不强制 GC 或读取对象图。候选不是已确认泄漏。
+- 增量验证：LeakCanary 测试 6 项、桌面打包配置测试 4 项通过；`npm run check`、`git diff --check` 通过；基础 Agent Java 文件使用 Android API 35 编译通过，可选 Fragment callback 使用 AndroidX Fragment 1.8.9 编译通过（缺少可选 annotation JAR 时 javac 提示 8 条注解元数据警告）。macOS ARM64 `.app` 重建成功，打包 smoke 通过并从实际 `.app` 下载 ZIP，确认 Activity Agent、Manifest、说明和可选 Fragment callback 均被打包；16 个英文路由扫描及 APK 分析 UI smoke 通过。目标 app / 设备仍未运行验证。
 
 ## HPROF 快照对比增量
 

@@ -24,6 +24,7 @@ export async function buildLeakCanaryAgentPackage(){
   {source:'src/main/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java'},
   {source:'src/main/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java',path:'src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java'},
   'src/debug/AndroidManifest.xml',
+  {source:'optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java',path:'optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'},
  ]);
 }
 async function buildZip(files){

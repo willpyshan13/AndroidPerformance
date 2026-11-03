@@ -199,13 +199,23 @@ try {
   });
   await check('all-record-kinds-persistence', async () => {
     const saved = [];
-    for (const [kind, payload] of Object.entries(evidence)) {
+    const recordKinds = new Set(['monitor', 'frames', 'startup', 'layout', 'network', 'apk', 'battery', 'benchmark']);
+    for (const [kind, payload] of Object.entries(evidence).filter(([kind]) => recordKinds.has(kind))) {
       const record = await request('/sessions', { kind, source: kind === 'network' ? 'import' : 'adb', payload, name: `设备全功能测试 · ${kind}`, packageName });
       const loaded = await request(`/sessions/${record.id}`); assert.deepEqual(loaded.payload, payload);
       saved.push({ kind, id: record.id });
     }
     const list = await request('/sessions'); assert.equal(list.sessions.length, saved.length);
     return { saved };
+  });
+  await check('cpu-profile-archive-persistence', async () => {
+    assert(capturedPerfData, 'CPU 采样没有生成可保存的 perf.data');
+    const upload = await fetch(`${origin}/api/cpu-profile/archive`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'X-File-Name': 'device-smoke.trace' }, body: capturedPerfData });
+    const archive = await upload.json(); assert.equal(upload.status, 201, archive.error);
+    const archives = await request('/cpu-profile/archives'); assert(archives.archives.some(item => item.id === archive.id));
+    const loaded = await fetch(`${origin}/api/cpu-profile/archive/load`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: archive.id }) });
+    assert.equal(loaded.status, 200); assert.deepEqual(Buffer.from(await loaded.arrayBuffer()), capturedPerfData);
+    return { archiveId: archive.id, bytes: capturedPerfData.length, integrityVerified: true };
   });
   await check('temporary-files-cleanup', async () => {
     const files = await adb.shell(serial, ['ls', '/data/local/tmp']);

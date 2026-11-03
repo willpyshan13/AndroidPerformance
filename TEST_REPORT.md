@@ -573,3 +573,10 @@ npm run test:device -- \
 - 修复节点选择后动态生成的属性操作按钮未及时本地化；加入动态数字及路径文本回归用例。
 - macOS arm64 目录包重建和启动 smoke 通过，检查 16 页英文渲染、renderer 控制台、Java、Trace Processor、Perfetto UI、HPROF CSV 导出、结构化布局线索，以及 50,000 个 CPU 样本的打包 renderer Canvas 栅格读取（本轮约 47 ms）。
 - 完整测试：328 项，312 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。测试需在可绑定 127.0.0.1 的环境运行。
+
+## API 25 受控 CPU 采样及完整设备 smoke（2026-11-03）
+
+- 使用临时 debuggable Activity 在独立工作线程持续计算，确认 API 25 的 simpleperf 采集和分析可在有负载进程上端到端工作。最终 3 秒采集生成 130,281 字节 `PERFILE2`，记录 1,193 个 `cpu-clock:u` 样本，解析为 12 条栈 / 21 个符号；时间线标记 `CLOCK_MONOTONIC`，采样档案保存后 SHA-256 校验和逐字节回读均通过。该夹具只用于证明采样链路，不代表真实应用性能。
+- `scripts/device-smoke.js` 现分别验证普通分析记录与 CPU 原始采样档案：CPU 摘要不再误传给仅接受 monitor / frames / startup / layout / network 等类型的会话接口；perf.data 使用产品支持的 `.trace` 档案接口，执行上传、列表读取、完整性校验和字节相等回读。
+- 完整受控 smoke：24 项通过、0 项失败、1 项 unsupported。除上述 CPU 外，还通过 Activity 启动、进程监控、1 条 gfxinfo 帧、布局截图、约 12.4 MB HPROF（约 141,744 个对象，Shark 2.14 成功）、冷/温/热启动及记录持久化。API 25 设备没有 `perfetto`，该项按能力标为 unsupported；设备不返回 LaunchState，启动模式不据 TotalTime 推断。测试结束后已卸载临时 APK 并删除采样和报告文件。
+- 全量自动化回归：331 项，315 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。

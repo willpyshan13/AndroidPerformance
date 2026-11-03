@@ -67,6 +67,12 @@ export function findRelatedLayoutCaptures({serial,packageName,timestamp,records=
   return {available:true,captures:all,truncated,note:'仅按采集元数据中的设备序列号和应用包名筛选，按布局快照与 gfxinfo 读取时刻的近似先后排序；gfxinfo 是有限历史缓冲区，不能由此确定布局快照对应哪一帧。'};
 }
 
+export function layoutFrameCorrelationContext({frames=null,frameTimeline=null,traceResult=null,traceSource=null,frameSource=null}={}){
+  const visible=!!(frames||frameTimeline),source=traceSource||frameSource||null;
+  const canMap=!!(frameTimeline?.sessionId&&traceSource?.sessionId===frameTimeline.sessionId&&typeof traceSource.serial==='string'&&traceSource.serial&&typeof traceSource.packageName==='string'&&/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(traceSource.packageName)&&Number.isSafeInteger(Number(traceSource.api))&&Number(traceSource.api)>=31);
+  return {visible,serial:source?.serial||null,packageName:source?.packageName||null,timestamp:frames?.timestamp||traceResult?.timestamp,canMap};
+}
+
 export function correlateGpuStagesToFrames(stages, frames) {
   if (!Array.isArray(stages) || !Array.isArray(frames)) return {available:false,reason:'请先载入同一追踪的 GPU RenderStage 和 FrameTimeline 数据。',frames:[],matchedFrameCount:0,stageFramePairs:0};
   if (stages.length > 1000 || frames.length > 2000) throw new Error('GPU 与帧区间关联数据超出限制');

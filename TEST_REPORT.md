@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-03）
 
+## 追踪独立显示相关布局证据（2026-11-03）
+
+- 帧页在已载入 FrameTimeline 时即可显示布局证据面板，不再要求先读取 gfxinfo。来源优先使用本机直接采集追踪的 serial / package / API；没有追踪设备身份时才回退到直接采集的 gfxinfo 身份。导入来源不建立可验证身份，映射按钮仅对同一追踪会话、已知设备及 API 31+ 开启。
+- `layoutFrameCorrelationContext` 回归覆盖 Trace-only 可见、Trace-only 开启映射、导入 Trace 拒绝映射、stale session 与 API 30 门控。全量 `npm test`：353 项，337 通过、0 失败、16 项可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `.app` 桌面 smoke 通过，验证 16 个英文路由和现有关键功能；此次 smoke 尚未注入 Trace-only 的界面状态。本轮没有连接设备或启动模拟器。
+
 ## 布局 Agent 采集区间映射到 FrameTimeline（2026-11-03）
 
 - 新版 Android Layout Agent 在 View 树与截图采集期间记录 `System.nanoTime()` 起止值，作为十进制字符串进入本机采集档案；旧 Agent 返回缺少/无效时保留空值。帧分析页仅对同设备、本机追踪和 API 31+ 数据开放映射操作。

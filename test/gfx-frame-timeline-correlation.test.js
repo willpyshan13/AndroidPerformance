@@ -1,11 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {correlateGfxFramesToTimeline,findRelatedLayoutCaptures} from '../public/offline.js';
+import {correlateGfxFramesToTimeline,findRelatedLayoutCaptures,layoutFrameCorrelationContext} from '../public/offline.js';
 
 const pkg='com.example.app';
 const gfx=(index,start,end)=>({index,durationMs:Number(BigInt(end)-BigInt(start))/1e6,overBudget:false,timestamps:{IntendedVsync:start,FrameCompleted:end}});
 const timeline=(tsNs,durationNs,process=pkg,layer='SurfaceView')=>({tsNs,durationNs,process,layer,jankType:'App Deadline Missed'});
 const provenance={sameDevice:true,api:35,packageName:pkg};
+
+test('layout correlation context is available from a trace without prior gfxinfo capture',()=>{
+ const trace={sessionId:'trace-1',frames:[]},source={sessionId:'trace-1',serial:'device-1',packageName:pkg,api:35};
+ const directTrace=layoutFrameCorrelationContext({frameTimeline:trace,traceResult:{timestamp:100},traceSource:source});
+ assert.deepEqual(directTrace,{visible:true,serial:'device-1',packageName:pkg,timestamp:100,canMap:true});
+ assert.equal(layoutFrameCorrelationContext({frameTimeline:trace,traceResult:{},traceSource:null}).canMap,false);
+ assert.equal(layoutFrameCorrelationContext({frames:{source:'import'},frameSource:{serial:'device-1',packageName:pkg}}).visible,true);
+ assert.equal(layoutFrameCorrelationContext({frames:{source:'import'},frameSource:{serial:'device-1',packageName:pkg}}).canMap,false);
+ assert.equal(layoutFrameCorrelationContext({frameTimeline:trace,traceSource:{...source,sessionId:'stale'}}).canMap,false);
+ assert.equal(layoutFrameCorrelationContext({frameTimeline:trace,traceSource:{...source,api:30}}).canMap,false);
+});
 
 test('matches exact nanosecond overlaps for target process and child processes',()=>{
  const base=9007199254741000n;

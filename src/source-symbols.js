@@ -17,11 +17,50 @@ export function maskSource(text){
  }
  return out;
 }
+const ITANIUM_OPERATORS={nw:'new',na:'new[]',dl:'delete',da:'delete[]',ps:'+',ng:'-',ad:'&',de:'*',co:'~',pl:'+',mi:'-',ml:'*',dv:'/',rm:'%',an:'&',or:'|',eo:'^',aS:'=',pL:'+=',mI:'-=',mL:'*=',dV:'/=',rM:'%=',aN:'&=',oR:'|=',eO:'^=',ls:'<<',rs:'>>',lS:'<<=',rS:'>>=',eq:'==',ne:'!=',lt:'<',gt:'>',le:'<=',ge:'>=',ss:'<=>',nt:'!',aa:'&&',oo:'||',cm:',',pm:'->*',pt:'->',cl:'()',ix:'[]',qu:'?'};
+const ITANIUM_TYPES={v:'void',b:'bool',c:'char',a:'signed char',h:'unsigned char',s:'short',t:'unsigned short',i:'int',j:'unsigned int',l:'long',m:'unsigned long',x:'long long',y:'unsigned long long',f:'float',d:'double',e:'long double'};
+function skipItaniumTemplateArguments(value,start){
+ if(value[start]!=='I')return start;
+ let index=start+1,templates=1,nestedNames=0;
+ while(index<value.length&&templates){
+  const c=value[index];
+  if(c==='N'){nestedNames++;index++;continue;}
+  if(c==='E'){if(nestedNames)nestedNames--;else templates--;index++;continue;}
+  if(c==='I'){templates++;index++;continue;}
+  if(/[0-9]/.test(c)){let end=index;while(/[0-9]/.test(value[end]||''))end++;const length=Number(value.slice(index,end));if(!Number.isSafeInteger(length)||length<=0||end+length>value.length)return -1;index=end+length;continue;}
+  if(c==='S'){index+=value[index+1]==='_'?2:3;continue;}
+  if(c==='T'){const underscore=value.indexOf('_',index+1);if(underscore<0)return -1;index=underscore+1;continue;}
+  index++;
+ }
+ return templates?-1:index;
+}
+export function demangleItaniumSymbol(symbol){
+ if(typeof symbol!=='string'||symbol.length>500)return null;
+ const value=symbol.trim().replace(/\+0x[\da-f]+$/i,'');if(!/^_Z/.test(value))return null;
+ let index=2,nested=false;const parts=[];
+ if(value[index]==='N'){nested=true;index++;while(index<value.length&&'KVRrO'.includes(value[index]))index++;}
+ while(index<value.length){
+  if(value[index]==='E'){index++;break;}
+  const start=index,c=value[index];let part=null;
+  const operator=ITANIUM_OPERATORS[value.slice(index,index+2)];
+  if(operator!==undefined){part=['new','new[]','delete','delete[]'].includes(operator)?`operator ${operator}`:`operator${operator}`;index+=2;}
+  else if(value.slice(index,index+2)==='cv'){
+   index+=2;const type=ITANIUM_TYPES[value[index]];if(!type)return null;part=`operator ${type}`;index++;
+  }else if(/[0-9]/.test(c)){
+   while(/[0-9]/.test(value[index]||''))index++;const length=Number(value.slice(start,index));if(!Number.isSafeInteger(length)||length<=0||index+length>value.length)return null;part=value.slice(index,index+length);index+=length;
+  }else return null;
+  const afterTemplate=skipItaniumTemplateArguments(value,index);if(afterTemplate<0)return null;index=afterTemplate;parts.push(part);if(!nested)break;
+ }
+ if((nested&&(index>value.length||value[index-1]!=='E'||parts.length<2))||(!nested&&parts.length!==1))return null;
+ return parts.join('::');
+}
 export function parseSourceSymbol(symbol){
  if(typeof symbol!=='string'||!symbol.trim()||symbol.length>500)throw new Error('符号名称无效');
- const raw=symbol.trim();
- if(raw.includes('::')){
-  const withoutAddress=raw.replace(/\+0x[\da-f]+$/i,'').trim();
+ const raw=symbol.trim(),demangled=demangleItaniumSymbol(raw),nativeInput=demangled||raw;
+ if(raw.startsWith('_Z')&&!demangled)throw new Error('Itanium 原生符号格式无法识别；可使用文本搜索');
+ if(demangled&&!nativeInput.includes('::'))return {raw,normalized:nativeInput,method:nativeInput,className:null,qualifiers:[],packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+ if(nativeInput.includes('::')){
+  const withoutAddress=nativeInput.replace(/\+0x[\da-f]+$/i,'').trim();
   const operatorMatch=withoutAddress.match(/(?:^|::)(operator\s*(?:\(\)|\[\]|new(?:\[\])?|delete(?:\[\])?|[!%&*+\-\/<=>^|~,]+|[A-Za-z_]\w*))(?=\s*(?:\(|$|const\b|noexcept\b|&|&&))/);
   if(operatorMatch){
    const prefix=withoutAddress.slice(0,operatorMatch.index).replace(/::$/,''),method=operatorMatch[1].replace(/\s+/g,' ').trim(),qualifiers=prefix?prefix.split('::'):[];

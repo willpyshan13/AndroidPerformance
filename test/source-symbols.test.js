@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod} from '../src/source-symbols.js';
+import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod,demangleItaniumSymbol} from '../src/source-symbols.js';
 
 test('symbol declarations ignore comments, strings and ordinary call sites',()=>{
  const text=`package com.example;
@@ -60,6 +60,22 @@ Widget::operator bool() const { return true; }
  const matches=symbols.map(symbol=>findNativeSourceDeclarations(text,'widget.cpp',parseSourceSymbol(symbol)));
  assert.deepEqual(matches.map(found=>found.map(match=>match.line)),[[4,9],[5,10],[6,11],[7,12]]);
  for(const found of matches)assert.ok(found.every(match=>match.reasons.includes('作用域名匹配：demo::Widget')));
+});
+
+test('Itanium ABI demangling resolves nested methods and common operator encodings',()=>{
+ const examples=[
+  ['_ZN4demo6WidgetlsEi','demo::Widget::operator<<'],
+  ['_ZN4demo6WidgetixEi','demo::Widget::operator[]'],
+  ['_ZN4demo6WidgetclEi','demo::Widget::operator()'],
+  ['_ZNK4demo6WidgetcvbEv','demo::Widget::operator bool'],
+  ['_ZN4demo6Widget4drawEi','demo::Widget::draw'],
+  ['_ZN4demo6WidgetIiE4drawEv','demo::Widget::draw'],
+  ['_Z3fooi','foo'],
+  ['_Zplii','operator+'],
+  ['_Znwm','operator new']
+ ];
+ for(const [mangled,expected] of examples){assert.equal(demangleItaniumSymbol(mangled),expected);assert.equal(parseSourceSymbol(`${mangled}+0x10`).normalized,expected);}
+ assert.equal(parseSourceSymbol('_Z3fooi').isNative,true);assert.throws(()=>parseSourceSymbol('_ZNbroken'),/Itanium/);
 });
 
 test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{

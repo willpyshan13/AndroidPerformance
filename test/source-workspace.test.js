@@ -44,9 +44,12 @@ Widget& Widget::operator<<(int value) { return *this; }
 int Widget::operator[](int index) const { return index; }
 bool Widget::operator()(int value) const { return value != 0; }
 Widget::operator bool() const { return true; }
+}
+int freeWorker(int value);
+int freeWorker(int value) { return value; }
 }`);
  const snapshot=await createSourceSnapshot(source,store);
- for(const [symbol,lines] of [['demo::Widget::operator<<(int)',[4,9]],['demo::Widget::operator[](int) const',[5,10]],['demo::Widget::operator()(int) const',[6,11]],['demo::Widget::operator bool() const',[7,12]]]){
+ for(const [symbol,lines] of [['demo::Widget::operator<<(int)',[4,9]],['_ZN4demo6WidgetlsEi',[4,9]],['demo::Widget::operator[](int) const',[5,10]],['_ZN4demo6WidgetixEi',[5,10]],['demo::Widget::operator()(int) const',[6,11]],['_ZN4demo6WidgetclEi',[6,11]],['demo::Widget::operator bool() const',[7,12]],['_ZNK4demo6WidgetcvbEv',[7,12]],['_Z10freeWorkeri',[14,15]]]){
   const result=await resolveSourceSymbol(store,snapshot.id,symbol);assert.deepEqual(result.matches.map(match=>match.line),lines);assert.ok(result.matches.every(match=>match.path==='src/main/cpp/Widget.cpp'));
  }
 });

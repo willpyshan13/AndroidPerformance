@@ -662,6 +662,6 @@ npm run test:device -- \
 
 ## C/C++ 重载运算符源码定位（2026-11-03）
 
-- 源码符号解析新增 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明 / 定义候选；本地快照集成回归验证符号解析能返回头文件式声明与实现候选。候选仍是文本启发式，不解析 ELF、DWARF 或 mangled symbols。
-- 源码符号及快照集成测试 10 项通过；完整回归 342 项，326 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接或操作设备。
-- 提交 `cf60ac1` 的 macOS ARM64 Actions run `41607030022` 全部通过，包含 CI 全量测试、资源准备、DMG 构建和打包桌面启动 smoke；未运行模拟器或真实设备检查。
+- 源码符号解析新增 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明 / 定义候选，并可解码常见 Itanium ABI 嵌套方法、全局函数及这些运算符的 mangled 名称；本地快照集成回归确认可从 mangled 符号返回源文件声明和实现候选。测试样本由本机 `c++filt` 交叉核对。它不是完整 C++ demangler，不解析 ELF/DWARF；模板参数与函数参数不保留，复杂 substitution 等编码可能无法解码，模板特化可能匹配到通用声明。
+- 源码符号及快照集成测试 11 项通过；完整回归 343 项，327 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接或操作设备。
+- 提交 `cf60ac1` 的 macOS ARM64 Actions run `41607030022` 全部通过，包含 CI 全量测试、资源准备、DMG 构建和打包桌面启动 smoke；未运行模拟器或真实设备检查。本轮 Itanium ABI 扩展尚待 CI 验证。

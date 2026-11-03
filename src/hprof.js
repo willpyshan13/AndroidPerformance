@@ -247,6 +247,11 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     return {items,scanned,destroyed,unavailable,incompleteClasses,indexTruncated,limitReached,truncated:indexTruncated||limitReached||destroyed>items.length};
   }
   let reverseGraph=null;
+  const referenceKindCodes={WeakReference:1,SoftReference:2,PhantomReference:3};
+  const referenceKindNames=[null,'WeakReference','SoftReference','PhantomReference'];
+  const edgeFlags=(referenceKind,arrayIndex)=>((referenceKindCodes[referenceKind]||0)<<1)|(arrayIndex?1:0);
+  const edgeLabel=(label,flags)=>(flags&1)?`[${label}]`:label;
+  const edgeReferenceKind=flags=>referenceKindNames[flags>>1]||null;
   function buildReverseGraph(){
     if(reverseGraph)return reverseGraph;
     const edges=new Map(), layouts=new Map();let edgeCount=0,incomplete=indexTruncated, skipped=0, missingTargets=0, limited=false;
@@ -256,7 +261,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       if(!index.has(target)){missingTargets++;incomplete=true;return;}
       if(edgeCount>=edgeLimit){incomplete=true;limited=true;return;}
       let refs=edges.get(target);if(!refs){refs=[];edges.set(target,refs);}
-      refs.push({id:source,label,referenceKind});edgeCount++;
+      const arrayIndex=typeof label==='number';refs.push(source,label,edgeFlags(referenceKind,arrayIndex));edgeCount++;
     }
     function layout(cls){
       if(layouts.has(cls))return layouts.get(cls);
@@ -283,7 +288,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
         for(const field of def.fields){const offset=item.offset+field.offset;add(data.subarray(offset,offset+idSize).toString('hex'),item.id,field.label,field.referent?def.referenceKind:null);if(limited)break;}
       } else if(item.kind==='objectArray'){
         add(item.cls,item.id,'数组类');if(limited)break;
-        for(let i=0;i<item.length;i++){const offset=item.offset+i*idSize;add(data.subarray(offset,offset+idSize).toString('hex'),item.id,`[${i}]`);if(limited)break;}
+        for(let i=0;i<item.length;i++){const offset=item.offset+i*idSize;add(data.subarray(offset,offset+idSize).toString('hex'),item.id,i);if(limited)break;}
       }
     }
     return reverseGraph={edges,edgeCount,incomplete,skipped,missingTargets,limited};
@@ -291,10 +296,9 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   function incomingReferences(target,{offset=0,limit=100,excludeNonStrong=false}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('分页参数无效');
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
-    objectDetail(target);const graph=buildReverseGraph();
-    const refs=(graph.edges.get(target)||[]).filter(edge=>!excludeNonStrong||!edge.referenceKind);
-    const items=refs.slice(offset,offset+limit).map(edge=>{const item=index.get(edge.id);return {id:edge.id,kind:item.kind,className:item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类'),label:edge.label,referenceKind:edge.referenceKind};});
-    return {target,offset,total:refs.length,items,excludeNonStrong,rootTags:rootIds.get(target)||[],edgeCount:graph.edgeCount,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,missingTargets:graph.missingTargets,edgeLimitReached:graph.limited};
+    objectDetail(target);const graph=buildReverseGraph(),refs=graph.edges.get(target)||[];let total=0;const items=[];
+    for(let i=0;i<refs.length;i+=3){const flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;if(total>=offset&&items.length<limit){const id=refs[i],item=index.get(id);items.push({id,kind:item.kind,className:item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类'),label:edgeLabel(refs[i+1],flags),referenceKind});}total++;}
+    return {target,offset,total,items,excludeNonStrong,rootTags:rootIds.get(target)||[],edgeCount:graph.edgeCount,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,missingTargets:graph.missingTargets,edgeLimitReached:graph.limited};
   }
   function rootPath(target,{excludeNonStrong=false}={}){
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
@@ -302,7 +306,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     const graph=buildReverseGraph(), queue=[target], visited=new Set(queue), towardTarget=new Map();let root=null;
     for(let n=0;n<queue.length&&n<50000;n++){
       const node=queue[n];if(rootIds.has(node)){root=node;break;}
-      for(const edge of graph.edges.get(node)||[]){if(excludeNonStrong&&edge.referenceKind)continue;if(!visited.has(edge.id)){visited.add(edge.id);towardTarget.set(edge.id,{id:node,label:edge.label,referenceKind:edge.referenceKind});queue.push(edge.id);}}
+      const refs=graph.edges.get(node)||[];for(let i=0;i<refs.length;i+=3){const id=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;if(!visited.has(id)){visited.add(id);towardTarget.set(id,{id:node,label:edgeLabel(refs[i+1],flags),referenceKind});queue.push(id);}}
     }
     const path=[];
     if(root){let node=root;while(node){const item=index.get(node);const next=towardTarget.get(node);path.push({id:node,className:item?.kind==='class'?(strings.get(classNames.get(node))||names.get(node)||node).replaceAll('/','.'):(names.get(item?.cls)||item?.cls||'未知类'),via:next?.label||null,referenceKind:next?.referenceKind||null});node=next?.id;}}
@@ -316,10 +320,10 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(!targets.length)return {items:[],reachable:0,indexed:index.size,edgeCount:0,excludeNonStrong,incomplete:false,missingTargets:0,skipped:0,edgeLimitReached:false,searchLimitReached:false};
     for(const target of targets)objectDetail(target);
     const graph=buildReverseGraph(),outgoing=new Map();
-    for(const [target,refs] of graph.edges)for(const edge of refs){if(excludeNonStrong&&edge.referenceKind)continue;let list=outgoing.get(edge.id);if(!list){list=[];outgoing.set(edge.id,list);}list.push({id:target,label:edge.label,referenceKind:edge.referenceKind});}
+    for(const [target,refs] of graph.edges)for(let i=0;i<refs.length;i+=3){const source=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;let list=outgoing.get(source);if(!list){list=[];outgoing.set(source,list);}list.push(target,refs[i+1],flags);}
     const parents=new Map(),queue=[];for(const id of rootIds.keys())if(index.has(id)&&!parents.has(id)){parents.set(id,null);queue.push(id);}
     for(let cursor=0;cursor<queue.length&&cursor<50000;cursor++){
-      const parent=queue[cursor];for(const edge of outgoing.get(parent)||[]){if(parents.has(edge.id))continue;parents.set(edge.id,{id:parent,label:edge.label,referenceKind:edge.referenceKind});queue.push(edge.id);}
+      const parent=queue[cursor],edges=outgoing.get(parent)||[];for(let i=0;i<edges.length;i+=3){const id=edges[i],flags=edges[i+2];if(parents.has(id))continue;parents.set(id,{id:parent,label:edgeLabel(edges[i+1],flags),referenceKind:edgeReferenceKind(flags)});queue.push(id);}
     }
     const className=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):names.get(item.cls)||item.cls||'未知类';
     const results=targets.map(target=>{
@@ -355,25 +359,26 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
     if(!dominatorCache||dominatorCache.excludeNonStrong!==excludeNonStrong){
       dominatorCache=null;
-      const graph=buildReverseGraph(),items=[null,...index.values()],ids=new Map(items.slice(1).map((item,i)=>[item.id,i+1]));
+      const graph=buildReverseGraph(),items=[null,...index.values()];
+      for(let i=1;i<items.length;i++)items[i].dominatorIndex=i;
       const degree=new Int32Array(items.length),weights=new Float64Array(items.length),unknownBytes=new Uint8Array(items.length);
       let missingRoots=0;
-      for(const rootId of rootIds.keys()){const root=ids.get(rootId);if(root)degree[0]++;else missingRoots++;}
+      for(const rootId of rootIds.keys()){const root=index.get(rootId)?.dominatorIndex;if(root)degree[0]++;else missingRoots++;}
       if(!degree[0])throw new Error('快照没有可索引的 GC 根，无法计算支配关系');
       let excludedEdges=0,edgeCount=degree[0];
-      for(const [target,refs] of graph.edges){const to=ids.get(target);if(!to)continue;for(const ref of refs){if(excludeNonStrong&&ref.referenceKind){excludedEdges++;continue;}const from=ids.get(ref.id);if(from){degree[from]++;edgeCount++;}}}
+      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&edgeReferenceKind(refs[j+2])){excludedEdges++;continue;}const from=index.get(refs[j])?.dominatorIndex;if(from){degree[from]++;edgeCount++;}}}
       if(edgeCount>0x7fffffff)throw new Error('支配图边数超过计算上限');
       const offsets=new Int32Array(items.length+1);for(let i=0;i<degree.length;i++)offsets[i+1]=offsets[i]+degree[i];
       const edges=new Int32Array(edgeCount),cursor=offsets.slice(0,degree.length);
-      for(const rootId of rootIds.keys()){const root=ids.get(rootId);if(root)edges[cursor[0]++]=root;}
-      for(const [target,refs] of graph.edges){const to=ids.get(target);if(!to)continue;for(const ref of refs){if(excludeNonStrong&&ref.referenceKind)continue;const from=ids.get(ref.id);if(from)edges[cursor[from]++]=to;}}
+      for(const rootId of rootIds.keys()){const root=index.get(rootId)?.dominatorIndex;if(root)edges[cursor[0]++]=root;}
+      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&edgeReferenceKind(refs[j+2]))continue;const from=index.get(refs[j])?.dominatorIndex;if(from)edges[cursor[from]++]=to;}}
       for(let i=1;i<items.length;i++){const item=items[i];if(item.kind==='instance')weights[i]=item.length;else if(item.kind==='objectArray')weights[i]=item.length*idSize;else if(item.kind==='primitiveArray')weights[i]=item.length*typeSize(item.type);else unknownBytes[i]=1;}
       const result=dominatorsCsr(offsets,edges,weights,unknownBytes),firstChild=new Int32Array(result.count+1),nextSibling=new Int32Array(result.count+1),childCount=new Int32Array(result.count+1);
       for(let i=2;i<=result.count;i++){const p=result.idom[i];nextSibling[i]=firstChild[p];firstChild[p]=i;childCount[p]++;}
-      dominatorCache={graph,items,ids,result,firstChild,nextSibling,childCount,sortedChildren:new Map(),missingRoots,excludeNonStrong,excludedEdges};
+      dominatorCache={graph,items,result,firstChild,nextSibling,childCount,sortedChildren:new Map(),missingRoots,excludeNonStrong,excludedEdges};
     }
-    const {graph,items,ids,result,firstChild,nextSibling,childCount,sortedChildren,missingRoots,excludedEdges}=dominatorCache;
-    let parent=1;if(parentId!==null){const indexId=ids.get(parentId);if(!indexId)throw new Error('对象不在索引中');parent=result.order[indexId];if(!parent)throw new Error('对象不在已记录根的可达图中');}
+    const {graph,items,result,firstChild,nextSibling,childCount,sortedChildren,missingRoots,excludedEdges}=dominatorCache;
+    let parent=1;if(parentId!==null){const indexId=index.get(parentId)?.dominatorIndex;if(!indexId)throw new Error('对象不在索引中');parent=result.order[indexId];if(!parent)throw new Error('对象不在已记录根的可达图中');}
     let list=sortedChildren.get(parent);if(!list){list=[];for(let child=firstChild[parent];child;child=nextSibling[child])list.push(child);list.sort((a,b)=>result.payload[b]-result.payload[a]||result.dominated[b]-result.dominated[a]);sortedChildren.set(parent,list);}
     const name=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类');
     return {parentId,offset,total:childCount[parent],reachable:result.count-1,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,excludedEdges,incomplete:graph.incomplete||missingRoots>0,missingTargets:graph.missingTargets,missingRoots,skipped:graph.skipped,edgeLimitReached:graph.limited,

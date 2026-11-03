@@ -121,12 +121,12 @@ async function smokeSourceWorkspaceInRenderer() {
     if(!opened)return fail('source search result did not open the matching file');
     const nativeQuery=document.querySelector('#source-query');if(!nativeQuery)return fail('source search controls disappeared after opening the first match');
     nativeQuery.value='apw::SmokeWorker::run';document.querySelector('[data-action="source-resolve"]')?.click();
-    const nativeMatch=await waitFor(()=>Array.from(document.querySelectorAll('[data-source-match]')).find(node=>node.textContent.includes('native.cpp')),15000);
+    const nativeMatch=await waitFor(()=>Array.from(document.querySelectorAll('[data-source-match]')).find(node=>node.textContent.includes('native.cxx')),15000);
     if(!nativeMatch)return fail('C++ symbol did not resolve to the native fixture declaration: '+(document.querySelector('#main')?.innerText||'').slice(-800));
     const nativeReason=Array.from(document.querySelectorAll('#main .hint')).some(node=>node.textContent.includes('Native function name match'));
     if(!nativeReason)return fail('C++ candidate evidence was not localized in the packaged English renderer');
     nativeMatch.click();
-    const nativeOpened=await waitFor(()=>Array.from(document.querySelectorAll('#main pre')).some(pre=>pre.textContent.includes('SmokeWorker::run')),10000);
+    const nativeOpened=await waitFor(()=>Array.from(document.querySelectorAll('#main pre')).some(pre=>pre.textContent.includes('SmokeWorker::')&&pre.textContent.includes('run()')),10000);
     if(!nativeOpened)return fail('C++ source candidate did not open the matching file');
     location.hash='#overview';await settle();
     return {ok:true,nativePickerBridge:true,pathSelected:true,snapshotFiles,searchMatch:true,matchedPath,fileOpened:true,nativeSymbolResolve:true,nativeCandidateLocalized:nativeReason,nativeFileOpened:true};

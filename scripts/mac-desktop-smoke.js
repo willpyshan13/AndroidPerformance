@@ -52,7 +52,7 @@ try {
   await mkdir(profileDir, { recursive: true });
   await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
   await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');
-  await writeFile(join(sourceFixtureDir, 'src', 'native.cpp'), 'namespace apw { class SmokeWorker { public: void run(); }; }\nvoid apw::SmokeWorker::run() {}\n', 'utf8');
+  await writeFile(join(sourceFixtureDir, 'src', 'native.cxx'), 'namespace apw {\nclass SmokeWorker {\n public:\n  void run();\n};\n}\nvoid apw::SmokeWorker::\nrun() {}\n', 'utf8');
   await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
     env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile, APW_SMOKE_SOURCE_DIR: sourceFixtureDir },

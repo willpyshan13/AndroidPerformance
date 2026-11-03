@@ -42,6 +42,12 @@ void demo::NativeWorker::run(int value) { const char* text = "void run("; }
  assert.throws(()=>parseSourceSymbol('native::operator<<'),/原生符号格式/);
 });
 
+test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{
+ const text=`void demo::NativeWorker::\n  refresh(\n    int value\n  ) {}\nvoid caller() {\n  refresh(\n    1\n  );\n}`;
+ const matches=findNativeSourceDeclarations(text,'native.cxx',parseSourceSymbol('demo::NativeWorker::refresh(int)'));
+ assert.deepEqual(matches.map(match=>match.line),[1]);
+});
+
 test('R8 and ProGuard mappings resolve obfuscated Java frames and filter by obfuscated line range',()=>{
  const mapping=`com.example.Screen -> a.b:
     1:1:void render():42:42 -> a

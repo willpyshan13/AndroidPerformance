@@ -596,6 +596,6 @@ npm run test:device -- \
 
 ## C/C++ 源码候选定位（2026-11-03）
 
-- 源码工作区现在能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选；候选过程会忽略注释、字符串和普通调用点。无法识别的 `operator` 等复杂格式仍回退为原始文本搜索。它不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
-- API 25 真机不参与此离线功能。源码解析、快照 HTTP API、英文证据翻译与打包配置定向测试均通过；完整测试 334 项，318 通过、0 失败、16 项可选官方样本跳过。
-- 当前 macOS arm64 打包 app 的 `node scripts/mac-desktop-smoke.js` 通过：创建包含 Java 和 C++ fixture 的只读快照，文本搜索并打开 Java 文件，再解析 `apw::SmokeWorker::run`、显示英文匹配证据并打开 C++ 文件；同时既有 renderer、HPROF CSV、布局线索、Network Agent ZIP、50,000 样本 CPU Canvas 和 16 页英文扫描通过。CPU 栅格本轮约 49.7 ms，仅是当前主机观测。
+- 源码工作区现在能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选，支持跨多行签名；候选过程会忽略注释、字符串和普通调用点。无法识别的 `operator` 等复杂格式仍回退为原始文本搜索。它不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
+- API 25 真机不参与此离线功能。解析、跨行签名、快照 HTTP API、英文证据翻译与打包配置定向测试均通过；最新完整测试 335 项，319 通过、0 失败、16 项可选官方样本跳过。
+- 最新 macOS arm64 打包 app smoke 使用 `.cxx` 跨行 C++ fixture：创建只读快照、文本搜索并打开 Java 文件，再解析 `apw::SmokeWorker::run`、显示英文匹配证据并打开 C++ 文件；同时既有 renderer、HPROF CSV、布局线索、Network Agent ZIP、50,000 样本 CPU Canvas 和 16 页英文扫描通过。CPU 栅格约 52.5 ms，是当前主机观测。

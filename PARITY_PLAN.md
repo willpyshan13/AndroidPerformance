@@ -8,7 +8,7 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 界面语言：已加入简体中文 / English 切换并持久化到桌面设置；Electron 原生菜单会读取保存语言并在设置切换时同步重建；静态键与 16 个路由的打包页面回归已覆盖；macOS arm64 打包 smoke 对演示状态可见 UI 文本扫描为 0 条残留中文；设备原始字段、工具输出及布局树等用户数据按来源保留，尚未对所有真实设备变体逐一核对。AI 分析按用户决定不实现。
 
-当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。完整自动回归最新为 333 项：317 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
+当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。完整自动回归最新为 335 项：319 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
 
 真机 smoke（2026-11-03）：设备 `X3315A41621110053` / rk3399-all（Android 7.1.2、API 25、arm64-v8a）。对 system launcher `com.xmotion` 的无应用控制检查为 15 项通过、2 项设备不支持、1 项跳过、0 项失败；报告 `/tmp/apw-device-smoke-20261103/report.json`。随后对已安装 debug 包 `com.xmotion.sui.debug` 启用脚本授权的应用控制检查，最新结果 22 项通过、2 项设备不支持、0 项失败；报告 `/tmp/apw-device-smoke-perfparse-final-20261103/report.json`。目标 Activity 先启动后，3 秒 simpleperf 生成有效 `PERFILE2` 文件；新增真实 perf.data 导入与分析 smoke，上传本机解析接口后发现目标应用短采样窗口内无可解析调用栈，按无样本标记 unsupported（不代表解析成功）。实时监控、112 节点布局树、截图、约 62.6 MB HPROF 导入分析和 Shark 2.14 分析均通过（解析 186,928 个对象、3,544 个类分组；Shark 成功用时约 0.76 秒）。帧统计仅 2 帧，样本不足以代表应用稳定帧表现。冷/温/热启动各 2 次均返回 TotalTime，但设备未提供 LaunchState，故不确认实际启动类别。Perfetto 二进制不存在；Vulkan 未报告；system launcher 的电池 UID 1000 由 21 个包共享，41.6 mAh 系统估计不能归属单个应用。受控检查重置了目标 gfxinfo 计数并启动/停止目标应用，没有清除数据或卸载应用。
 

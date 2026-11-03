@@ -56,7 +56,7 @@ export function findNativeSourceDeclarations(text,path,symbol){
  const qualifiers=symbol.qualifiers||[],scopeMatches=qualifiers.filter(scope=>classes.has(scope)||namespaces.has(scope));
  const results=[];
  for(let i=0;i<lines.length;i++){
-  const line=lines[i],trim=line.trim();if(!trim||/^(return|throw|new)\b/.test(trim)||!declaration.test(line))continue;
+  const line=lines[i],trim=line.trim(),signature=lines.slice(i,i+12).join('\n');if(!trim||/^(?:return|throw|new)\b|^(?:public|private|protected)\s*:/.test(trim)||!declaration.test(signature))continue;
   const reasons=['原生函数名匹配'];if(scopeMatches.length)reasons.push(`作用域名匹配：${scopeMatches.join('::')}`);
   results.push({path,line:i+1,preview:original[i].slice(0,300),kind:'native-function',packageName:null,score:20+scopeMatches.length*30,reasons});
  }

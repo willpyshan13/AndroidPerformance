@@ -202,7 +202,7 @@ try {
   const sourceFixtureDir = join(tempRoot, 'source-fixture');
   await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
   await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');
-  await writeFile(join(sourceFixtureDir, 'src', 'native.cpp'), 'namespace apw { class SmokeWorker { public: void run(); }; }\nvoid apw::SmokeWorker::run() {}\n', 'utf8');
+  await writeFile(join(sourceFixtureDir, 'src', 'native.cxx'), 'namespace apw {\nclass SmokeWorker {\n public:\n  void run();\n};\n}\nvoid apw::SmokeWorker::\nrun() {}\n', 'utf8');
   await smokeMsi(tempRoot);
   await smokeNsis(tempRoot);
 } catch (error) { failure = error; }

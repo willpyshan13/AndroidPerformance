@@ -654,3 +654,8 @@ npm run test:device -- \
 - 用 API 35 arm64 模拟器构建并安装临时 Compose 1.7.6 debug fixture，通过产品 `captureComposeInspector` 实际调用 AOSP CLI，读到 1 个窗口、23 个 ComposeNode、71 个参数、35 条 merged/unmerged Semantics、29 个 bounds 节点及 31,433 字节截图；包含 `InspectorFixture`、`Text`、`Button` 节点及 23 个源码位置。随后改用 `.app/Contents/Resources` 下真实打包的 JRE/JAR 路径复测，结果仍成功：23 ComposeNode、71 参数、35 条 Semantics、31,493 字节截图。临时 fixture 已从模拟器卸载，模拟器已关闭。模拟器验证不等于 API 29+ 实体设备厂商覆盖。
 - 完整自动测试 340 项：324 通过、0 失败、16 项可选样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `.app` 重建，`scripts/mac-desktop-smoke.js` 通过，确认随包 Java 25 版本及 renderer、16 页面和其他打包功能 smoke。
 - 提交 `1c1db1f` 已推送；GitHub Actions run `41604882683` 的 macOS ARM64 clean runner 全部通过，包括全量测试、`npm run check`、Java 25 runtime 准备、APK AAPT2 smoke、DMG 构建及打包桌面启动 smoke。该项使用模拟器和构建 fixture，不包含真实设备检查。
+
+## macOS ARM64 文档提交触发优化（2026-11-03）
+
+- `.github/workflows/desktop-packages.yml` 现在对 push 与 pull request 中仅修改 Markdown 的变更跳过完整 DMG 打包；代码、测试、资源和 workflow 变更仍进入原有 macOS ARM64 单 job。
+- 配置回归断言两种事件均有 Markdown 忽略规则。规则随提交 `ef722b2` 的 macOS ARM64 Actions run `41605693946` 通过；该 run 的测试、工具准备、DMG 构建及桌面启动 smoke 全部成功。Markdown-only 的实际跳过行为待下一次纯文档提交后检查 GitHub 是否创建 workflow run。

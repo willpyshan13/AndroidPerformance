@@ -8,7 +8,7 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 界面语言：已加入简体中文 / English 切换并持久化到桌面设置；Electron 原生菜单会读取保存语言并在设置切换时同步重建；静态键与 16 个路由的打包页面回归已覆盖；macOS arm64 打包 smoke 对演示状态可见 UI 文本扫描为 0 条残留中文；设备原始字段、工具输出及布局树等用户数据按来源保留，尚未对所有真实设备变体逐一核对。AI 分析按用户决定不实现。
 
-当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。Compose Inspector Java 25 修复后的本机完整自动回归为 340 项：324 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。clean runner 上的 Android 7 simpleperf 资源回退、DMG 构建与桌面 smoke 已由 Actions run `41600895526` 全部验证通过；Java 25 runtime 的下载、macOS ARM64 DMG 构建与打包启动 smoke 由 Actions run `41604882683` 全部验证通过。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
+当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。Compose Inspector Java 25 修复后的本机完整自动回归为 340 项：324 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。clean runner 上的 Android 7 simpleperf 资源回退、DMG 构建与桌面 smoke 已由 Actions run `41600895526` 全部验证通过；Java 25 runtime 的下载、macOS ARM64 DMG 构建与打包启动 smoke 由 Actions run `41604882683` 全部验证通过。提交 `ef722b2` 加入 Markdown-only push / pull request 跳过规则，并通过 Actions run `41605693946` 的单一 macOS ARM64 全流程；纯文档变更实际跳过 workflow 尚待下次纯文档提交确认。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
 
 Compose Inspector 运行时修复（2026-11-03）：AOSP CLI 含 Java 25 字节码，之前桌面传入的 Java 17 会导致 `UnsupportedClassVersionError`。现在 macOS ARM64 包内单独携带 SHA-256 固定的 Temurin JRE 25，并通过打包资源路径在 API 35 模拟器 Compose fixture 上完整采集树、参数、语义、边界和截图；run `41604882683` 又验证了 clean runner 下载、DMG 构建与打包启动 smoke。本轮验证使用模拟器及本地打包资源；不要求连接真实设备，也没有覆盖各厂商实体设备行为。
 

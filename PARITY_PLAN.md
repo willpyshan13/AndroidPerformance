@@ -8,9 +8,9 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 界面语言：已加入简体中文 / English 切换并持久化到桌面设置；Electron 原生菜单会读取保存语言并在设置切换时同步重建；静态键与 16 个路由的打包页面回归已覆盖；macOS arm64 打包 smoke 对演示状态可见 UI 文本扫描为 0 条残留中文；设备原始字段、工具输出及布局树等用户数据按来源保留，尚未对所有真实设备变体逐一核对。AI 分析按用户决定不实现。
 
-当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。Compose Inspector Java 25 修复后的本机完整自动回归为 340 项：324 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。clean runner 上的 Android 7 simpleperf 资源回退、DMG 构建与桌面 smoke 已由 Actions run `41600895526` 全部验证通过；Java 25 runtime 的 clean-runner 下载、打包和 smoke 等下一次 macOS ARM64 CI 验证。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
+当前桌面 CI 按用户要求只构建 macOS ARM64，测试与打包复用一个 runner。Compose Inspector Java 25 修复后的本机完整自动回归为 340 项：324 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。clean runner 上的 Android 7 simpleperf 资源回退、DMG 构建与桌面 smoke 已由 Actions run `41600895526` 全部验证通过；Java 25 runtime 的下载、macOS ARM64 DMG 构建与打包启动 smoke 由 Actions run `41604882683` 全部验证通过。历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
 
-Compose Inspector 运行时修复（2026-11-03）：AOSP CLI 含 Java 25 字节码，之前桌面传入的 Java 17 会导致 `UnsupportedClassVersionError`。现在 macOS ARM64 包内单独携带 SHA-256 固定的 Temurin JRE 25，并通过打包资源路径在 API 35 模拟器 Compose fixture 上完整采集树、参数、语义、边界和截图。本轮验证使用模拟器及本地打包资源；不要求连接真实设备，也没有覆盖各厂商实体设备行为。
+Compose Inspector 运行时修复（2026-11-03）：AOSP CLI 含 Java 25 字节码，之前桌面传入的 Java 17 会导致 `UnsupportedClassVersionError`。现在 macOS ARM64 包内单独携带 SHA-256 固定的 Temurin JRE 25，并通过打包资源路径在 API 35 模拟器 Compose fixture 上完整采集树、参数、语义、边界和截图；run `41604882683` 又验证了 clean runner 下载、DMG 构建与打包启动 smoke。本轮验证使用模拟器及本地打包资源；不要求连接真实设备，也没有覆盖各厂商实体设备行为。
 
 真机 smoke（2026-11-03）：设备 `X3315A41621110053` / rk3399-all（Android 7.1.2、API 25、arm64-v8a）。对 system launcher `com.xmotion` 的无应用控制检查为 15 项通过、2 项设备不支持、1 项跳过、0 项失败；报告 `/tmp/apw-device-smoke-20261103/report.json`。随后对已安装 debug 包 `com.xmotion.sui.debug` 启用脚本授权的应用控制检查，最新结果 22 项通过、2 项设备不支持、0 项失败；报告 `/tmp/apw-device-smoke-perfparse-final-20261103/report.json`。目标 Activity 先启动后，3 秒 simpleperf 生成有效 `PERFILE2` 文件；新增真实 perf.data 导入与分析 smoke，上传本机解析接口后发现目标应用短采样窗口内无可解析调用栈，按无样本标记 unsupported（不代表解析成功）。实时监控、112 节点布局树、截图、约 62.6 MB HPROF 导入分析和 Shark 2.14 分析均通过（解析 186,928 个对象、3,544 个类分组；Shark 成功用时约 0.76 秒）。帧统计仅 2 帧，样本不足以代表应用稳定帧表现。冷/温/热启动各 2 次均返回 TotalTime，但设备未提供 LaunchState，故不确认实际启动类别。Perfetto 二进制不存在；Vulkan 未报告；system launcher 的电池 UID 1000 由 21 个包共享，41.6 mAh 系统估计不能归属单个应用。受控检查重置了目标 gfxinfo 计数并启动/停止目标应用，没有清除数据或卸载应用。
 

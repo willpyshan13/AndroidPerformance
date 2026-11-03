@@ -19,7 +19,7 @@ async function publishFailureCode(error) {
     : /NSIS installation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-install-${message.match(/NSIS installation failed with exit code (\d+|unknown)/i)[1]}`
     : /NSIS uninstallation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+|unknown)/i)[1]}`
     : /NSIS uninstaller was not found/i.test(message) ? 'windows-nsis-uninstaller-missing'
-    : /temporary files could not be removed/i.test(message) ? 'windows-temp-cleanup'
+    : /temporary files could not be removed|EBUSY|EPERM|ENOTEMPTY.*nsis-installed-app/i.test(message) ? 'windows-temp-cleanup'
     : /desktop route\/CPU stack chart|home is missing quick actions|home artifact section|APK analysis UI/i.test(message) ? 'windows-installed-app-ui'
     : /did not start|startup failed|renderer|Unable to start installed desktop app/i.test(message) ? 'windows-installed-app-startup'
     : 'windows-desktop-smoke-unknown';
@@ -77,9 +77,14 @@ async function waitForReady(child, readyFile, getOutput, getError) {
 }
 
 async function stopChild(processHandle) {
-  if (!processHandle || processHandle.exitCode !== null || processHandle.signalCode !== null) return;
-  processHandle.kill('SIGTERM');
-  await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  if (!processHandle) return;
+  if (process.platform === 'win32' && processHandle.pid) {
+    spawnSync('taskkill.exe', ['/PID', String(processHandle.pid), '/T', '/F'], { encoding: 'utf8', timeout: 10_000, windowsHide: true });
+  } else if (processHandle.exitCode !== null || processHandle.signalCode !== null) return;
+  else processHandle.kill('SIGTERM');
+  if (processHandle.exitCode === null && processHandle.signalCode === null) {
+    await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
+  }
   if (processHandle.exitCode === null && processHandle.signalCode === null) {
     processHandle.kill('SIGKILL');
     await Promise.race([new Promise(resolveExit => processHandle.once('exit', resolveExit)), delay(5_000)]);
@@ -188,7 +193,7 @@ try {
   await smokeNsis(tempRoot);
 } catch (error) { failure = error; }
 finally {
-  if (tempRoot) try { await rm(tempRoot, { recursive: true, force: true }); }
+  if (tempRoot) try { await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); }
   catch (error) { failure = failure ? new AggregateError([failure, error], 'Windows smoke failed and its temporary files could not be removed') : error; }
 }
 

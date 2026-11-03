@@ -20,6 +20,7 @@ GitHub Actions 原生 runner 已构建并上传以下安装包（artifact 保留
 | macOS Intel | DMG、PKG | `android-performance-macos-x64` |
 | Windows x64 | NSIS EXE、MSI | `android-performance-windows-x64` |
 | Linux x64 | AppImage、DEB、RPM | `android-performance-linux-x64` |
+| Linux arm64 | DEB、RPM（验证中，尚未发布） | — |
 
 [查看本轮跨平台构建结果](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS PKG 目前未签名；应用使用 ad-hoc 签名，未使用 Apple Developer 证书或公证。
 安装包包含 Electron、平台原生 ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。Windows 首次启动会把 Java runtime 解压到应用数据目录，以供 Shark 和 Compose Inspector 使用。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
@@ -93,9 +94,10 @@ npm run package:mac:installers      # macOS arm64 DMG + PKG
 npm run package:mac:installers:x64  # macOS x64 DMG + PKG
 npm run package:win:installers      # Windows x64 NSIS + MSI
 npm run package:linux:installers   # Linux x64 AppImage + DEB + RPM
+npm run package:linux:arm64:installers # Linux arm64 DEB + RPM
 ```
 
-GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 原生 runner 打包 job 已加入，但最新运行在 staged AAPT2 APK 分析 smoke 失败，因此尚未验证或发布该架构。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)。Windows runtime 曾通过 MSI 安装 smoke；最新交叉平台运行的 Windows 安装器 smoke 失败，原因待查。macOS / Windows 安装包尚未使用开发者签名证书。
+GitHub Actions 于 2026-11-03 成功构建并上传 macOS arm64/x64 DMG、PKG，Windows x64 NSIS EXE、MSI，以及 Linux x64 AppImage、DEB、RPM；详见[构建记录](https://github.com/willpyshan13/AndroidPerformance/actions/runs/41503926815)。macOS arm64 DMG 本机校验和有效；PKG 未签名。Linux arm64 原生 job 正在验证 DEB 与 RPM，并检查包内 ADB/AAPT2；最近一次运行在 staged AAPT2 APK 分析 smoke 失败，因此尚未验证或发布该架构。参见 [Android AAPT2 文档](https://developer.android.com/tools/aapt2)。Windows runtime 曾通过 MSI 安装 smoke；最新交叉平台运行的 Windows 安装器 smoke 失败，原因待查。macOS / Windows 安装包尚未使用开发者签名证书。
 
 ## 数据与隐私
 

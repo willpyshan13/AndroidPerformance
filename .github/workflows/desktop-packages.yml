@@ -62,8 +62,10 @@ jobs:
             mac: false
           - runner: ubuntu-24.04-arm
             label: linux-arm64
-            artifactPath: dist/v*/*.deb
-            command: package:linux:arm64:deb
+            artifactPath: |
+              dist/v*/*.deb
+              dist/v*/*.rpm
+            command: package:linux:arm64:installers
             linuxArm64: true
             mac: false
     runs-on: ${{ matrix.runner }}
@@ -91,7 +93,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64
       - name: Install Ubuntu arm64 Android command-line tools
         if: matrix.label == 'linux-arm64'
-        run: sudo apt-get update && sudo apt-get install -y adb aapt
+        run: sudo apt-get update && sudo apt-get install -y adb aapt rpm
       - name: Exclude native staging from Windows Defender during packaging
         if: runner.os == 'Windows'
         shell: pwsh
@@ -129,7 +131,7 @@ jobs:
         run: npm run prepare:linux:arm64:deb-metadata
       - name: Inspect extracted Linux arm64 DEB tools and analyze a generated APK
         if: matrix.linuxArm64
-        run: npm run smoke:linux:arm64:deb
+        run: npm run smoke:linux:arm64:packages
       - name: Install Windows MSI and NSIS packages and verify desktop startup
         if: runner.os == 'Windows'
         run: node scripts/desktop-smoke.js

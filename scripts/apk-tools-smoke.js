@@ -19,6 +19,7 @@ for (const root of sdkRoots) {
 if (!androidJar) throw new Error('Android SDK platform android.jar is required for the packaged AAPT2 smoke');
 const aapt2Path = process.env.AAPT2_PATH || await locateAapt2();
 if (!aapt2Path) throw new Error('AAPT2 is not available');
+console.log(`Using AAPT2: ${aapt2Path}`);
 const temp = await mkdtemp(join(tmpdir(), 'apw-aapt2-smoke-'));
 const manifestPath = join(temp, 'AndroidManifest.xml');
 const apkPath = join(temp, 'sample.apk');

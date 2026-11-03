@@ -664,3 +664,4 @@ npm run test:device -- \
 
 - 源码符号解析新增 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明 / 定义候选；本地快照集成回归验证符号解析能返回头文件式声明与实现候选。候选仍是文本启发式，不解析 ELF、DWARF 或 mangled symbols。
 - 源码符号及快照集成测试 10 项通过；完整回归 342 项，326 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。没有连接或操作设备。
+- 提交 `cf60ac1` 的 macOS ARM64 Actions run `41607030022` 全部通过，包含 CI 全量测试、资源准备、DMG 构建和打包桌面启动 smoke；未运行模拟器或真实设备检查。

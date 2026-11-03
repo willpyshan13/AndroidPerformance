@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   tests:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -27,48 +27,7 @@ jobs:
 
   package:
     needs: tests
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            label: macos-arm64
-            artifactPath: |
-              dist/v*/*.dmg
-              dist/v*/*.pkg
-            command: package:mac:installers
-            mac: true
-          - runner: macos-15-intel
-            label: macos-x64
-            artifactPath: |
-              dist/v*/*.dmg
-              dist/v*/*.pkg
-            command: package:mac:installers:x64
-            mac: true
-          - runner: windows-latest
-            label: windows-x64
-            artifactPath: |
-              dist/v*/*.exe
-              dist/v*/*.msi
-            command: package:win:installers
-            mac: false
-          - runner: ubuntu-24.04
-            label: linux-x64
-            artifactPath: |
-              dist/v*/*.AppImage
-              dist/v*/*.deb
-              dist/v*/*.rpm
-            command: package:linux:installers
-            mac: false
-          - runner: ubuntu-24.04-arm
-            label: linux-arm64
-            artifactPath: |
-              dist/v*/*.deb
-              dist/v*/*.rpm
-            command: package:linux:arm64:installers
-            linuxArm64: true
-            mac: false
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     env:
       APK_SMOKE_OUTPUT_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
       APW_SMOKE_APK_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
@@ -86,29 +45,10 @@ jobs:
         with:
           packages: 'build-tools;35.0.0 platforms;android-35'
       - name: Install NDK for macOS simpleperf
-        if: matrix.mac
         shell: bash
         run: sdkmanager 'ndk;26.1.10909125' 'ndk;27.2.12479018'
-      - name: Install NDK versions for Windows and Linux x64 simpleperf
-        if: ${{ !matrix.mac && !matrix.linuxArm64 }}
-        shell: pwsh
-        run: sdkmanager 'ndk;26.1.10909125' 'ndk;27.2.12479018'
-      - name: Install AppImage runtime dependency
-        if: matrix.label == 'linux-x64'
-        run: sudo apt-get update && sudo apt-get install -y libfuse2t64
-      - name: Install Ubuntu arm64 Android command-line tools
-        if: matrix.label == 'linux-arm64'
-        run: sudo apt-get update && sudo apt-get install -y adb aapt rpm
-      - name: Exclude native staging from Windows Defender during packaging
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $paths = @((Join-Path $env:GITHUB_WORKSPACE 'tools'), (Join-Path $env:GITHUB_WORKSPACE 'dist'))
-          New-Item -ItemType Directory -Force -Path $paths | Out-Null
-          Add-MpPreference -ExclusionPath $paths
       - run: npm ci
       - name: Prepare macOS tools
-        if: matrix.mac
         shell: bash
         env:
           APW_ADHOC_ADB: '1'
@@ -116,26 +56,7 @@ jobs:
           node scripts/run-npm-task.js prepare:adb
           node scripts/run-npm-task.js prepare:apk-tools
           node scripts/run-npm-task.js prepare:simpleperf
-      - name: Prepare Windows or Linux SDK tools
-        if: ${{ !matrix.mac && !matrix.linuxArm64 }}
-        run: |
-          node scripts/run-npm-task.js prepare:desktop-tools
-          node scripts/run-npm-task.js prepare:simpleperf
-      - name: Prepare Linux arm64 tools with Ubuntu runtime libraries
-        if: matrix.linuxArm64
-        env:
-          ADB_PATH: /usr/bin/adb
-          AAPT2_PATH: /usr/bin/aapt2
-        run: node scripts/run-npm-task.js prepare:linux:arm64-tools && node scripts/prepare-python-runtime.js
-      - name: Analyze a generated APK with staged ARM64 AAPT2
-        if: matrix.linuxArm64
-        env:
-          AAPT2_PATH: ${{ github.workspace }}/tools/apk-tools/aapt2
-          APK_SMOKE_LOG_PATH: ${{ github.workspace }}/dist/apw-apk-smoke.log
-        run: npm run smoke:apk-tools
-        id: apk-smoke-arm64
       - name: Analyze a generated APK with the SDK AAPT2
-        if: ${{ !matrix.linuxArm64 }}
         env:
           APK_SMOKE_LOG_PATH: ${{ github.workspace }}/dist/apw-apk-smoke.log
         run: npm run smoke:apk-tools
@@ -143,39 +64,24 @@ jobs:
       - run: node scripts/run-npm-task.js prepare:trace-processor
       - run: node scripts/run-npm-task.js prepare:shark
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
-      - run: node scripts/run-npm-task.js ${{ matrix.command }}
-      - name: Set Linux arm64 package runtime floor to Ubuntu 24.04 glibc
-        if: matrix.linuxArm64
-        run: npm run prepare:linux:arm64:deb-metadata
-      - name: Inspect extracted Linux arm64 DEB tools and analyze a generated APK
-        if: matrix.linuxArm64
-        run: npm run smoke:linux:arm64:packages
-      - name: Install Windows MSI and NSIS packages and verify desktop startup
-        id: desktop-installer-smoke
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          node scripts/desktop-smoke.js 2>&1 | Tee-Object -FilePath dist/windows-desktop-smoke-console.log
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: node scripts/run-npm-task.js package:mac:installers
       - name: Launch packaged macOS app and verify desktop startup
-        if: runner.os == 'macOS'
         run: node scripts/mac-desktop-smoke.js
       - name: Upload failed smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: android-performance-smoke-diagnostics-${{ matrix.label }}-${{ steps.apk-smoke-arm64.outputs.failure_code || steps.apk-smoke-sdk.outputs.failure_code || steps.desktop-installer-smoke.outputs.failure_code || 'unknown' }}
+          name: android-performance-smoke-diagnostics-macos-arm64-${{ steps.apk-smoke-sdk.outputs.failure_code || 'unknown' }}
           path: |
             dist/apw-apk-smoke.log
             dist/resource-preparation.log
-            dist/windows-desktop-smoke.log
-            dist/windows-desktop-smoke-console.log
           if-no-files-found: ignore
           retention-days: 14
       - uses: actions/upload-artifact@v7
         with:
-          name: android-performance-${{ matrix.label }}
-          path: ${{ matrix.artifactPath }}
+          name: android-performance-macos-arm64
+          path: |
+            dist/v*/*.dmg
+            dist/v*/*.pkg
           if-no-files-found: error
           retention-days: 14

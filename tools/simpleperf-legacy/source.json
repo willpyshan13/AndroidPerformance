@@ -1,0 +1,6 @@
+{
+  "component": "Android NDK simpleperf",
+  "sdkPackage": "ndk;26.1.10909125",
+  "license": "Apache-2.0",
+  "purpose": "Fallback Android binaries for older devices when the build runner installs only a modern NDK"
+}

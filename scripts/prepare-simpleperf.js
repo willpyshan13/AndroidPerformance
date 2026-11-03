@@ -8,14 +8,15 @@ const roots=[process.env.ANDROID_HOME,process.env.ANDROID_SDK_ROOT,process.env.L
 const ndks=[];
 for(const root of roots){const dir=join(root,'ndk');let names=[];try{names=await readdir(dir);}catch{}for(const name of names){const path=join(dir,name);try{const props=await readFile(join(path,'source.properties'),'utf8');const revision=props.match(/^Pkg\.Revision\s*=\s*(.+)$/m)?.[1];if(revision&&!/alpha|beta|rc/i.test(revision))ndks.push({name,path,revision});}catch{}}}
 ndks.sort((a,b)=>b.name.localeCompare(a.name,undefined,{numeric:true}));
-const target=join(dirname(dirname(fileURLToPath(import.meta.url))),'tools/simpleperf');
+const root=dirname(dirname(fileURLToPath(import.meta.url))),target=join(root,'tools/simpleperf'),legacyBundle=join(root,'tools/simpleperf-legacy');
 const modern=process.env.SIMPLEPERF_NDK?{path:process.env.SIMPLEPERF_NDK,revision:'由 SIMPLEPERF_NDK 指定'}:ndks[0];
 let legacy=process.env.SIMPLEPERF_LEGACY_NDK?{path:process.env.SIMPLEPERF_LEGACY_NDK,revision:'由 SIMPLEPERF_LEGACY_NDK 指定'}:ndks.find(n=>Number.parseInt(n.name,10)<=26);
 if(!legacy){
-  const manifest=JSON.parse(await readFile(join(target,'versions.json'),'utf8'));
-  for(const arch of ['arm','arm64','x86','x86_64'])await access(join(target,'legacy/android',arch,'simpleperf'));
-  await access(join(target,'NOTICE-legacy.txt'));
-  legacy={path:null,revision:manifest.legacy};
+  const manifest=JSON.parse(await readFile(join(legacyBundle,'source.json'),'utf8'));
+  if(manifest.sdkPackage!=='ndk;26.1.10909125')throw new Error('旧版 simpleperf 资源的来源版本无效');
+  for(const arch of ['arm','arm64','x86','x86_64'])await access(join(legacyBundle,'android',arch,'simpleperf'));
+  await access(join(legacyBundle,'NOTICE.txt'));
+  legacy={path:null,revision:manifest.sdkPackage.slice(4)};
 }
 if(!modern)throw new Error('需要已安装稳定版 Android NDK；可设置 SIMPLEPERF_NDK');
 async function copy(from,to,executable=false){await access(from);await mkdir(dirname(to),{recursive:true});await copyFile(from,to);if(executable&&process.platform!=='win32')await chmod(to,0o755);}
@@ -29,9 +30,10 @@ await copy(join(hostDir,library),join(targetHostDir,library));
 if(host==='windows')await copy(join(hostDir,'libwinpthread-1.dll'),join(targetHostDir,'libwinpthread-1.dll'));
 for(const arch of ['arm','arm64','x86','x86_64']){
   await copy(join(modern.path,'simpleperf/bin/android',arch,'simpleperf'),join(target,'bin/android',arch,'simpleperf'),true);
-  if(legacy.path)await copy(join(legacy.path,'simpleperf/bin/android',arch,'simpleperf'),join(target,'legacy/android',arch,'simpleperf'),true);
+  const legacyBinary=legacy.path?join(legacy.path,'simpleperf/bin/android',arch,'simpleperf'):join(legacyBundle,'android',arch,'simpleperf');
+  await copy(legacyBinary,join(target,'legacy/android',arch,'simpleperf'),true);
 }
 await copy(join(modern.path,'NOTICE'),join(target,'NOTICE-modern.txt'));
-if(legacy.path)await copy(join(legacy.path,'NOTICE'),join(target,'NOTICE-legacy.txt'));
+await copy(legacy.path?join(legacy.path,'NOTICE'):join(legacyBundle,'NOTICE.txt'),join(target,'NOTICE-legacy.txt'));
 await writeFile(join(target,'versions.json'),JSON.stringify({modern:modern.revision,legacy:legacy.revision},null,2)+'\n');
 console.log(`simpleperf 资源：${target}；host ${host}/${hostArch}；主版本 ${modern.revision}；Android 7 兼容版本 ${legacy.revision}`);

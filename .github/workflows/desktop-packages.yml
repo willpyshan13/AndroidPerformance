@@ -72,6 +72,7 @@ jobs:
     env:
       APK_SMOKE_OUTPUT_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
       APW_SMOKE_APK_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
+      APW_TASK_LOG_PATH: ${{ github.workspace }}/dist/resource-preparation.log
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -112,20 +113,20 @@ jobs:
         env:
           APW_ADHOC_ADB: '1'
         run: |
-          npm run prepare:adb
-          npm run prepare:apk-tools
-          npm run prepare:simpleperf
+          node scripts/run-npm-task.js prepare:adb
+          node scripts/run-npm-task.js prepare:apk-tools
+          node scripts/run-npm-task.js prepare:simpleperf
       - name: Prepare Windows or Linux SDK tools
         if: ${{ !matrix.mac && !matrix.linuxArm64 }}
         run: |
-          npm run prepare:desktop-tools
-          npm run prepare:simpleperf
+          node scripts/run-npm-task.js prepare:desktop-tools
+          node scripts/run-npm-task.js prepare:simpleperf
       - name: Prepare Linux arm64 tools with Ubuntu runtime libraries
         if: matrix.linuxArm64
         env:
           ADB_PATH: /usr/bin/adb
           AAPT2_PATH: /usr/bin/aapt2
-        run: npm run prepare:linux:arm64-tools && npm run prepare:python-runtime
+        run: node scripts/run-npm-task.js prepare:linux:arm64-tools && node scripts/run-npm-task.js prepare:python-runtime
       - name: Analyze a generated APK with staged ARM64 AAPT2
         if: matrix.linuxArm64
         env:
@@ -140,8 +141,8 @@ jobs:
         run: npm run smoke:apk-tools
         id: apk-smoke-sdk
       - run: node scripts/run-npm-task.js prepare:trace-processor
-      - run: npm run prepare:shark
-      - run: npm run prepare:perfetto-ui
+      - run: node scripts/run-npm-task.js prepare:shark
+      - run: node scripts/run-npm-task.js prepare:perfetto-ui
       - run: node scripts/run-npm-task.js ${{ matrix.command }}
       - name: Set Linux arm64 package runtime floor to Ubuntu 24.04 glibc
         if: matrix.linuxArm64
@@ -167,6 +168,7 @@ jobs:
           name: android-performance-smoke-diagnostics-${{ matrix.label }}-${{ steps.apk-smoke-arm64.outputs.failure_code || steps.apk-smoke-sdk.outputs.failure_code || steps.desktop-installer-smoke.outputs.failure_code || 'unknown' }}
           path: |
             dist/apw-apk-smoke.log
+            dist/resource-preparation.log
             dist/windows-desktop-smoke.log
             dist/windows-desktop-smoke-console.log
           if-no-files-found: ignore

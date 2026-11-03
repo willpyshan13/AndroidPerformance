@@ -1,18 +1,24 @@
 import {spawnSync} from 'node:child_process';
-import {readFile,rm} from 'node:fs/promises';
-import {join} from 'node:path';
+import {appendFile,mkdir,readFile,rm} from 'node:fs/promises';
+import {dirname,join} from 'node:path';
 
 const task=process.argv[2];
 if(!task||!/^[-:a-z0-9]+$/.test(task))throw new Error('npm task is required');
 const command=process.platform==='win32'?'npm.cmd':'npm';
 const run=()=>spawnSync(command,['run',task],{encoding:'utf8',shell:process.platform==='win32',maxBuffer:64*1024*1024});
+async function saveFailureLog(result,number){
+ const path=process.env.APW_TASK_LOG_PATH;if(!path||result.status===0)return;
+ await mkdir(dirname(path),{recursive:true});
+ await appendFile(path,`\n--- npm run ${task} attempt ${number} ---\nstatus=${result.status} signal=${result.signal||'none'} error=${result.error?.message||'none'}\n${result.stdout||''}\n${result.stderr||''}\n`);
+}
 let result=run(),attempt=1;
+await saveFailureLog(result,attempt);
 const maxAttempts=5;
 while(task.startsWith('package:')&&result.status!==0&&/EBUSY.*copyfile/i.test(`${result.stdout||''}\n${result.stderr||''}`)&&attempt<maxAttempts){
  console.log(`::warning title=Transient file lock::Retrying ${task} after EBUSY copyfile (attempt ${attempt+1}/${maxAttempts}).`);
  const {version}=JSON.parse(await readFile('package.json','utf8'));
  await rm(join('dist',`v${version}`),{recursive:true,force:true,maxRetries:15,retryDelay:500});
- await new Promise(resolve=>setTimeout(resolve,Math.min(1500*2**(attempt-1),10_000)));result=run();attempt++;
+ await new Promise(resolve=>setTimeout(resolve,Math.min(1500*2**(attempt-1),10_000)));result=run();attempt++;await saveFailureLog(result,attempt);
 }
 if(result.stdout)process.stdout.write(result.stdout);
 if(result.stderr)process.stderr.write(result.stderr);

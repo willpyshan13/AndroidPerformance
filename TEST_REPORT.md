@@ -4,7 +4,7 @@
 
 - 解码常见 Itanium ABI 模板名中的内置类型和简单名称类型参数，例如 `_ZN4demo6WidgetIiE4drawEv` 显示为 `demo::Widget<int>::draw`；模板类和全局函数候选会保留模板显示名、按基础声明名查找。遇到未支持的模板编码会拒绝解析并提示文本搜索，不将未知特化静默当作通用类。
 - `test/source-symbols.test.js` 与 `test/source-workspace.test.js` 定向回归 13/13 通过；完整 `npm test` 345 项，329 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。本轮未连接设备或启动模拟器。
-- 提交 `2e6d6d8` 的 macOS ARM64 CI run `41627090070` 全部通过，包含全量测试、DMG 打包和 packaged desktop smoke；该轮缓存 miss 后完成资源准备。当前全局函数模板增强与 cache v6 使用待新 CI 验证。
+- 提交 `2e6d6d8` 的 macOS ARM64 CI run `41627090070` 全部通过，包含全量测试、DMG 打包和 packaged desktop smoke；该轮缓存 miss 后完成资源准备。提交 `b42d198` 的 cache v6 run `41628495523` 命中工具缓存，跳过 Java、Android SDK/NDK 和大资源准备步骤，随后 DMG 打包及 packaged desktop smoke 均通过。
 
 ## Macrobenchmark 真机执行链路（2026-11-03）
 

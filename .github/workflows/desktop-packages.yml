@@ -88,11 +88,11 @@ jobs:
       - name: Install NDK for macOS simpleperf
         if: matrix.mac
         shell: bash
-        run: sdkmanager 'ndk;27.2.12479018'
+        run: sdkmanager 'ndk;26.1.10909125' 'ndk;27.2.12479018'
       - name: Install NDK versions for Windows and Linux x64 simpleperf
         if: ${{ !matrix.mac && !matrix.linuxArm64 }}
         shell: pwsh
-        run: sdkmanager 'ndk;27.2.12479018'
+        run: sdkmanager 'ndk;26.1.10909125' 'ndk;27.2.12479018'
       - name: Install AppImage runtime dependency
         if: matrix.label == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64
@@ -126,7 +126,7 @@ jobs:
         env:
           ADB_PATH: /usr/bin/adb
           AAPT2_PATH: /usr/bin/aapt2
-        run: node scripts/run-npm-task.js prepare:linux:arm64-tools && node scripts/run-npm-task.js prepare:python-runtime
+        run: node scripts/run-npm-task.js prepare:linux:arm64-tools && node scripts/prepare-python-runtime.js
       - name: Analyze a generated APK with staged ARM64 AAPT2
         if: matrix.linuxArm64
         env:

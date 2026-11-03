@@ -19,6 +19,7 @@ async function publishFailureCode(error) {
     : /NSIS installation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-install-${message.match(/NSIS installation failed with exit code (\d+|unknown)/i)[1]}`
     : /NSIS uninstallation failed with exit code (\d+|unknown)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+|unknown)/i)[1]}`
     : /NSIS uninstaller was not found/i.test(message) ? 'windows-nsis-uninstaller-missing'
+    : /simpleperf/i.test(message) ? 'windows-simpleperf-resource'
     : /temporary files could not be removed|EBUSY|EPERM|ENOTEMPTY.*nsis-installed-app/i.test(message) ? 'windows-temp-cleanup'
     : /desktop route\/CPU stack chart|home is missing quick actions|home artifact section|source workspace|APK analysis UI/i.test(message) ? 'windows-installed-app-ui'
     : /did not start|startup failed|renderer|Unable to start installed desktop app/i.test(message) ? 'windows-installed-app-startup'
@@ -96,6 +97,20 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   const readyFile = join(tempRoot, `${label}-ready.json`);
   const executable = join(installDir, `${pkg.build.productName}.exe`);
   await access(executable);
+  const simpleperfDir=join(installDir,'resources','simpleperf');
+  await stat(join(simpleperfDir,'bin','windows','x86_64','libsimpleperf_report.dll'));
+  await stat(join(simpleperfDir,'bin','android','arm64','simpleperf'));
+  await stat(join(simpleperfDir,'legacy','android','arm64','simpleperf'));
+  let simpleperfLoaded=false,lastPythonError;
+  for(const [command,args] of [[process.env.APW_PYTHON_PATH||'python',[]],['py',['-3']]]){
+    if(simpleperfLoaded)break;
+    if(command==='python'&&process.env.APW_PYTHON_PATH)args.splice(0,args.length);
+    const result=spawnSync(command,[...args,'-c','from simpleperf_report_lib import ReportLib; report = ReportLib(); report.Close()'],{cwd:simpleperfDir,encoding:'utf8',timeout:30_000,windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
+    if(result.error?.code==='ENOENT'){lastPythonError=result.error;continue;}
+    if(result.error||result.status!==0)throw new Error(`${label}: simpleperf host parser failed to load: ${result.stderr||result.error?.message||`exit code ${result.status}`}`);
+    simpleperfLoaded=true;
+  }
+  if(!simpleperfLoaded)throw new Error(`${label}: simpleperf host parser requires Python 3 (set APW_PYTHON_PATH); ${lastPythonError?.message||'interpreter unavailable'}`);
   await mkdir(profileDir, { recursive: true });
   await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
   let childError;

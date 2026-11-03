@@ -6,6 +6,15 @@ import { promisify } from 'node:util';
 import { locateStackcollapse } from './simpleperf.js';
 import { fileURLToPath } from 'node:url';
 const exec=promisify(execFile), MAX=256*1024*1024;
+export async function runPython(args,options,runner=exec,{platform=process.platform,pythonPath=process.env.APW_PYTHON_PATH}={}){
+  const candidates=pythonPath?[pythonPath]:platform==='win32'?['python','py']:['python3','python'];
+  let missing;
+  for(const command of candidates){
+    try{return await runner(command,[...(command==='py'?['-3']:[]),...args],options);}
+    catch(error){if(error.code!=='ENOENT')throw error;missing=error;}
+  }
+  throw missing||Object.assign(new Error('Python 3 未找到'),{code:'ENOENT'});
+}
 export async function analyzePerfUpload(req,{locator=locateStackcollapse,runner=exec}={}) {
   let event=null;try{event=req.headers['x-perf-event']===undefined?null:decodeURIComponent(req.headers['x-perf-event']);}catch{throw new Error('采样事件编码无效');}
   if(event!==null&&(typeof event!=='string'||!event||event.length>256||/[\x00-\x1f\x7f]/.test(event)))throw new Error('采样事件名称无效');
@@ -25,14 +34,14 @@ export async function analyzePerfUpload(req,{locator=locateStackcollapse,runner=
     let converter=fileURLToPath(new URL('../scripts/simpleperf-collapse.py',import.meta.url));
     if(process.resourcesPath){const packaged=join(process.resourcesPath,'app.asar.unpacked','scripts','simpleperf-collapse.py');try{await access(packaged);converter=packaged;}catch{}}
     const options=symfs?[event||'',symfs]:(event?[event]:[]);
-    try{output=await runner('python3',[converter,dirname(script),path,...options],{cwd:dirname(script),timeout:120000,maxBuffer:12*1024*1024,encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});}
-    catch(error){if(error.code==='ENOENT')throw new Error('未找到 Python 3，无法运行 NDK stackcollapse.py');throw new Error(`simpleperf 解析失败：${String(error.stderr||error.message).slice(0,1000)}`);}
+    try{output=await runPython([converter,dirname(script),path,...options],{cwd:dirname(script),timeout:120000,maxBuffer:12*1024*1024,encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}},runner);}
+    catch(error){if(error.code==='ENOENT')throw new Error('未找到 Python 3（Windows 可设置 APW_PYTHON_PATH），无法运行 NDK stackcollapse.py');throw new Error(`simpleperf 解析失败：${String(error.stderr||error.message).slice(0,1000)}`);}
     if(!output.stdout.trim())throw new Error('采样文件没有可用调用栈；目标可能在采样期间没有运行，或数据不包含样本');
     const warnings=[String(output.stderr||'').trim()].filter(Boolean);let timeline=null;
     let helper=fileURLToPath(new URL('../scripts/simpleperf-timeline.py',import.meta.url));
     if(process.resourcesPath){const packaged=join(process.resourcesPath,'app.asar.unpacked','scripts','simpleperf-timeline.py');try{await access(packaged);helper=packaged;}catch{}}
     try {
-      const detail=await runner('python3',[helper,dirname(script),path,...options],{cwd:dirname(script),timeout:120000,maxBuffer:24*1024*1024,encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
+      const detail=await runPython([helper,dirname(script),path,...options],{cwd:dirname(script),timeout:120000,maxBuffer:24*1024*1024,encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}},runner);
       timeline=JSON.parse(detail.stdout);
       if(!Array.isArray(timeline.samples)||timeline.samples.length>50000)throw new Error('采样列表格式无效');
       if(detail.stderr?.trim())warnings.push(String(detail.stderr).trim().slice(0,500));

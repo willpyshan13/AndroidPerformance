@@ -19,9 +19,11 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  assert.equal(pkg.scripts['prepare:linux:arm64:deb-metadata'],'node scripts/floor-linux-arm64-deb-glibc.js');
  const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
  assert.match(workflow,/APK_SMOKE_OUTPUT_PATH: \$\{\{ github\.workspace \}\}\/dist\/apw-smoke\.apk/);assert.match(workflow,/APW_SMOKE_APK_PATH: \$\{\{ github\.workspace \}\}\/dist\/apw-smoke\.apk/);
+ assert.match(workflow,/Install NDK versions for Windows and Linux x64 simpleperf[\s\S]*?ndk;26\.3\.11579264[\s\S]*?ndk;27\.2\.12479018/);assert.match(workflow,/Prepare Windows or Linux SDK tools[\s\S]*?prepare:desktop-tools[\s\S]*?prepare:simpleperf/);
  for(const target of ['dist/v*/*.pkg','dist/v*/*.msi','dist/v*/*.deb','dist/v*/*.rpm'])assert.ok(workflow.includes(target),`missing CI artifact pattern ${target}`);
  const smoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
  assert.match(smoke,/diagnosticPath = resolve\('dist\/windows-desktop-smoke\.log'\)/);assert.match(smoke,/Windows smoke initialization failed/);assert.match(smoke,/new AggregateError\(\[failure, error\]/);assert.match(smoke,/taskkill\.exe', \['\/PID', String\(processHandle\.pid\), '\/T', '\/F'\]/);assert.match(smoke,/maxRetries: 10, retryDelay: 500/);assert.match(smoke,/msiexec\.exe/);assert.match(smoke,/APPLICATIONFOLDER=/);assert.match(smoke,/\['\/x', msiInstaller/);assert.match(smoke,/runNsis\(\['\/S', `\/D=\$\{installDir\}`\]\)/);assert.match(smoke,/uninstallerName\), \['\/S'\]/);assert.match(smoke,/installed desktop smoke passed/);
+ assert.match(smoke,/simpleperfDir,'bin','windows','x86_64','libsimpleperf_report\.dll'/);assert.match(smoke,/legacy','android','arm64','simpleperf'/);assert.match(smoke,/simpleperf host parser failed to load/);assert.match(smoke,/windows-simpleperf-resource/);
  const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
  assert.match(macSmoke,/Contents', 'MacOS'/);assert.match(macSmoke,/java-runtime', 'bin', 'java'/);assert.match(macSmoke,/trace-processor/);assert.match(macSmoke,/rendererReady/);assert.match(macSmoke,/cpuLargeTimeline/);assert.match(macSmoke,/50k CPU timeline raster/);assert.match(macSmoke,/heapCsvExport/);assert.match(macSmoke,/HPROF CSV export/);assert.match(macSmoke,/layoutFindings/);assert.match(macSmoke,/structured layout findings/);assert.match(macSmoke,/apkAnalysisSmoke/);assert.match(macSmoke,/APK analysis UI smoke/);assert.match(macSmoke,/menuLabels/);assert.match(macSmoke,/quickActionRoutes/);assert.match(macSmoke,/routeChecks/);assert.match(macSmoke,/Packaged macOS desktop smoke passed/);
  const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);assert.match(check,/node --check scripts\/device-smoke\.js/);
@@ -38,11 +40,13 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const mac=resources('mac').join('\n'),win=resources('win').join('\n'),linux=resources('linux').join('\n');
  for(const entries of [win,linux]){
-  assert.match(entries,/tools\/platform-tools=>platform-tools/);assert.match(entries,/tools\/apk-tools=>apk-tools/);assert.match(entries,/tools\/trace-processor=>trace-processor/);assert.match(entries,/tools\/shark-cli=>shark-cli/);assert.match(entries,/tools\/ui-inspector=>ui-inspector/);assert.match(entries,/tools\/perfetto-ui=>perfetto-ui/);
+  assert.match(entries,/tools\/platform-tools=>platform-tools/);assert.match(entries,/tools\/apk-tools=>apk-tools/);assert.match(entries,/tools\/trace-processor=>trace-processor/);assert.match(entries,/tools\/shark-cli=>shark-cli/);assert.match(entries,/tools\/ui-inspector=>ui-inspector/);assert.match(entries,/tools\/perfetto-ui=>perfetto-ui/);assert.match(entries,/tools\/simpleperf=>simpleperf/);
  }
  assert.match(mac,/tools\/java-runtime=>java-runtime/);
  assert.match(win,/tools\/java-runtime\.tar\.gz=>java-runtime\.tar\.gz/);assert.match(linux,/tools\/java-runtime=>java-runtime/);
  assert.match(win,/trace_processor_shell\.exe/);assert.match(linux,/trace_processor_shell/);
+ const simpleperf=await readFile(new URL('../scripts/prepare-simpleperf.js',import.meta.url),'utf8');assert.match(simpleperf,/process\.platform==='win32'\?'windows'/);assert.match(simpleperf,/libsimpleperf_report\.dll/);assert.match(simpleperf,/libwinpthread-1\.dll/);assert.match(simpleperf,/LOCALAPPDATA/);
+ const perfUpload=await readFile(new URL('../src/perf-upload.js',import.meta.url),'utf8');assert.match(perfUpload,/pythonPath=process\.env\.APW_PYTHON_PATH/);assert.match(perfUpload,/platform==='win32'\?\['python','py'\]:\['python3','python'\]/);assert.match(perfUpload,/command==='py'\?\['-3'\]:\[\]/);
 });
 
 test('failed package smoke publishes a sanitized failure classification',async()=>{

@@ -2,8 +2,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
 import {access,readFile} from 'node:fs/promises';
-import {analyzePerfUpload} from '../src/perf-upload.js';
+import {analyzePerfUpload,runPython} from '../src/perf-upload.js';
 function request(chunks,headers={}){const r=Readable.from(chunks);r.headers=headers;return r;}
+test('simpleperf analysis resolves a Windows Python interpreter and supports an explicit executable path',async()=>{
+ const calls=[],runner=async(command,args)=>{calls.push({command,args});if(command==='python')throw Object.assign(new Error('not found'),{code:'ENOENT'});return {stdout:'python 3'};};
+ const result=await runPython(['converter.py'],{},runner,{platform:'win32',pythonPath:null});assert.equal(result.stdout,'python 3');assert.deepEqual(calls,[{command:'python',args:['converter.py']},{command:'py',args:['-3','converter.py']}]);
+ calls.length=0;await runPython(['converter.py'],{},async(command,args)=>{calls.push({command,args});return {stdout:'ok'};},{platform:'win32',pythonPath:'C:\\Python\\python.exe'});assert.deepEqual(calls,[{command:'C:\\Python\\python.exe',args:['converter.py']}]);
+});
 test('perf upload validates magic, invokes the converter with argument array and cleans the file',async()=>{
  let temporary;
  const result=await analyzePerfUpload(request([Buffer.from('PERF'),Buffer.from('ILE2data')]),{locator:async()=>'/ndk/simpleperf/stackcollapse.py',runner:async(cmd,args,opts)=>{assert.equal(cmd,'python3');assert.equal(opts.cwd,'/ndk/simpleperf');if(args[0].endsWith('simpleperf-timeline.py'))return {stdout:JSON.stringify({event:'cpu-clock',samples:[],truncated:false}),stderr:''};assert.ok(args[0].endsWith('simpleperf-collapse.py'));assert.equal(args[1],'/ndk/simpleperf');temporary=args[2];assert.equal((await readFile(temporary)).toString(),'PERFILE2data');return {stdout:'thread;func 2\n',stderr:'warning'};}});

@@ -88,6 +88,10 @@ jobs:
         if: matrix.mac
         shell: bash
         run: sdkmanager 'ndk;26.3.11579264' 'ndk;27.2.12479018'
+      - name: Install NDK versions for Windows and Linux x64 simpleperf
+        if: ${{ !matrix.mac && !matrix.linuxArm64 }}
+        shell: pwsh
+        run: sdkmanager 'ndk;26.3.11579264' 'ndk;27.2.12479018'
       - name: Install AppImage runtime dependency
         if: matrix.label == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64
@@ -113,7 +117,9 @@ jobs:
           npm run prepare:simpleperf
       - name: Prepare Windows or Linux SDK tools
         if: ${{ !matrix.mac && !matrix.linuxArm64 }}
-        run: npm run prepare:desktop-tools
+        run: |
+          npm run prepare:desktop-tools
+          npm run prepare:simpleperf
       - name: Prepare Linux arm64 tools with Ubuntu runtime libraries
         if: matrix.linuxArm64
         env:

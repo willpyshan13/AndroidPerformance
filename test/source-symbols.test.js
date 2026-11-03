@@ -96,6 +96,14 @@ template<class T> void Widget<T>::draw() {}
  assert.ok(candidates.every(candidate=>candidate.reasons.includes('作用域名匹配：demo::Widget')));
 });
 
+test('Itanium global function templates preserve their specialization and match the template declaration',()=>{
+ const symbol=parseSourceSymbol('_Z3fooIiEvT_');
+ assert.equal(symbol.normalized,'foo<int>');
+ assert.equal(symbol.method,'foo');
+ const candidates=findNativeSourceDeclarations('template<class T> void foo(T value) {}','templates.cpp',symbol);
+ assert.deepEqual(candidates.map(candidate=>candidate.line),[1]);
+});
+
 test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{
  const text=`void demo::NativeWorker::\n  refresh(\n    int value\n  ) {}\nvoid caller() {\n  refresh(\n    1\n  );\n}`;
  const matches=findNativeSourceDeclarations(text,'native.cxx',parseSourceSymbol('demo::NativeWorker::refresh(int)'));

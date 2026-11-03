@@ -61,7 +61,10 @@ export function parseSourceSymbol(symbol){
  if(typeof symbol!=='string'||!symbol.trim()||symbol.length>500)throw new Error('符号名称无效');
  const raw=symbol.trim(),demangled=demangleItaniumSymbol(raw),nativeInput=demangled||raw;
  if(raw.startsWith('_Z')&&!demangled)throw new Error('Itanium 原生符号格式无法识别；可使用文本搜索');
- if(demangled&&!nativeInput.includes('::'))return {raw,normalized:nativeInput,method:nativeInput,className:null,qualifiers:[],packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+ if(demangled&&!nativeInput.includes('::')){
+  const templateName=nativeInput.match(/^([A-Za-z_][\w$]*)(?:<[^<>]+>)?$/)?.[1]||nativeInput;
+  return {raw,normalized:nativeInput,method:templateName,className:null,qualifiers:[],packageName:null,obfuscatedLine:null,isClass:false,isNative:true};
+ }
  if(nativeInput.includes('::')){
   const withoutAddress=nativeInput.replace(/\+0x[\da-f]+$/i,'').trim();
   const operatorMatch=withoutAddress.match(/(?:^|::)(operator\s*(?:\(\)|\[\]|new(?:\[\])?|delete(?:\[\])?|[!%&*+\-\/<=>^|~,]+|[A-Za-z_]\w*))(?=\s*(?:\(|$|const\b|noexcept\b|&|&&))/);

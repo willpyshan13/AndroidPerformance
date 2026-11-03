@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
       - name: Restore verified macOS ARM64 tools
         id: prepared-tools
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             tools/platform-tools

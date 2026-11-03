@@ -37,7 +37,7 @@ Shark 在本地分析当前 HPROF 会话，不上传堆文件。报告由 LeakCa
 
 ## Compose UI Inspector
 
-源码库内的 `tools/ui-inspector/` 包含 Android Studio UI Inspector CLI 的 Java runtime classpath，以及推送到设备端的 View/Compose Inspector、payload 和 ART tooling 资源。每个 JAR 的 SHA-256 和相对路径记录在 `classpath.json`，桌面安装包会携带这些资源。运行时需要 Java 17 或更新版本；来源版本、Bazel target 和 Apache-2.0 声明见 `source.json` 与 `NOTICE.txt`。
+源码库内的 `tools/ui-inspector/` 包含 Android Studio UI Inspector CLI 的 Java runtime classpath，以及推送到设备端的 View/Compose Inspector、payload 和 ART tooling 资源。每个 JAR 的 SHA-256 和相对路径记录在 `classpath.json`，桌面安装包会携带这些资源。当前 CLI 字节码要求 Java 25；macOS arm64 打包会单独携带经过 SHA-256 校验的 Temurin JRE 25，Shark 和 Gradle 继续使用 Java 17。来源版本、最低 Java 版本、Bazel target 和 Apache-2.0 声明见 `source.json` 与 `NOTICE.txt`。
 
 更新这组资源时，先在 Android Studio `platform/tools/base` checkout 构建 `//tools/base/ui-inspector/cli:dump-ui`，再指向生成的 runfiles 清单和 `cli.res.jar` 执行：
 
@@ -47,4 +47,4 @@ UI_INSPECTOR_RESOURCE_JAR=/path/to/bazel-bin/tools/base/ui-inspector/cli/cli.res
 npm run prepare:ui-inspector
 ```
 
-完整检查要求 Android 10（API 29）或更高版本及可注入的应用进程。默认读取参数、Modifier、Semantics 和系统 Composable；资源解析栈须单独启用，因为首次启用可能修改设备设置并重启 Activity。截图在检查器响应后采集，树节点与截图边界可相互高亮，源码位置可搜索当前快照。API 25 测试设备验证了安全拒绝路径；本机 SDK 未安装 Android Emulator，API 29+ 真机采集仍待验证。
+完整检查要求 Android 10（API 29）或更高版本及可注入的应用进程。默认读取参数、Modifier、Semantics 和系统 Composable；资源解析栈须单独启用，因为首次启用可能修改设备设置并重启 Activity。截图在检查器响应后采集，树节点与截图边界可相互高亮，源码位置可搜索当前快照。API 25 测试设备验证了安全拒绝路径；Android 35 模拟器用于 Inspector 运行时和 Compose fixture 验证，不替代 API 29+ 实体设备覆盖。

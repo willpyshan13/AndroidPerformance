@@ -46,7 +46,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   let gpuBusy=false;
   let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;const artTraceCaptures=new Map(),cpuCaptures=new Map();
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
-  const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):null)});
+  const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java25-runtime','bin','java'):null)});
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');

@@ -66,6 +66,7 @@ npm run prepare:simpleperf  # 准备当前 macOS/Windows/Linux x64 的 simpleper
 npm run prepare:trace-processor  # 下载并校验当前主机架构的官方 Trace Processor
 npm run prepare:perfetto-ui  # 下载并校验本机自托管的 Perfetto UI
 npm run prepare:shark        # 下载并校验 Shark 及 Java runtime
+npm run prepare:inspector-runtime  # macOS arm64：准备完整 Compose Inspector 所需的 Java 25
 npm run desktop
 ```
 

@@ -11,5 +11,6 @@ tools/trace-processor/
 tools/perfetto-ui/
 tools/shark-cli/
 tools/java-runtime/
+tools/java25-runtime/
 android-agent/compose-compiler-plugin/.gradle/
 android-agent/compose-compiler-plugin/build/

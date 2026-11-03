@@ -270,10 +270,11 @@ if (singleInstance) {
       ? await ensureWindowsJavaRuntime(join(process.resourcesPath,'java-runtime.tar.gz'),join(app.getPath('userData'),'runtime','java-runtime'))
       : app.isPackaged?join(process.resourcesPath,'java-runtime'):join(here,'..','tools','java-runtime');
     const javaPath=join(javaRuntimeDir,'bin',process.platform==='win32'?'java.exe':'java');
+    const composeInspectorJavaPath=app.isPackaged?join(process.resourcesPath,'java25-runtime','bin','java'):join(here,'..','tools','java25-runtime','bin','java');
     let adbPath = await locateAdb();
     try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath;appearanceLanguage=normalizeAppearance(settings).language; } catch {}
     runtimeAdb = new Adb(adbPath);
-    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath: javaPath, javaPath });
+    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath, javaPath });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     origin = `http://127.0.0.1:${server.address().port}`;
     installMenu(appearanceLanguage); createWindow();

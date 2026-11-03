@@ -43,6 +43,10 @@ async function stopChild(processHandle) {
 try {
   await access(executable);
   await stat(join(resources, 'java-runtime', 'bin', 'java'));
+  const inspectorJava=join(resources,'java25-runtime','bin','java');
+  await stat(inspectorJava);
+  const inspectorJavaVersion=spawnSync(inspectorJava,['-version'],{encoding:'utf8',timeout:15_000});
+  if(inspectorJavaVersion.error||inspectorJavaVersion.status!==0||!`${inspectorJavaVersion.stdout}\n${inspectorJavaVersion.stderr}`.includes('25.0.5'))throw new Error(`Bundled Compose Inspector Java 25 runtime failed: ${inspectorJavaVersion.stderr||inspectorJavaVersion.error?.message||`exit code ${inspectorJavaVersion.status}`}`);
   await stat(join(resources, 'trace-processor', 'trace_processor_shell'));
   await stat(join(resources, 'perfetto-ui', 'index.html'));
   const simpleperfDir=join(resources,'simpleperf'),pythonPath=join(simpleperfDir,'python','bin','python3.11');

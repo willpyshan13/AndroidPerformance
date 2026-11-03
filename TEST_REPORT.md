@@ -647,3 +647,10 @@ npm run test:device -- \
 - 针对准备脚本和单 job workflow 的测试 4 项通过；`npm run check` 通过；全量测试 339 项，323 通过、0 失败、16 项因未配置可选官方样本跳过。四个 bundled ELF 均以 `file` 确认为各自目标架构。本机安装了 NDK 26，因此本次本地准备命令验证的是现有旧版 NDK 路径，不是 clean-runner 回退路径。
 - 将 bundled arm64 二进制临时推送到 API 25 / rk3399-all 真机后，设备成功运行并报告 `Simpleperf version 1.build.9796343`；临时文件已删除。这个检查验证 Android 7 可执行性，不替代现代主版本 profiler 的完整采样测试。
 - 提交 `2105a7a` 已推送；GitHub Actions run `41600895526` 的 macOS ARM64 clean-runner 测试、DMG 构建和桌面 smoke 全部通过。
+
+## Compose Inspector Java 25 runtime 修复（2026-11-03）
+
+- API 35 模拟器首次运行完整 Inspector 暴露了桌面包的运行时错误：AOSP CLI 中 `ProtocolConstants` 的 class-file version 为 69（Java 25），而桌面原先传入 Java 17，执行报 `UnsupportedClassVersionError`。增加独立的 Temurin JRE 25.0.5+8 macOS arm64 资源准备脚本，按 Adoptium 官方 SHA-256 校验；只供 Compose Inspector 使用，Shark 和 Gradle 保持 Java 17。macOS CI、extraResources、应用运行时注入及打包 smoke 已接线，并增加旧 Java 版本的可读错误提示。
+- 用 API 35 arm64 模拟器构建并安装临时 Compose 1.7.6 debug fixture，通过产品 `captureComposeInspector` 实际调用 AOSP CLI，读到 1 个窗口、23 个 ComposeNode、71 个参数、35 条 merged/unmerged Semantics、29 个 bounds 节点及 31,433 字节截图；包含 `InspectorFixture`、`Text`、`Button` 节点及 23 个源码位置。随后改用 `.app/Contents/Resources` 下真实打包的 JRE/JAR 路径复测，结果仍成功：23 ComposeNode、71 参数、35 条 Semantics、31,493 字节截图。临时 fixture 已从模拟器卸载，模拟器已关闭。模拟器验证不等于 API 29+ 实体设备厂商覆盖。
+- 完整自动测试 340 项：324 通过、0 失败、16 项可选样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `.app` 重建，`scripts/mac-desktop-smoke.js` 通过，确认随包 Java 25 版本及 renderer、16 页面和其他打包功能 smoke。
+- 本修复尚未提交；需由后续 macOS ARM64 CI 再验证 clean runner 的 Java 25 下载、打包和 smoke。

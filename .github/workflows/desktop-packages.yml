@@ -52,6 +52,7 @@ jobs:
         run: npm run smoke:apk-tools
         id: apk-smoke-sdk
       - run: node scripts/run-npm-task.js prepare:shark
+      - run: node scripts/run-npm-task.js prepare:inspector-runtime
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
       - run: node scripts/run-npm-task.js package:dmg
       - name: Launch packaged macOS app and verify desktop startup

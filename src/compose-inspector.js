@@ -43,6 +43,7 @@ export async function captureComposeInspector(adb,resources,serial,packageName,{
     }catch(error){
       if(error.code==='ENOENT')throw new Error(`找不到 Java runtime：${resources.javaPath}`);
       const detail=String(error.stderr||error.stdout||error.message).trim();
+      if(/UnsupportedClassVersionError/.test(detail))throw new Error('当前 Compose Inspector 资源需要 Java 25；请准备或重新安装内置 Inspector runtime。');
       throw new Error((error.killed?'Compose Inspector 采集超时：':'Compose Inspector 执行失败：')+detail.slice(-1800));
     }
     if(Buffer.byteLength(stdout,'utf8')>MAX_DUMP_BYTES)throw new Error('Compose Inspector 结果超过 32 MiB 限制');

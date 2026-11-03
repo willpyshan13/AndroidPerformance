@@ -47,3 +47,9 @@ test('Compose Inspector rejects oversized continuation tokens',async()=>{
  const adb={path:'adb',async exclusive(_serial,task){return task();},async info(){return {api:'34'};}};
  await assert.rejects(captureComposeInspector(adb,{available:true,javaPath:'/java',classpath:'fake',inspectorDir:tmpdir()},'device-1','com.example.app',{continuationToken:'x'.repeat(8193)}),/令牌无效/);
 });
+
+test('Compose Inspector explains when its bundled Java runtime is older than the CLI bytecode',async()=>{
+ const adb={path:'adb',async exclusive(_serial,task){return task();},async info(){return {api:'35'};}};
+ const runner=async()=>{const error=new Error('java failed');error.stderr='UnsupportedClassVersionError: class file version 69.0, runtime supports up to 61.0';throw error;};
+ await assert.rejects(captureComposeInspector(adb,{available:true,javaPath:'/java17',classpath:'fake',inspectorDir:tmpdir()},'device-1','com.example.app',{runner}),/需要 Java 25/);
+});

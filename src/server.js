@@ -229,6 +229,14 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
           sharkBusy=true;try{return json(await analyzeWithShark(heapSession.filePath,heapSession.sharkResources,{mappingPath:heapSession.mappingPath??null}));}finally{sharkBusy=false;}
         }
+        if(path==='/api/heap/bitmap-buffer'){
+          const body=await readBody(req);
+          if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
+          const result=await queryHeapWorker(heapSession.worker,'bitmapBuffer',{bitmapId:body.bitmapId});
+          if(result.bytes.byteLength>64*1024*1024)throw Object.assign(new Error('单个 Bitmap 原始缓冲区导出上限为 64 MiB'),{status:413});
+          const bytes=Buffer.from(result.bytes),dimensions=result.width&&result.height?`-${result.width}x${result.height}`:'';
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':bytes.length,'Content-Disposition':`attachment; filename="bitmap-${result.bitmapId}${dimensions}.bin"`,'X-Content-Type-Options':'nosniff'});return res.end(bytes);
+        }
         if (path === '/api/apk/analyze') {
           if(apkBusy){req.resume();return json({error:'已有 APK 正在分析，请等待完成'},409);}
           apkBusy=true;

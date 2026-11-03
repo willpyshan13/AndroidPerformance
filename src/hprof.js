@@ -195,6 +195,16 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     }
     return {items,offset,total,indexTruncated,recordedTotal:bitmapClasses.reduce((sum,c)=>sum+c.count,0),classCount:bitmapClasses.length};
   }
+  function bitmapBuffer(bitmapId){
+    if(typeof bitmapId!=='string'||!new RegExp(`^[a-f0-9]{${idSize*2}}$`).test(bitmapId))throw new Error('Bitmap 对象 ID 无效');
+    const bitmap=index.get(bitmapId);
+    if(!bitmap||bitmap.kind!=='instance'||!classes.some(c=>c.id===bitmap.cls&&c.name==='android.graphics.Bitmap'))throw new Error('Bitmap 对象不在当前快照中');
+    const decoded=decodeSample(bitmap.cls,bitmap),fields=decoded.fields.filter(f=>f.declaringClass==='android.graphics.Bitmap'&&f.name==='mBuffer'&&f.type===2);
+    if(decoded.warning||fields.length!==1||!fields[0].value)throw new Error('Bitmap 没有可确认的 Java 缓冲区');
+    const buffer=index.get(fields[0].value);
+    if(!buffer||buffer.kind!=='primitiveArray'||buffer.type!==8)throw new Error('Bitmap 缓冲区数据未保存在 HPROF 中');
+    return {bitmapId,bufferId:fields[0].value,width:(()=>{const f=decoded.fields.filter(x=>x.declaringClass==='android.graphics.Bitmap'&&x.name==='mWidth'&&x.type===10);return f.length===1?f[0].value:null;})(),height:(()=>{const f=decoded.fields.filter(x=>x.declaringClass==='android.graphics.Bitmap'&&x.name==='mHeight'&&x.type===10);return f.length===1?f[0].value:null;})(),bytes:Uint8Array.from(data.subarray(buffer.offset,buffer.offset+buffer.length))};
+  }
   function duplicateBitmaps(){
     const groups=new Map(),arrays=new Map();let scanned=0,hashedBytes=0,unavailable=0,limitReached=false;
     outer:for(const cls of classes.filter(c=>c.name==='android.graphics.Bitmap'))for(const item of byClass.get(cls.id)||[]){
@@ -385,5 +395,5 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:childCount[i]};}),
       note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，其他引用语义仍可能未识别':'未区分强弱引用'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
   }
-  return {summary,objectDetail,classInstances,bitmaps,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
+  return {summary,objectDetail,classInstances,bitmaps,bitmapBuffer,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
 }

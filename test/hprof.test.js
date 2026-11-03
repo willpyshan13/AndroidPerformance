@@ -146,6 +146,7 @@ test('Bitmap inspection exposes recorded fields and byte arrays without inferrin
  const file=Buffer.concat([header,string(1,'android/graphics/Bitmap'),string(4,'mWidth'),string(5,'mHeight'),string(6,'mDensity'),string(7,'mRecycled'),string(8,'mBuffer'),load(10,1),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
  const heap=parseHprof(file,{indexed:true}),result=heap.bitmaps(0,1);
  assert.equal(result.total,2);assert.equal(result.recordedTotal,2);assert.equal(result.items[0].width,100);assert.equal(result.items[0].height,50);assert.equal(result.items[0].bufferLength,3);assert.equal(result.items[0].bufferDataPresent,true);assert.equal(result.items[0].recycled,false);
+ const dump=heap.bitmapBuffer('00000014');assert.equal(dump.bufferId,'0000001e');assert.deepEqual([...dump.bytes],[1,2,3]);assert.throws(()=>heap.bitmapBuffer('00000015'),/没有可确认的 Java 缓冲区/);assert.throws(()=>heap.bitmapBuffer('ffffffff'),/不在当前快照/);
  assert.equal(heap.bitmaps(1,1).items[0].bufferLength,null);assert.throws(()=>heap.bitmaps(-1,1),/分页/);
 });
 

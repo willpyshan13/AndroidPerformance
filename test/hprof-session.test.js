@@ -39,6 +39,16 @@ test('heap session exposes indexed dominator graph via worker',async()=>{
   const result=await fetch(`${base}/heap/dominators`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,excludeNonStrong:true})});assert.equal(result.status,200);const tree=await result.json();assert.equal(tree.items[0].id,'00000004');assert.equal(tree.items[0].recordedPayloadBytes,3);assert.equal(tree.incomplete,false);assert.equal(tree.excludeNonStrong,true);
  }finally{app.close();await once(app,'close');}
 });
+test('heap session exports only recorded Java Bitmap byte buffers as raw binary',async()=>{
+ const string=(id,text)=>record(1,Buffer.concat([n4(id),Buffer.from(text)])),load=(cls,name)=>record(2,Buffer.concat([n4(cls),n4(cls),n4(0),n4(name)]));
+ const n2=n=>{const b=Buffer.alloc(2);b.writeUInt16BE(n);return b;},classDump=Buffer.concat([Buffer.from([0x20]),n4(10),n4(0),n4(0),Buffer.alloc(20),n4(0),n2(0),n2(0),n2(3),n4(4),Buffer.from([2]),n4(5),Buffer.from([10]),n4(6),Buffer.from([10])]);
+ const instance=Buffer.concat([Buffer.from([0x21]),n4(20),n4(0),n4(10),n4(12),n4(30),n4(12),n4(8)]),array=Buffer.concat([Buffer.from([0x23]),n4(30),n4(0),n4(4),Buffer.from([8,0,1,127,255])]);
+ const bytes=Buffer.concat([Buffer.from('JAVA PROFILE 1.0.3\0'),n4(4),Buffer.alloc(8),string(1,'android/graphics/Bitmap'),string(4,'mBuffer'),string(5,'mWidth'),string(6,'mHeight'),load(10,1),record(0x1c,Buffer.concat([classDump,instance,array])),record(0x2c,Buffer.alloc(0))]);
+ const app=createApp({adb:{path:'adb'},token:'bitmap-export'});app.listen(0,'127.0.0.1');await once(app,'listening');const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'bitmap-export'};
+ try{const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:bytes}),session=await uploaded.json();assert.equal(uploaded.status,200);const response=await fetch(`${base}/heap/bitmap-buffer`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,bitmapId:'00000014'})});assert.equal(response.status,200);assert.match(response.headers.get('content-disposition'),/bitmap-00000014-12x8\.bin/);assert.deepEqual([...new Uint8Array(await response.arrayBuffer())],[0,1,127,255]);
+  const unavailable=await fetch(`${base}/heap/bitmap-buffer`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,bitmapId:'0000001e'})});assert.equal(unavailable.status,400);
+ }finally{app.close();await once(app,'close');}
+});
 
 test('public Android heap works through indexed HTTP session',async t=>{
  const path=process.env.APW_ANDROID_HPROF;if(!path){t.skip('设置 APW_ANDROID_HPROF 指向公开 Android 测试堆');return;}

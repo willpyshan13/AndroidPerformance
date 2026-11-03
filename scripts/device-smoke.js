@@ -52,6 +52,14 @@ try {
   await check('package-discovery', async () => {
     const { packages } = await request(`/packages?${query}`); assert(packages.includes(packageName)); return { count: packages.length, targetFound: true };
   });
+  if (control) {
+    await check('target-app-launch', async () => {
+      const startup = await request('/startup', { serial, packageName, mode: 'warm', runs: 1 });
+      assert.equal(startup.source, 'adb'); assert.equal(startup.results.length, 1);
+      assert.equal(startup.results[0].status, 'ok'); assert(startup.results[0].totalTimeMs !== null);
+      return { componentLaunchSucceeded: true, totalTimeMs: startup.results[0].totalTimeMs, observedMode: startup.results[0].observedMode };
+    });
+  }
   await check('battery-snapshot', async () => {
     const snapshot = await request('/battery/snapshot', { serial, packageName });
     assert.equal(snapshot.source, 'adb'); assert.equal(snapshot.serial, serial);

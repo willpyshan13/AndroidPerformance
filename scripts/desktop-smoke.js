@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -7,6 +7,19 @@ import pkg from '../package.json' with { type: 'json' };
 
 const outputDir = resolve(`dist/v${pkg.version}`);
 const diagnosticPath = resolve('dist/windows-desktop-smoke.log');
+async function publishFailureCode(error) {
+  if (!process.env.GITHUB_OUTPUT) return;
+  const message = error?.message || String(error);
+  const code = /Expected one MSI/i.test(message) ? 'windows-msi-artifact-count'
+    : /Expected one NSIS/i.test(message) ? 'windows-nsis-artifact-count'
+    : /MSI installation failed with exit code (\d+)/i.test(message) ? `windows-msi-install-${message.match(/MSI installation failed with exit code (\d+)/i)[1]}`
+    : /MSI uninstallation failed with exit code (\d+)/i.test(message) ? `windows-msi-uninstall-${message.match(/MSI uninstallation failed with exit code (\d+)/i)[1]}`
+    : /NSIS installation failed with exit code (\d+)/i.test(message) ? `windows-nsis-install-${message.match(/NSIS installation failed with exit code (\d+)/i)[1]}`
+    : /NSIS uninstallation failed with exit code (\d+)/i.test(message) ? `windows-nsis-uninstall-${message.match(/NSIS uninstallation failed with exit code (\d+)/i)[1]}`
+    : /did not start|startup failed|renderer|APK analysis UI/i.test(message) ? 'windows-installed-app-startup'
+    : 'windows-desktop-smoke-unknown';
+  try { await appendFile(process.env.GITHUB_OUTPUT, `failure_code=${code}\n`, 'utf8'); } catch {}
+}
 let files, msiInstaller, nsisInstaller;
 try {
   files = await readdir(outputDir);
@@ -18,6 +31,7 @@ try {
   msiInstaller = join(outputDir, msiName);
   nsisInstaller = join(outputDir, nsisName);
 } catch (error) {
+  await publishFailureCode(error);
   await mkdir(dirname(diagnosticPath), { recursive: true });
   const detail = error?.stack || error?.message || String(error);
   await writeFile(diagnosticPath, `${detail}\n`, 'utf8');
@@ -174,6 +188,7 @@ finally {
 }
 
 if (failure) {
+  await publishFailureCode(failure);
   const rawDetail = failure instanceof AggregateError
     ? `${failure.message}\n${failure.errors.map(error => error?.stack || error?.message || String(error)).join('\n--- cleanup error ---\n')}`
     : failure.stack || failure.message || String(failure);

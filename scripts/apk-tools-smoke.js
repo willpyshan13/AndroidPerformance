@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, appendFile, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -43,6 +43,13 @@ try {
   const logPath = resolve(process.env.APK_SMOKE_LOG_PATH || 'dist/apw-apk-smoke.log');
   await mkdir(dirname(logPath), { recursive: true });
   await writeFile(logPath, `${detail}\n`, 'utf8');
+  const message = error?.message || String(error);
+  const failureCode = /dump badging/i.test(message) ? 'aapt2-dump-badging'
+    : /dump xmltree/i.test(message) ? 'aapt2-dump-xmltree'
+    : /AAPT2|aapt2/i.test(message) ? 'aapt2-analysis'
+    : /APK ZIP|AndroidManifest|APK smoke/i.test(message) ? 'apk-input-or-generation'
+    : 'apk-smoke-unknown';
+  if (process.env.GITHUB_OUTPUT) try { await appendFile(process.env.GITHUB_OUTPUT, `failure_code=${failureCode}\n`, 'utf8'); } catch {}
   console.error(`APK smoke failed; diagnostic written to ${logPath}\n${detail}`);
   throw error;
 } finally {

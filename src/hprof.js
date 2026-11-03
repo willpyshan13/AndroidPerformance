@@ -1,4 +1,4 @@
-import {dominators} from './dominators.js';
+import {dominatorsCsr} from './dominators.js';
 import {createHash} from 'node:crypto';
 // HPROF record layout follows Android's perflib parser and the HotSpot heap dump format.
 const MAX_FILE = 256 * 1024 * 1024;
@@ -355,24 +355,29 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
     if(!dominatorCache||dominatorCache.excludeNonStrong!==excludeNonStrong){
       dominatorCache=null;
-      if(index.size>250000)throw new Error('支配图超过 25 万对象计算上限');
       const graph=buildReverseGraph(),items=[null,...index.values()],ids=new Map(items.slice(1).map((item,i)=>[item.id,i+1]));
-      const outgoing=Array.from({length:items.length},()=>[]),weights=new Float64Array(items.length),unknownBytes=new Uint8Array(items.length);
+      const degree=new Int32Array(items.length),weights=new Float64Array(items.length),unknownBytes=new Uint8Array(items.length);
       let missingRoots=0;
-      for(const rootId of rootIds.keys()){const root=ids.get(rootId);if(root)outgoing[0].push(root);else missingRoots++;}
-      if(!outgoing[0].length)throw new Error('快照没有可索引的 GC 根，无法计算支配关系');
-      let excludedEdges=0;for(const [target,refs] of graph.edges){const to=ids.get(target);for(const ref of refs){if(excludeNonStrong&&ref.referenceKind){excludedEdges++;continue;}const from=ids.get(ref.id);if(from&&to)outgoing[from].push(to);}}
+      for(const rootId of rootIds.keys()){const root=ids.get(rootId);if(root)degree[0]++;else missingRoots++;}
+      if(!degree[0])throw new Error('快照没有可索引的 GC 根，无法计算支配关系');
+      let excludedEdges=0,edgeCount=degree[0];
+      for(const [target,refs] of graph.edges){const to=ids.get(target);if(!to)continue;for(const ref of refs){if(excludeNonStrong&&ref.referenceKind){excludedEdges++;continue;}const from=ids.get(ref.id);if(from){degree[from]++;edgeCount++;}}}
+      if(edgeCount>0x7fffffff)throw new Error('支配图边数超过计算上限');
+      const offsets=new Int32Array(items.length+1);for(let i=0;i<degree.length;i++)offsets[i+1]=offsets[i]+degree[i];
+      const edges=new Int32Array(edgeCount),cursor=offsets.slice(0,degree.length);
+      for(const rootId of rootIds.keys()){const root=ids.get(rootId);if(root)edges[cursor[0]++]=root;}
+      for(const [target,refs] of graph.edges){const to=ids.get(target);if(!to)continue;for(const ref of refs){if(excludeNonStrong&&ref.referenceKind)continue;const from=ids.get(ref.id);if(from)edges[cursor[from]++]=to;}}
       for(let i=1;i<items.length;i++){const item=items[i];if(item.kind==='instance')weights[i]=item.length;else if(item.kind==='objectArray')weights[i]=item.length*idSize;else if(item.kind==='primitiveArray')weights[i]=item.length*typeSize(item.type);else unknownBytes[i]=1;}
-      const result=dominators(outgoing,weights,unknownBytes),children=Array.from({length:result.count+1},()=>[]);
-      for(let i=2;i<=result.count;i++)children[result.idom[i]].push(i);
-      for(const childList of children)childList.sort((a,b)=>result.payload[b]-result.payload[a]||result.dominated[b]-result.dominated[a]);
-      dominatorCache={graph,items,ids,result,children,missingRoots,excludeNonStrong,excludedEdges};
+      const result=dominatorsCsr(offsets,edges,weights,unknownBytes),firstChild=new Int32Array(result.count+1),nextSibling=new Int32Array(result.count+1),childCount=new Int32Array(result.count+1);
+      for(let i=2;i<=result.count;i++){const p=result.idom[i];nextSibling[i]=firstChild[p];firstChild[p]=i;childCount[p]++;}
+      dominatorCache={graph,items,ids,result,firstChild,nextSibling,childCount,sortedChildren:new Map(),missingRoots,excludeNonStrong,excludedEdges};
     }
-    const {graph,items,ids,result,children,missingRoots,excludedEdges}=dominatorCache;
+    const {graph,items,ids,result,firstChild,nextSibling,childCount,sortedChildren,missingRoots,excludedEdges}=dominatorCache;
     let parent=1;if(parentId!==null){const indexId=ids.get(parentId);if(!indexId)throw new Error('对象不在索引中');parent=result.order[indexId];if(!parent)throw new Error('对象不在已记录根的可达图中');}
-    const list=children[parent],name=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类');
-    return {parentId,offset,total:list.length,reachable:result.count-1,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,excludedEdges,incomplete:graph.incomplete||missingRoots>0,missingTargets:graph.missingTargets,missingRoots,skipped:graph.skipped,edgeLimitReached:graph.limited,
-      items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:children[i].length};}),
+    let list=sortedChildren.get(parent);if(!list){list=[];for(let child=firstChild[parent];child;child=nextSibling[child])list.push(child);list.sort((a,b)=>result.payload[b]-result.payload[a]||result.dominated[b]-result.dominated[a]);sortedChildren.set(parent,list);}
+    const name=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类');
+    return {parentId,offset,total:childCount[parent],reachable:result.count-1,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,excludedEdges,incomplete:graph.incomplete||missingRoots>0,missingTargets:graph.missingTargets,missingRoots,skipped:graph.skipped,edgeLimitReached:graph.limited,
+      items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:childCount[i]};}),
       note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，其他引用语义仍可能未识别':'未区分强弱引用'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
   }
   return {summary,objectDetail,classInstances,bitmaps,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};

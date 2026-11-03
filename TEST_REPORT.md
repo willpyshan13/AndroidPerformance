@@ -599,3 +599,10 @@ npm run test:device -- \
 - 源码工作区现在能把可读的 `namespace::Class::method(...)` 符号映射到 C/C++ 文件中的声明或定义候选，支持跨多行签名；候选过程会忽略注释、字符串和普通调用点。无法识别的 `operator` 等复杂格式仍回退为原始文本搜索。它不解析 ELF 调试信息或 mangled symbols，也不能证明候选来自当前 APK 的确切构建。
 - API 25 真机不参与此离线功能。解析、跨行签名、快照 HTTP API、英文证据翻译与打包配置定向测试均通过；最新完整测试 335 项，319 通过、0 失败、16 项可选官方样本跳过。
 - 最新 macOS arm64 打包 app smoke 使用 `.cxx` 跨行 C++ fixture：创建只读快照、文本搜索并打开 Java 文件，再解析 `apw::SmokeWorker::run`、显示英文匹配证据并打开 C++ 文件；同时既有 renderer、HPROF CSV、布局线索、Network Agent ZIP、50,000 样本 CPU Canvas 和 16 页英文扫描通过。CPU 栅格约 52.5 ms，是当前主机观测。
+
+## 大型 HPROF 近似支配图（2026-11-03）
+
+- 将 Lengauer–Tarjan 图算法改为 CSR 邻接表、类型化 DFS / 前驱 / bucket 工作数组；支配树子节点改为按需排序和缓存，避免为每个对象及边分配 JavaScript 小数组。移除原先 25 万对象的硬拒绝；仍受 HPROF 的 100 万索引对象与 75 万引用边边界约束，边截断会保留不完整标记。
+- 新增 300,001 节点链图回归，确认超过旧上限时完整可达对象数、支配子树计数和记录字节累计正确。HPROF 单元与会话接口通过；全量自动回归 336 项，320 通过、0 失败、16 项可选官方样本跳过；`npm run check` 和 `git diff --check` 通过。
+- macOS arm64 `.app` 重建与打包 smoke 通过；smoke 在实际 Electron renderer 导入 HPROF、导出 CSV 并打开近似支配图，确认显示可达 / 已索引 / 引用边统计。Smoke HPROF 是极小 fixture，引用图按预期标记不完整，不作为支配关系正确性的样本；正确性由 HPROF 图样例、HTTP session 测试与 300,001 节点算法回归覆盖。
+- 尚未用超过 25 万对象的真实 HPROF 做端到端内存与耗时测量；支配关系仍基于有限解析的引用边，不是精确 retained size。

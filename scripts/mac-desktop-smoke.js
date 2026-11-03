@@ -85,7 +85,7 @@ try {
   if(untranslated.length){const reportPath=join(tmpdir(),'android-performance-untranslated-english.json');await writeFile(reportPath,JSON.stringify(untranslated,null,2));throw new Error(`Packaged macOS English route smoke found ${untranslated.length} untranslated UI strings; details: ${reportPath}`);}
   if(!ready.rendererState.cpuPngExport?.ok||ready.rendererState.cpuPngExport.type!=='image/png')throw new Error(`Packaged macOS CPU PNG export smoke failed: ${JSON.stringify(ready.rendererState.cpuPngExport)}`);
   if(!ready.rendererState.cpuLargeTimeline?.ok||ready.rendererState.cpuLargeTimeline.totalMs>30_000)throw new Error(`Packaged macOS 50k CPU timeline raster smoke failed: ${JSON.stringify(ready.rendererState.cpuLargeTimeline)}`);
-  if(!ready.rendererState.heapCsvExport?.ok)throw new Error(`Packaged macOS HPROF CSV export smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
+  if(!ready.rendererState.heapCsvExport?.ok||!ready.rendererState.heapCsvExport?.dominatorGraph?.ok)throw new Error(`Packaged macOS HPROF CSV / dominator graph smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
   if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
   if(!ready.rendererState.sourceWorkspaceSmoke?.ok||!ready.rendererState.sourceWorkspaceSmoke.nativeSymbolResolve||!ready.rendererState.sourceWorkspaceSmoke.nativeCandidateLocalized||!ready.rendererState.sourceWorkspaceSmoke.nativeFileOpened)throw new Error(`Packaged macOS source workspace smoke failed: ${JSON.stringify(ready.rendererState.sourceWorkspaceSmoke)}`);
   if(!ready.rendererState.networkAgentPackage?.ok)throw new Error(`Packaged macOS Network Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.networkAgentPackage)}`);
@@ -101,7 +101,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export, structured layout findings, local source workspace, debug-only Network Agent ZIP, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,source:ready.rendererState.sourceWorkspaceSmoke,networkAgentPackage:ready.rendererState.networkAgentPackage,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length})})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, Trace Processor, Perfetto UI, HPROF CSV export and dominator graph, structured layout findings, local source workspace, debug-only Network Agent ZIP, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,heapCsv:ready.rendererState.heapCsvExport,layout:ready.rendererState.layoutFindings,source:ready.rendererState.sourceWorkspaceSmoke,networkAgentPackage:ready.rendererState.networkAgentPackage,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

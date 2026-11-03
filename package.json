@@ -34,7 +34,7 @@
     "smoke:apk-tools": "node scripts/apk-tools-smoke.js",
     "smoke:linux:arm64:packages": "node scripts/linux-arm64-package-smoke.js",
     "prepare:linux:arm64:deb-metadata": "node scripts/floor-linux-arm64-deb-glibc.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "benchmark:cpu-visualization": "node scripts/benchmark-cpu-visualization.js",
     "test:device": "node scripts/device-smoke.js",
     "build:hprof-load-fixture": "node scripts/build-hprof-load-fixture.js",

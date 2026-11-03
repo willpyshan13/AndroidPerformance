@@ -52,6 +52,7 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
 
 test('large HPROF device fixture remains reproducible without entering desktop packages',async()=>{
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+ assert.equal(pkg.scripts.test,'node --test --test-concurrency=1');
  const builder=await readFile(new URL('../scripts/build-hprof-load-fixture.js',import.meta.url),'utf8');
  const activity=await readFile(new URL('../test/fixtures/hprof-load/HprofLoadActivity.java',import.meta.url),'utf8');
  const manifest=await readFile(new URL('../test/fixtures/hprof-load/AndroidManifest.xml',import.meta.url),'utf8');

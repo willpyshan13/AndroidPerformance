@@ -12,6 +12,8 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 APK 真机样本（2026-11-03）：从设备只读拉取已安装 `com.xmotion.sui.debug` APK（66,814,418 字节），本机 AAPT2 分析完整通过：427 个 ZIP 文件、26 项权限、11 个组件、`armeabi-v7a` / `arm64-v8a` / `x86_64` / `x86` 四类 ABI；识别 v1/v2 签名结构和 2 个证书记录，未产生警告。分析得到 versionName `1.0.10.90` / targetSdk `36`，与设备 `dumpsys package` 返回值一致。完整分析 JSON 暂存于 `/tmp/apw-device-debug-apk-analysis.json`。该结果是 APK 结构和证书提取，不验证签名密码学正确性、信任链或设备安装兼容性。
 
+设备只读回归补测（2026-11-03）：针对 `com.xmotion.sui.debug` 再运行 `test:device`，报告 `/tmp/apw-device-readonly-20261103-continuation/report.json`；16 项通过、2 项因设备能力不支持、1 项跳过、0 失败。读取 95 条帧统计并通过导入回读，P95 为 49.12 ms（当前设备状态，不作为应用性能结论）；布局树 112 节点、截图 291,932 字节；PSS 连续样本约 158.6 MiB；simpleperf 生成有效 25,664 字节 `PERFILE2`，短采样窗口无可解析目标应用调用栈，因此分析标为 unsupported。设备无 Perfetto 可执行程序，按能力标记 unsupported。测试未启动、停止或重置目标应用。
+
 真实 APK 桌面 UI smoke（2026-11-03）：macOS arm64 当前源码打包 app 导入上述 `com.xmotion.sui.debug` APK 后，概览、文件、权限、组件、DEX、签名、Manifest 七个页签均通过；按路径筛选 `AndroidManifest.xml` 与 JSON 报告包名回读通过。`scripts/mac-desktop-smoke.js` 的 APK 包名断言现支持 `APW_SMOKE_EXPECTED_PACKAGE`，未设置时继续使用 CI 的 `dev.apw.smoke` fixture。相同打包 smoke 的 16 路由英文界面、HPROF CSV、结构化布局线索和 50,000 CPU 样本栅格也通过；CPU 总耗时约 50 ms（仅当前 host、本轮 smoke 观测）。
 
 | 模块 | 当前状态 | 待完成 |

@@ -38,7 +38,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
 | CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
-| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取目标应用 Logcat 中的 LeakCanary 实时事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、LeakCanary Logcat、Shark、Perfetto heapprofd |
+| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取目标应用 Logcat 中的 LeakCanary 实时事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Shark、Perfetto heapprofd |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间并查看重叠候选 | `dumpsys gfxinfo framestats`、Perfetto |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
@@ -119,7 +119,7 @@ GitHub Actions 只生成并上传 macOS arm64 DMG。`package:*` 中保留的其�
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试 | 338 项，322 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test`（串行）；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
+| 自动测试 | 360 项，344 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `node --test`；完整记录见 [TEST_REPORT.md](TEST_REPORT.md) |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 
@@ -140,7 +140,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可将当前筛选结果导出为 CSV。CSV 会引用并转义字段，且阻止表格公式注入。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。API 25 真机上的临时 OkHttp 4.12 debug 应用已验证本机 HTTP 请求、Logcat 采集、旧设备 PID 回退和路径脱敏；尚未在用户的真实应用中验证接入。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
 
-堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用，并导出 HPROF 中实际保存的 Java 缓冲区原始 `.bin` 字节。导出内容不会转换成 PNG；这些信息不代表原生或硬件像素内存，也不是保留大小。
+堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用，并导出 HPROF 中实际保存的 Java 缓冲区原始 `.bin` 字节。Android 15（API 35）及以上还可调用系统 Bitmap PNG heap dump，将 `Bitmap.dumpData` 元数据所引用且通过 PNG 结构与 CRC 检查的图片单独导出；这条路径不能用于较旧 Android 版本。普通缓冲区导出不会转换成 PNG；两种模式都不代表完整的原生或硬件像素内存，也不是保留大小。
 
 GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告不能替代 AGI 自身的设备兼容性验证。
 
@@ -196,6 +196,6 @@ CPU 调用栈时间图支持导出 PNG；图片对应当前已绘制的时间轴
 
 真机验证记录：API 25 的 Compose 日历应用采集出 15.4 MiB HPROF，解析 196,210 条对象/数组记录、84,213 条 GC root 记录和 2,983 类；已验证 `java.lang.String` 实例分页、字段值/字符串预览、引用来源、Bitmap 与重复内容查询、Activity 候选和近似支配图（203,329 个索引对象）。另一份真机 HPROF 为 62.6 MB，解析 181,189 个对象、3,528 类；支配图索引 189,835 个对象、可达 172,431 个、引用边 456,943 条，未截断，Shark 2.14 分析通过。另用临时 debug fixture 真机采集 23.5 MB HPROF，支配图索引约 488,000 个对象、可达约 481,000 个、引用边约 1,355,000 条，未截断，Shark 2.14 分析通过，单项约 8 秒；紧凑边记录后的 macOS ARM64 Node smoke 峰值 RSS 两次为约 654 MiB 和 672 MiB。支配图使用 CSR 邻接和类型化工作数组，另有 300,001 节点合成图回归；HPROF 索引上限为 100 万对象，引用边上限为 150 万，超过上限时结果会标记不完整。候选根路径如无结果会明确说明引用图覆盖有限，不据此判断不存在泄漏。该验证不等于完整 Compose Inspector，也不提供精确保留大小或原生堆像素分析。
 
-堆页面可检查 Bitmap 引用的 Java byte[] 是否存在重复内容：先按哈希筛选再逐字节核对，共享同一个数组不算副本。也可导出有记录数据的 Bitmap Java 缓冲区原始 `.bin` 字节，单个缓冲区上限 64 MiB；它不是 PNG，也不包含 native 或硬件像素。重复分析有扫描上限，不是可释放内存估计。
+堆页面可检查 Bitmap 引用的 Java byte[] 是否存在重复内容：先按哈希筛选再逐字节核对，共享同一个数组不算副本。普通快照也可导出有记录数据的 Bitmap Java 缓冲区原始 `.bin` 字节，单个缓冲区上限 64 MiB；它不是 PNG，也不包含 native 或硬件像素。Android 15（API 35）及以上的 Bitmap PNG heap dump 会按系统元数据提取、校验并单张导出 PNG，单张上限 64 MiB；校验 PNG 签名、分块结构和 CRC，但不重新解码像素。重复分析有扫描上限，不是可释放内存估计。
 
 堆分析可筛选 `android.app.Activity.mDestroyed` 为 true 的对象并查看候选根路径；路径搜索可标注并排除已识别的弱、软和虚引用的 `referent`。对象尚待回收、其他引用语义及不完整引用图都可能影响判断，不能仅凭此认定泄漏。

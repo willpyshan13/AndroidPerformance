@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
+import {deflateSync} from 'node:zlib';
 import {createApp} from '../src/server.js';
 const n4=n=>{const b=Buffer.alloc(4);b.writeUInt32BE(n);return b;};
 const record=(tag,bytes)=>Buffer.concat([Buffer.from([tag]),n4(0),n4(bytes.length),bytes]);
@@ -47,6 +48,17 @@ test('heap session exports only recorded Java Bitmap byte buffers as raw binary'
  const app=createApp({adb:{path:'adb'},token:'bitmap-export'});app.listen(0,'127.0.0.1');await once(app,'listening');const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'bitmap-export'};
  try{const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:bytes}),session=await uploaded.json();assert.equal(uploaded.status,200);const response=await fetch(`${base}/heap/bitmap-buffer`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,bitmapId:'00000014'})});assert.equal(response.status,200);assert.match(response.headers.get('content-disposition'),/bitmap-00000014-12x8\.bin/);assert.deepEqual([...new Uint8Array(await response.arrayBuffer())],[0,1,127,255]);
   const unavailable=await fetch(`${base}/heap/bitmap-buffer`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,bitmapId:'0000001e'})});assert.equal(unavailable.status,400);
+ }finally{app.close();await once(app,'close');}
+});
+test('heap session lists and downloads validated Android Bitmap PNG dump entries',async()=>{
+ const string=(id,text)=>record(1,Buffer.concat([n4(id),Buffer.from(text)])),load=(cls,name)=>record(2,Buffer.concat([n4(cls),n4(cls),n4(0),n4(name)])),n2=n=>{const b=Buffer.alloc(2);b.writeUInt16BE(n);return b;};
+ const crc32=bytes=>{let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let i=0;i<8;i++)crc=(crc&1)?0xedb88320^(crc>>>1):crc>>>1;}return (crc^0xffffffff)>>>0;},chunk=(type,payload)=>{const body=Buffer.concat([Buffer.from(type),payload]),crc=Buffer.alloc(4);crc.writeUInt32BE(crc32(body));return Buffer.concat([n4(payload.length),body,crc]);};
+ const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',Buffer.concat([n4(1),n4(1),Buffer.from([8,6,0,0,0])])),chunk('IDAT',deflateSync(Buffer.from([0,255,0,0,255]))),chunk('IEND',Buffer.alloc(0))]);
+ const classDump=(id,statics,fields)=>Buffer.concat([Buffer.from([0x20]),n4(id),n4(0),n4(0),Buffer.alloc(20),n4(0),n2(0),n2(statics.length),...statics.map(([name,type,value])=>Buffer.concat([n4(name),Buffer.from([type]),n4(value)])),n2(fields.length),...fields.map(([name,type])=>Buffer.concat([n4(name),Buffer.from([type])]))]);
+ const instance=Buffer.concat([Buffer.from([0x21]),n4(20),n4(0),n4(11),n4(12),n4(1),n4(1),n4(30)]),buffers=Buffer.concat([Buffer.from([0x22]),n4(30),n4(0),n4(1),n4(11),n4(40)]),array=Buffer.concat([Buffer.from([0x23]),n4(40),n4(0),n4(png.length),Buffer.from([8]),png]);
+ const bytes=Buffer.concat([Buffer.from('JAVA PROFILE 1.0.3\0'),n4(4),Buffer.alloc(8),string(1,'android/graphics/Bitmap'),string(2,'android/graphics/Bitmap$DumpData'),string(4,'dumpData'),string(5,'count'),string(6,'max'),string(7,'buffers'),load(10,1),load(11,2),record(0x1c,Buffer.concat([classDump(10,[[4,2,20]],[]),classDump(11,[],[[5,10],[6,10],[7,2]]),instance,buffers,array])),record(0x2c,Buffer.alloc(0))]);
+ const app=createApp({adb:{path:'adb'},token:'bitmap-png'});app.listen(0,'127.0.0.1');await once(app,'listening');const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'bitmap-png'};
+ try{const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:bytes}),session=await uploaded.json();assert.equal(uploaded.status,200);const query=await fetch(`${base}/heap/bitmap-pngs`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,offset:0,limit:100})});assert.equal(query.status,200);const listing=await query.json();assert.equal(listing.available,true);assert.equal(listing.items[0].width,1);const pngResponse=await fetch(`${base}/heap/bitmap-png`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,arrayId:'00000028'})});assert.equal(pngResponse.status,200);assert.match(pngResponse.headers.get('content-type'),/image\/png/);assert.deepEqual(Buffer.from(await pngResponse.arrayBuffer()),png);
  }finally{app.close();await once(app,'close');}
 });
 

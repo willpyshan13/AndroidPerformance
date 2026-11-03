@@ -2,6 +2,23 @@ import {dominatorsCsr} from './dominators.js';
 import {createHash} from 'node:crypto';
 // HPROF record layout follows Android's perflib parser and the HotSpot heap dump format.
 const MAX_FILE = 256 * 1024 * 1024;
+const PNG_CRC_TABLE=Uint32Array.from({length:256},(_,value)=>{for(let i=0;i<8;i++)value=(value&1)?0xedb88320^(value>>>1):value>>>1;return value>>>0;});
+function validatePng(bytes){
+  const signature=Buffer.from([137,80,78,71,13,10,26,10]);if(bytes.length<45||!bytes.subarray(0,8).equals(signature))return null;
+  let offset=8,width=0,height=0,first=true,hasData=false;
+  while(offset+12<=bytes.length){
+    const length=bytes.readUInt32BE(offset);if(length>bytes.length-offset-12)return null;
+    const type=bytes.toString('ascii',offset+4,offset+8),dataStart=offset+8,crcOffset=dataStart+length;
+    let crc=0xffffffff;for(let i=offset+4;i<crcOffset;i++)crc=PNG_CRC_TABLE[(crc^bytes[i])&255]^(crc>>>8);crc=(crc^0xffffffff)>>>0;
+    if(crc!==bytes.readUInt32BE(crcOffset))return null;
+    if(first){if(type!=='IHDR'||length!==13)return null;width=bytes.readUInt32BE(dataStart);height=bytes.readUInt32BE(dataStart+4);if(!width||!height||width>100000||height>100000||width*height>100000000)return null;first=false;}
+    else if(type==='IHDR')return null;
+    if(type==='IDAT')hasData=true;
+    offset=crcOffset+4;
+    if(type==='IEND')return length===0&&hasData&&offset===bytes.length?{width,height}:null;
+  }
+  return null;
+}
 export function parseHprof(data, { indexed = false, includeExamples = true } = {}) {
   if (!Buffer.isBuffer(data) || data.length > MAX_FILE) throw new Error('HPROF 文件超过 256 MiB 限制');
   const zero = data.indexOf(0);
@@ -194,6 +211,39 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       }
     }
     return {items,offset,total,indexTruncated,recordedTotal:bitmapClasses.reduce((sum,c)=>sum+c.count,0),classCount:bitmapClasses.length};
+  }
+  let bitmapPngIndex;
+  function readBitmapPngIndex(){
+    const findClass=name=>[...classNames].find(([,stringId])=>strings.get(stringId)===name)?.[0],bitmapClassId=findClass('android/graphics/Bitmap'),dumpClassId=findClass('android/graphics/Bitmap$DumpData');
+    const bitmapClass=bitmapClassId?{id:bitmapClassId}:null,dumpClass=dumpClassId?{id:dumpClassId}:null;
+    if(!bitmapClass||!dumpClass)return {available:false,reason:'快照不含 Android 35 Bitmap PNG dump 元数据',items:[],recordedCount:null,discoveredCount:null};
+    const dumpRef=(definitions.get(bitmapClass.id)?.staticRefs||[]).filter(f=>strings.get(f.name)==='dumpData');
+    if(dumpRef.length!==1||!dumpRef[0].target)return {available:false,reason:'Bitmap.dumpData 元数据不可用',items:[],recordedCount:null,discoveredCount:null};
+    const dumpObject=index.get(dumpRef[0].target);if(!dumpObject||dumpObject.kind!=='instance'||dumpObject.cls!==dumpClass.id)return {available:false,reason:'Bitmap PNG dump 数据对象缺失',items:[],recordedCount:null,discoveredCount:null};
+    const decoded=decodeSample(dumpObject.cls,dumpObject);if(!decoded||decoded.warning)return {available:false,reason:'Bitmap PNG dump 字段布局无法解析',items:[],recordedCount:null,discoveredCount:null};
+    const field=(name,type)=>{const found=decoded.fields.filter(f=>f.declaringClass==='android.graphics.Bitmap$DumpData'&&f.name===name&&f.type===type);return found.length===1?found[0].value:null;};
+    const recordedCount=field('count',10),discoveredCount=field('max',10),arrayId=field('buffers',2),array=arrayId?index.get(arrayId):null;
+    if(!Number.isSafeInteger(recordedCount)||recordedCount<0||recordedCount>1000000||!Number.isSafeInteger(discoveredCount)||discoveredCount<recordedCount||!array||array.kind!=='objectArray')return {available:false,reason:'Bitmap PNG dump 数组或计数无效',items:[],recordedCount,discoveredCount};
+    const items=[],count=Math.min(recordedCount,array.length);
+    for(let i=0;i<count;i++){
+      const id=data.subarray(array.offset+i*idSize,array.offset+(i+1)*idSize).toString('hex');if(!id||/^0+$/.test(id))continue;
+      const item=index.get(id);if(!item||item.kind!=='primitiveArray'||item.type!==8)continue;
+      const bytes=data.subarray(item.offset,item.offset+item.length),png=validatePng(bytes);if(!png)continue;
+      items.push({recordIndex:i+1,arrayId:id,width:png.width,height:png.height,pngBytes:item.length,sha256:createHash('sha256').update(bytes).digest('hex')});
+    }
+    const frequencies=new Map();for(const item of items)frequencies.set(item.sha256,(frequencies.get(item.sha256)||0)+1);
+    for(const item of items)item.duplicateCount=frequencies.get(item.sha256);
+    return {available:true,reason:null,recordedCount,discoveredCount,exportedCount:items.length,uniqueImageCount:frequencies.size,duplicateGroupCount:[...frequencies.values()].filter(count=>count>1).length,totalPngBytes:items.reduce((sum,item)=>sum+item.pngBytes,0),items};
+  }
+  function bitmapPngs(offset=0,limit=100){
+    if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('分页参数无效');
+    bitmapPngIndex??=readBitmapPngIndex();
+    return {...bitmapPngIndex,items:bitmapPngIndex.items.slice(offset,offset+limit),offset,total:bitmapPngIndex.items.length};
+  }
+  function bitmapPng(arrayId){
+    if(typeof arrayId!=='string'||!new RegExp(`^[a-f0-9]{${idSize*2}}$`).test(arrayId))throw new Error('Bitmap PNG 数组 ID 无效');
+    bitmapPngIndex??=readBitmapPngIndex();if(!bitmapPngIndex.available||!bitmapPngIndex.items.some(item=>item.arrayId===arrayId))throw new Error('对象不是当前快照中通过校验的 Bitmap PNG');
+    const metadata=bitmapPngIndex.items.find(image=>image.arrayId===arrayId),item=index.get(arrayId);if(item.length>64*1024*1024)throw new Error('单张 Bitmap PNG 导出上限为 64 MiB');return {...metadata,bytes:Uint8Array.from(data.subarray(item.offset,item.offset+item.length))};
   }
   function bitmapBuffer(bitmapId){
     if(typeof bitmapId!=='string'||!new RegExp(`^[a-f0-9]{${idSize*2}}$`).test(bitmapId))throw new Error('Bitmap 对象 ID 无效');
@@ -395,5 +445,5 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:childCount[i]};}),
       note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，其他引用语义仍可能未识别':'未区分强弱引用'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
   }
-  return {summary,objectDetail,classInstances,bitmaps,bitmapBuffer,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
+  return {summary,objectDetail,classInstances,bitmaps,bitmapPngs,bitmapPng,bitmapBuffer,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
 }

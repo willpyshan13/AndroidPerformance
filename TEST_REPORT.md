@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-03）
 
+## Android 15 Bitmap PNG heap dump（2026-11-03）
+
+- 新增 Android 15（API 35）及以上的 Bitmap PNG heap dump 采集入口；解析 `Bitmap.dumpData` 元数据与关联的 byte[]，验证 PNG 签名、块边界、CRC 和图像尺寸，支持分页查看、重复内容计数与逐张 PNG 导出。普通 Bitmap 的 Java 缓冲区 `.bin` 导出继续保留。
+- 测试覆盖 HPROF 静态字段、DumpData 实例、对象数组、多个 PNG byte[]、PNG CRC、重复图像、分页与 HTTP 下载；ADB 测试覆盖 API 35 命令和 API 34 拒绝。全量 `node --test`：360 项，344 通过、0 失败、16 项可选样本跳过；`npm run check`、`git diff --check` 通过；macOS ARM64 `npm run package:mac` 成功。本轮未连接设备；实际 Android 15 采集尚未验证。
+
 ## 追踪独立显示相关布局证据（2026-11-03）
 
 - 帧页在已载入 FrameTimeline 时即可显示布局证据面板，不再要求先读取 gfxinfo。来源优先使用本机直接采集追踪的 serial / package / API；没有追踪设备身份时才回退到直接采集的 gfxinfo 身份。导入来源不建立可验证身份，映射按钮仅对同一追踪会话、已知设备及 API 31+ 开启。

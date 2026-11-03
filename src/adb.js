@@ -405,14 +405,17 @@ export class Adb {
     }
     throw new Error('等待堆文件生成超时；请确认应用可调试且设备存储空间充足');
   }
-  async heapDump(serial, packageName) {
+  async heapDump(serial, packageName, { bitmapPng = false } = {}) {
     validateTarget(serial, packageName);
+    if(typeof bitmapPng!=='boolean')throw new Error('Bitmap PNG 转储选项无效');
     return this.exclusive(serial, async () => {
       const id = randomUUID();
       const remote = `/data/local/tmp/apw-${id}.hprof`;
       const local = join(tmpdir(), `apw-${id}.hprof`);
       try {
-        const result = await this.shell(serial, ['am', 'dumpheap', packageName, remote], { timeout: 120000 });
+        const args=bitmapPng?['am','dumpheap','-b','png',packageName,remote]:['am','dumpheap',packageName,remote];
+        if(bitmapPng){const sdk=Number((await this.shell(serial,['getprop','ro.build.version.sdk'])).trim());if(!Number.isInteger(sdk)||sdk<35)throw new Error('Bitmap PNG 转储要求 Android 15（API 35）或更高版本');}
+        const result = await this.shell(serial, args, { timeout: 120000 });
         if (/error|exception|not debuggable|permission denied/i.test(result)) throw new Error(`堆转储失败：${result.trim().slice(0, 500)}`);
         const remoteSize = await this.waitHeapFile(serial, remote);
         await this.run(['-s', serial, 'pull', remote, local], { timeout: 120000 });

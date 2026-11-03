@@ -107,6 +107,13 @@ test('heap capture returns valid HPROF and removes temporary files',async()=>{
   assert.equal(adb.busy.size,0);
 });
 
+test('Bitmap PNG heap capture is API 35 gated and asks am dumpheap for PNG buffers',async()=>{
+ const {writeFile}=await import('node:fs/promises');let local;const calls=[];
+ const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.some(value=>value.includes('ro.build.version.sdk')))return {stdout:'35\n'};if(args.includes('pull')){local=args.at(-1);await writeFile(local,Buffer.from('JAVA PROFILE 1.0.3\0test'));}return {stdout:''};});
+ adb.waitHeapFile=async()=>Buffer.byteLength('JAVA PROFILE 1.0.3\0test');const data=await adb.heapDump('ABC','com.example.app',{bitmapPng:true});assert.match(data.toString(),/^JAVA PROFILE/);assert.ok(calls.some(args=>args.some(value=>value.includes('dumpheap'))&&args.some(value=>value.includes("'-b'"))&&args.some(value=>value.includes("'png'"))));
+ const oldDevice=new Adb('adb',async(_path,args)=>args.some(value=>value.includes('ro.build.version.sdk'))?{stdout:'34\n'}:{stdout:''});await assert.rejects(oldDevice.heapDump('ABC','com.example.app',{bitmapPng:true}),/Android 15/);assert.equal(oldDevice.busy.size,0);
+});
+
 test('heap capture waits for asynchronous device writes and enforces size limit',async()=>{
   const sizes=[0,12,24,24,24];
   const adb=new Adb('adb',async()=>({stdout:`${sizes.shift()} /tmp/heap`}));

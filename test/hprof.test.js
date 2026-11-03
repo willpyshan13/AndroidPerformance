@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {deflateSync} from 'node:zlib';
 import {parseHprof} from '../src/hprof.js';
 const n4=n=>{const b=Buffer.alloc(4);b.writeUInt32BE(n);return b;};
 const record=(tag,bytes)=>Buffer.concat([Buffer.from([tag]),n4(0),n4(bytes.length),bytes]);
@@ -148,6 +149,20 @@ test('Bitmap inspection exposes recorded fields and byte arrays without inferrin
  assert.equal(result.total,2);assert.equal(result.recordedTotal,2);assert.equal(result.items[0].width,100);assert.equal(result.items[0].height,50);assert.equal(result.items[0].bufferLength,3);assert.equal(result.items[0].bufferDataPresent,true);assert.equal(result.items[0].recycled,false);
  const dump=heap.bitmapBuffer('00000014');assert.equal(dump.bufferId,'0000001e');assert.deepEqual([...dump.bytes],[1,2,3]);assert.throws(()=>heap.bitmapBuffer('00000015'),/没有可确认的 Java 缓冲区/);assert.throws(()=>heap.bitmapBuffer('ffffffff'),/不在当前快照/);
  assert.equal(heap.bitmaps(1,1).items[0].bufferLength,null);assert.throws(()=>heap.bitmaps(-1,1),/分页/);
+});
+
+test('Android Bitmap PNG dump metadata validates and pages actual PNG byte arrays',()=>{
+ const crc32=bytes=>{let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let i=0;i<8;i++)crc=(crc&1)?0xedb88320^(crc>>>1):crc>>>1;}return (crc^0xffffffff)>>>0;};
+ const chunk=(type,payload)=>{const name=Buffer.from(type),body=Buffer.concat([name,payload]),checksum=Buffer.alloc(4);checksum.writeUInt32BE(crc32(body));return Buffer.concat([n4(payload.length),body,checksum]);};
+ const ihdr=Buffer.concat([n4(1),n4(1),Buffer.from([8,6,0,0,0])]),png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(Buffer.from([0,255,0,0,255]))),chunk('IEND',Buffer.alloc(0))]);
+ const n2=n=>{const b=Buffer.alloc(2);b.writeUInt16BE(n);return b;};
+ const classDump=(id,statics,fields)=>Buffer.concat([Buffer.from([0x20]),n4(id),n4(0),n4(0),Buffer.alloc(20),n4(0),n2(0),n2(statics.length),...statics.map(([name,type,value])=>Buffer.concat([n4(name),Buffer.from([type]),n4(value)])),n2(fields.length),...fields.map(([name,type])=>Buffer.concat([n4(name),Buffer.from([type])]))]);
+ const invalidPng=Buffer.from(png);invalidPng[invalidPng.length-1]^=0xff;
+ const instance=Buffer.concat([Buffer.from([0x21]),n4(20),n4(0),n4(11),n4(12),n4(3),n4(3),n4(30)]),buffers=Buffer.concat([Buffer.from([0x22]),n4(30),n4(0),n4(3),n4(11),n4(40),n4(41),n4(42)]),array=(id,bytes=png)=>Buffer.concat([Buffer.from([0x23]),n4(id),n4(0),n4(bytes.length),Buffer.from([8]),bytes]);
+ const data=Buffer.concat([header,string(1,'android/graphics/Bitmap'),string(2,'android/graphics/Bitmap$DumpData'),string(4,'dumpData'),string(5,'count'),string(6,'max'),string(7,'buffers'),load(10,1),load(11,2),record(0x1c,Buffer.concat([classDump(10,[[4,2,20]],[]),classDump(11,[],[[5,10],[6,10],[7,2]]),instance,buffers,array(40),array(41),array(42,invalidPng)])),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(data,{indexed:true}),page=heap.bitmapPngs(0,1),second=heap.bitmapPngs(1,1);
+ assert.equal(page.available,true,page.reason);assert.equal(page.recordedCount,3);assert.equal(page.discoveredCount,3);assert.equal(page.exportedCount,2);assert.equal(page.total,2);assert.equal(page.items[0].width,1);assert.equal(page.items[0].duplicateCount,2);assert.equal(page.uniqueImageCount,1);assert.equal(page.duplicateGroupCount,1);assert.equal(second.items[0].recordIndex,2);assert.deepEqual(Buffer.from(heap.bitmapPng('00000028').bytes),png);assert.throws(()=>heap.bitmapPng('0000002a'),/不是当前快照中通过校验/);
+ const unsupported=parseHprof(fixture(),{indexed:true}).bitmapPngs();assert.equal(unsupported.available,false);
 });
 
 test('public Android HPROF fixture exposes actual Bitmap objects and references',async t=>{

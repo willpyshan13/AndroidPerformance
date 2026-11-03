@@ -237,6 +237,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           const bytes=Buffer.from(result.bytes),dimensions=result.width&&result.height?`-${result.width}x${result.height}`:'';
           res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':bytes.length,'Content-Disposition':`attachment; filename="bitmap-${result.bitmapId}${dimensions}.bin"`,'X-Content-Type-Options':'nosniff'});return res.end(bytes);
         }
+        if(path==='/api/heap/bitmap-png'){
+          const body=await readBody(req);if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
+          const result=await queryHeapWorker(heapSession.worker,'bitmapPng',{arrayId:body.arrayId}),bytes=Buffer.from(result.bytes);
+          res.writeHead(200,{'Content-Type':'image/png','Content-Length':bytes.length,'Content-Disposition':`attachment; filename="bitmap-${String(result.recordIndex).padStart(4,'0')}_${result.width}x${result.height}.png"`,'X-Content-Type-Options':'nosniff'});return res.end(bytes);
+        }
         if (path === '/api/apk/analyze') {
           if(apkBusy){req.resume();return json({error:'已有 APK 正在分析，请等待完成'},409);}
           apkBusy=true;
@@ -382,9 +387,9 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           const trackFilter=body.trackFilter??'',sliceFilter=body.sliceFilter??'';
           traceBusy=true;try{const result=await queryTraceFile(traceSession.path,{startNs,endNs,trackFilter,sliceFilter});return json({...result,fileBytes:traceSession.fileBytes,sessionId:traceSession.sessionId,viewBounds:{startNs,endNs},trackFilter,sliceFilter});}finally{traceBusy=false;}
         }
-        if (path === '/api/heap/instances' || path === '/api/heap/bitmaps' || path === '/api/heap/bitmap-duplicates' || path === '/api/heap/string-duplicates' || path === '/api/heap/string-search' || path === '/api/heap/destroyed-activities' || path === '/api/heap/leakcanary-retained' || path === '/api/heap/object' || path === '/api/heap/root-path' || path === '/api/heap/root-paths' || path === '/api/heap/incoming' || path === '/api/heap/dominators') {
+        if (path === '/api/heap/instances' || path === '/api/heap/bitmaps' || path === '/api/heap/bitmap-pngs' || path === '/api/heap/bitmap-duplicates' || path === '/api/heap/string-duplicates' || path === '/api/heap/string-search' || path === '/api/heap/destroyed-activities' || path === '/api/heap/leakcanary-retained' || path === '/api/heap/object' || path === '/api/heap/root-path' || path === '/api/heap/root-paths' || path === '/api/heap/incoming' || path === '/api/heap/dominators') {
           if(!heapSession || body.sessionId !== heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
-          return json(await queryHeapWorker(heapSession.worker,path.endsWith('instances')?'instances':path.endsWith('bitmap-duplicates')?'duplicateBitmaps':path.endsWith('string-duplicates')?'duplicateStrings':path.endsWith('string-search')?'searchStrings':path.endsWith('destroyed-activities')?'destroyedActivities':path.endsWith('leakcanary-retained')?'leakCanaryRetainedObjects':path.endsWith('bitmaps')?'bitmaps':path.endsWith('root-paths')?'rootPaths':path.endsWith('root-path')?'rootPath':path.endsWith('incoming')?'incoming':path.endsWith('dominators')?'dominators':'object',body));
+          return json(await queryHeapWorker(heapSession.worker,path.endsWith('instances')?'instances':path.endsWith('bitmap-pngs')?'bitmapPngs':path.endsWith('bitmap-duplicates')?'duplicateBitmaps':path.endsWith('string-duplicates')?'duplicateStrings':path.endsWith('string-search')?'searchStrings':path.endsWith('destroyed-activities')?'destroyedActivities':path.endsWith('leakcanary-retained')?'leakCanaryRetainedObjects':path.endsWith('bitmaps')?'bitmaps':path.endsWith('root-paths')?'rootPaths':path.endsWith('root-path')?'rootPath':path.endsWith('incoming')?'incoming':path.endsWith('dominators')?'dominators':'object',body));
         }
         if(path==='/api/gpu/verify') return json(await verifyGpuArtifact(gpuDir,body.id));
         if(path==='/api/gpu/trace') {
@@ -463,7 +468,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
         if (path === '/api/cpu-events') return json(await adb.listCpuEvents(body.serial));
         if (path === '/api/heap') {
-          const data = await adb.heapDump(body.serial, body.packageName);
+          const data = await adb.heapDump(body.serial, body.packageName,{bitmapPng:body.bitmapPng??false});
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="heap.hprof"' });
           return res.end(data);
         }

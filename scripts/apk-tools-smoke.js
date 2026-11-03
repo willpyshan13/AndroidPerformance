@@ -27,13 +27,25 @@ try {
   assert.ok(result.manifest);
   assert.ok(result.files.some(file => file.path === 'AndroidManifest.xml'));
   console.log(`Real AAPT2 APK analysis smoke passed: ${result.packageName}, ${result.fileCount} ZIP entries`);
+  const modernApkPath = resolve('fixtures/apk/aapt2-modern-table.apk');
+  try {
+    const modernResult = await analyzeApk(modernApkPath, { fileName: 'aapt2-modern-table.apk', aapt2Path });
+    assert.equal(modernResult.packageName, 'dev.apw.smoke');
+    assert.equal(modernResult.manifest.label, 'AAPT2 smoke');
+    assert.equal(modernResult.manifest.minSdk, 21);
+    assert.ok(modernResult.files.some(file => file.path === 'resources.arsc'));
+    console.log(`AAPT2 modern resource table smoke passed: ${modernResult.packageName}, ${modernResult.manifest.label}`);
+  } catch (modernError) {
+    throw new Error(`AAPT2 modern resources APK smoke failed: ${modernError.message}`, { cause: modernError });
+  }
 } catch (error) {
   const detail = error?.stack || error?.message || String(error);
   const logPath = resolve(process.env.APK_SMOKE_LOG_PATH || 'dist/apw-apk-smoke.log');
   await mkdir(dirname(logPath), { recursive: true });
   await writeFile(logPath, `${detail}\n`, 'utf8');
   const message = error?.message || String(error);
-  const failureCode = /dump badging/i.test(message) ? 'aapt2-dump-badging'
+  const failureCode = /modern resources APK smoke failed/i.test(message) ? 'aapt2-modern-resource-table'
+    : /dump badging/i.test(message) ? 'aapt2-dump-badging'
     : /dump xmltree/i.test(message) ? 'aapt2-dump-xmltree'
     : /\blink\b/i.test(message) ? 'aapt2-link-fixture'
     : /未返回有效 Manifest|Manifest 节点数量或深度超过限制/i.test(message) ? 'aapt2-manifest-output'

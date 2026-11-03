@@ -40,6 +40,8 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 CPU Stack Chart 本轮增加了最多 2,000 个等距样本、每样本最多 32 层的真实单调时间画布视图。`npm run benchmark:cpu-visualization` 在 50,000 个合成样本上记录索引 / 投影 / 调用树 / Canvas 命令耗时；这不是浏览器栅格或真实设备 perf.data 基准。
 
+2026-11-03 基准记录：50,000 样本、512 种调用栈、32 个线程；投影 8.53 ms、叶函数汇总 5.26 ms、单时间桶调用树 13.46 ms、Canvas 命令生成 3.39 ms，绘制 58,150 个栈帧矩形，Node heap 46.8 MiB。该结果只代表本机合成数据与命令生成，不代表 Electron 原生窗口栅格、真实 perf.data 或交互延迟。
+
 ## ART 方法跟踪
 
 CPU 页面支持单独导入 Android ART `.trace/.dmtrace`，在 Worker 内解析 v1/v2/v3 与支持的 streaming trace，展示每线程方法区间和 inclusive/self 汇总。也可在已运行的目标应用上通过 `am profile` 启停、取消采样并拉取结果，设置 3–30 秒与 100 µs–1 s 采样间隔；大小、事件、方法、线程与保留区间均有限制，插桩耗时只适合相对参考；可导出含线程与方法汇总的有界 JSON 分析报告。解析用例覆盖标准和 streaming 格式、thread-cpu 尾部时钟声明、嵌套调用、v1 unroll、损坏输入与安全上限；报告导出限制方法、线程和区间行数；模拟 ADB 用例覆盖命令参数、停止、取消、文件校验与远端 / 本地清理。待用真实设备导出的 ART trace 样本核对版本兼容性和系统权限。

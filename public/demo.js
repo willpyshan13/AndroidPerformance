@@ -30,7 +30,7 @@ export function demoCpuTimeline() {
     {thread:'RenderThread',tid:18489,stacks:[['libhwui.so','RenderThread::threadLoop','CanvasContext::draw'],['libhwui.so','RenderNode::prepareTree','RecordingCanvas::drawRenderNode']]},
     {thread:'OkHttp',tid:18496,stacks:[['okhttp3.RealCall','getResponseWithInterceptorChain','ConnectInterceptor.intercept'],['okio.AsyncTimeout','exit','sink.write']]},
   ];
-  return {event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:Array.from({length:240},(_,i)=>{const source=threads[i%threads.length],frames=source.stacks[Math.floor(i/3)%source.stacks.length];return {timeNs:String(base+BigInt(i)*20_000_000n+BigInt(i%3)*2_000_000n),pid:18472,tid:source.tid,thread:source.thread,period:String(800+((i*137)%1200)),frames};})};
+  return {event:'cpu-clock:u',clockId:'monotonic',truncated:false,samples:Array.from({length:240},(_,i)=>{const source=threads[i%threads.length],frames=i===120?Array.from({length:90},(_,depth)=>`demo.deep.module${depth%5}.function${depth}`):source.stacks[Math.floor(i/3)%source.stacks.length];return {timeNs:String(base+BigInt(i)*20_000_000n+BigInt(i%3)*2_000_000n),pid:18472,tid:source.tid,thread:source.thread,period:String(800+((i*137)%1200)),frames};})};
 }
 export function demoLayout() {
   return { source: 'demo', timestamp: Date.now(), screenshot: null, note: '演示层级。真实采集使用 UIAutomator，可访问性层级不等同于完整 View/Compose 树。',

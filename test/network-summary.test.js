@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseHar,filterNetworkRequests,networkRequestsCsv,summarizeHarHosts,summarizeNetworkEndpoints,summarizeNetworkConcurrency,buildNetworkTimeline} from '../public/offline.js';
+import {parseHar,filterNetworkRequests,networkRequestsCsv,networkRequestsHar,summarizeHarHosts,summarizeNetworkEndpoints,summarizeNetworkConcurrency,buildNetworkTimeline} from '../public/offline.js';
 
 test('HAR host statistics use only present phase evidence, including zero and independent TLS',()=>{
  const entries=[
@@ -42,6 +42,16 @@ test('network CSV export quotes fields, omits HAR secrets, and protects spreadsh
  assert.match(csv,/"开始时间","方法","URL"/);assert.match(csv,/"'=1\+1"/);assert.match(csv,/"https:\/\/example\.test\/a,""b"/);
  assert.doesNotMatch(csv,/secret|u:p|token=/);assert.equal(csv.endsWith('\r\n'),true);assert.equal((csv.match(/\r\n/g)||[]).length,3);
  assert.throws(()=>networkRequestsCsv(Array(50001).fill(harRow)),/超过/);
+});
+
+test('network HAR export preserves normalized evidence and excludes request secrets',()=>{
+ const [row]=parseHar({log:{entries:[{startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-1',request:{url:'https://user:pass@example.test/api/items?token=secret',method:'GET',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],postData:{text:'secret'}},response:{status:200,content:{size:42}},time:12,timings:{dns:1,connect:2,ssl:3,wait:4,receive:5}}]}});
+ const doc=networkRequestsHar([row]),entry=doc.log.entries[0];
+ assert.equal(doc.log.version,'1.2');assert.equal(entry.request.url,'https://example.test/api/items');assert.equal(entry.startedDateTime,'2026-01-01T00:00:00.000Z');assert.equal(entry.time,12);assert.equal(entry.response.content.size,42);assert.equal(entry.connection,'socket-1');
+ assert.deepEqual(entry.request.headers,[]);assert.deepEqual(entry.request.cookies,[]);assert.equal(entry.request.bodySize,-1);assert.equal(entry.timings.ssl,3);assert.doesNotMatch(JSON.stringify(doc),/secret|user:pass|token=/);
+ const [roundTrip]=parseHar(doc);assert.equal(roundTrip.url,'https://example.test/api/items');assert.equal(roundTrip.timeMs,12);assert.equal(roundTrip.startedAt,Date.parse('2026-01-01T00:00:00.000Z'));
+ const unknown=networkRequestsHar([{url:'https://example.test/a?x=1',method:'GET',startedAt:null,timeMs:null,status:0,bytes:null,timings:{}}]).log.entries[0];assert.equal(unknown.startedDateTime,null);assert.equal(unknown.time,-1);assert.equal(unknown._apw.timeUnavailable,true);assert.equal(unknown.timings.dns,-1);
+ assert.throws(()=>networkRequestsHar([{url:'file:///tmp/a'}]),/URL/);assert.throws(()=>networkRequestsHar(Array(50001).fill(row)),/超过/);
 });
 
 test('network activity timeline positions overlapping requests and excludes missing times',()=>{

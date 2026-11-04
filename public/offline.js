@@ -218,6 +218,31 @@ export function networkRequestsCsv(rows){
  return [columns.map(([name])=>cell(name)).join(','),...rows.map(row=>columns.map(([,get])=>cell(get(row))).join(','))].join('\r\n')+'\r\n';
 }
 
+// Export only the normalized, privacy-reduced request model. Raw headers,
+// cookies, query strings, credentials and bodies are never reconstructed.
+export function networkRequestsHar(rows){
+ if(!Array.isArray(rows)||rows.length>50000)throw new Error('网络导出记录无效或超过 50,000 条');
+ const finite=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;
+ const entries=rows.map(row=>{
+  let url=null;
+  try{url=new URL(row.url);if(!['http:','https:'].includes(url.protocol))url=null;else{url.username='';url.password='';url.search='';url.hash='';}}catch{}
+  if(!url)throw new Error('网络记录包含无效 URL');
+  const startedAt=finite(row.startedAt),date=startedAt===null?null:new Date(startedAt),startedDateTime=date&&Number.isFinite(date.getTime())?date.toISOString():null;
+  const timing=value=>finite(value)??-1;
+  return {
+   startedDateTime,
+   time:finite(row.timeMs)??-1,
+   request:{method:typeof row.method==='string'?row.method:'GET',url:url.toString(),httpVersion:'',cookies:[],headers:[],queryString:[],headersSize:-1,bodySize:-1},
+   response:{status:Number.isInteger(row.status)&&row.status>=0?row.status:0,statusText:'',httpVersion:'',cookies:[],headers:[],content:{size:finite(row.bytes)??-1,mimeType:''},redirectURL:'',headersSize:-1,bodySize:finite(row.bytes)??-1},
+   cache:{},
+   timings:{blocked:-1,dns:timing(row.timings?.dns),connect:timing(row.timings?.connect),send:-1,wait:timing(row.timings?.wait),receive:timing(row.timings?.receive),ssl:timing(row.timings?.ssl)},
+   ...(typeof row.connectionId==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(row.connectionId)?{connection:row.connectionId}:{}),
+   _apw:{failed:row.failed===true,timeUnavailable:finite(row.timeMs)===null,startTimeUnavailable:startedDateTime===null,redacted:true}
+  };
+ });
+ return {log:{version:'1.2',creator:{name:'Android Performance Workbench',version:'0.2.0'},entries}};
+}
+
 // Only inspect the file listing of this APK; packaging does not prove that a
 // profile was valid, installed, compiled, or used by the measured build.
 export function apkBaselineEvidence(apk){

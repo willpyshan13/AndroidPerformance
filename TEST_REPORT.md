@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-04）
 
+## 网络筛选结果导出为脱敏 HAR
+
+- 网络分析页新增“导出筛选 HAR”，导出当前已筛选的归一化请求记录，包含时间、耗时、状态、响应字节和可用阶段计时；不导出 URL 凭据、查询参数、请求头、Cookie、请求正文或响应正文。未知时间和阶段保留缺失标记，不填造数据；CSV 仍可用。
+- 自动化验证覆盖 HAR 1.2 结构、HAR 重新导入、凭据与 query 脱敏、请求头 / Cookie / 正文排除、缺失数据、无效 URL 与 50,000 条上限。网络摘要和 i18n 定向测试 42 项通过；全量 `npm test`：378 项，362 通过、0 失败、16 项因缺少可选官方样例跳过；`npm run check`、`git diff --check`、macOS ARM64 `npm run package:mac` 与桌面 smoke 通过。未操作 Android 设备。
+
 ## OkHttp Agent 脱敏路径详情
 
 - OkHttp Agent 新增可选 `PathSanitizer`：默认不采路径；启用后 callback 只接收 URL encoded path，不会接收 query、header 或 body。返回值限 2,048 UTF-8 字节，拒绝 query、fragment 与控制字符；Agent v3 带 event ID，桌面端保留 v1/v2 兼容并将有效 path 用于域名/接口统计、筛选和导出。路径脱敏由目标应用负责；没有可靠规则时应保持默认关闭。

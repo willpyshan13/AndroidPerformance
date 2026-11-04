@@ -45,7 +45,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；UIAutomator 检查线索附有规则 ID、严重级别、置信度和节点证据；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
-| 网络分析 | 查看请求活动时间线、筛选后的峰值并发和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
+| 网络分析 | 查看请求活动时间线、筛选后的峰值并发和域名连接阶段；支持接入 OkHttp Agent 后读取 logcat；可将筛选结果导出为脱敏 HAR 或 CSV；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并导出报告，提示环境差异和重复标识；可运行已安装的 instrumentation，或选择带 Gradle Wrapper 的 Macrobenchmark 工程执行 connected Android Test，并载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看并导出逐指标的报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
 | 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 函数及布局类名定位 Java/Kotlin/C/C++ 声明候选 | 本机目录或公开 Git 仓库 |
 | APK 分析 | 查看包信息、权限、组件、文件大小、DEX、原生库、证书和 Manifest | 本地 APK、AAPT2 |
@@ -139,7 +139,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 参考文档：[Android ADB](https://developer.android.com/tools/adb) · [dumpsys](https://developer.android.com/tools/dumpsys) · [Perfetto](https://perfetto.dev/docs/getting-started/system-tracing)
 
-网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可将当前筛选结果导出为 CSV。CSV 会引用并转义字段，且阻止表格公式注入。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。API 25 真机上的旧验证覆盖本机 HTTP 请求、Logcat 采集、PID 回退与默认路径省略；本轮加入的显式脱敏路径协议通过本地自动化验证，尚未在用户的真实应用中接入。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
+网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可导出脱敏 HAR 或 CSV。CSV 会引用并转义字段，且阻止表格公式注入；HAR 只从归一化记录重建，不包含请求头、Cookie、查询参数或正文，并保留阶段耗时和缺失值标记。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。API 25 真机上的旧验证覆盖本机 HTTP 请求、Logcat 采集、PID 回退与默认路径省略；本轮加入的显式脱敏路径协议通过本地自动化验证，尚未在用户的真实应用中接入。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
 
 堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用，并导出 HPROF 中实际保存的 Java 缓冲区原始 `.bin` 字节。Android 15（API 35）及以上还可调用系统 Bitmap PNG heap dump，将 `Bitmap.dumpData` 元数据所引用且通过 PNG 结构与 CRC 检查的图片单独导出；这条路径不能用于较旧 Android 版本。普通缓冲区导出不会转换成 PNG；两种模式都不代表完整的原生或硬件像素内存，也不是保留大小。
 

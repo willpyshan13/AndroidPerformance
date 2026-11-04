@@ -446,7 +446,7 @@ export function buildBenchmarkRegressionReport(baseline,current,{thresholdPercen
 
 export function benchmarkRegressionCsv(report){
  if(report?.kind!=='benchmark-regression-report'||!Array.isArray(report.rows))throw new Error('Benchmark 回归报告无效');
- const esc=value=>`"${String(value??'').replaceAll('"','""')}"`,header=['class','benchmark','metricType','metric','params','baseline','current','deltaPercent','direction','thresholdPercent','status'];
+ const esc=value=>{let text=String(value??'');if(typeof value==='string'&&/^[\t\r ]*[=+\-@]/.test(value))text=`'${text}`;return `"${text.replaceAll('"','""')}"`;},header=['class','benchmark','metricType','metric','params','baseline','current','deltaPercent','direction','thresholdPercent','status'];
  return [header,...report.rows.map(row=>[row.className,row.name,row.metricType,row.metric,JSON.stringify(row.params||{}),row.baseline,row.median,row.delta,row.direction,row.thresholdPercent,row.status])].map(row=>row.map(esc).join(',')).join('\r\n')+'\r\n';
 }
 

@@ -25,6 +25,14 @@ test('v2 event identities preserve repeated identical calls across rolling snaps
  merged=mergeNetworkAgentSnapshot(merged.state,{rows:parse(a,b,c)},2);assert.deepEqual(merged.result.rows.map(r=>r.eventId),[b,c]);assert.equal(merged.result.dropped,1);
  const legacy=parseNetworkAgentLog(JSON.stringify(record)).rows;merged=mergeNetworkAgentSnapshot(merged.state,{rows:legacy},2);assert.equal(merged.result.legacy,1);assert.equal(merged.result.displayTruncated,true);assert.deepEqual(merged.result.rows.map(r=>r.id),[1,2]);
 });
+test('v3 agent path detail is optional, query-free and rejected when malformed',()=>{
+ const id='32345678-1234-4234-8234-123456789abc';
+ const row=parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:id,path:'/users/{user}/profile'})).rows[0];
+ assert.equal(row.path,'/users/{user}/profile');assert.equal(row.url,'https://example.com/users/{user}/profile');
+ const omitted=parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:id,path:null})).rows[0];assert.equal(omitted.path,'（未采集）');
+ for(const path of ['/user/alice?token=secret','/path#fragment','/control\nvalue','x'.repeat(2049),'é'.repeat(1025)])assert.equal(parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:id,path})).invalid,1);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:'invalid',path:'/safe'})).invalid,1);
+});
 test('network request empty state distinguishes agent wait, missing events, filters and empty imports',()=>{
  const state=(overrides={})=>networkRequestEmptyState({hasSnapshot:true,source:'adb',agentActive:false,totalRows:0,filteredRows:0,...overrides});
  assert.equal(networkRequestEmptyState({hasSnapshot:false,source:null,agentActive:false,totalRows:0,filteredRows:0}),'import');

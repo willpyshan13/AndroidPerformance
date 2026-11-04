@@ -139,7 +139,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 参考文档：[Android ADB](https://developer.android.com/tools/adb) · [dumpsys](https://developer.android.com/tools/dumpsys) · [Perfetto](https://perfetto.dev/docs/getting-started/system-tracing)
 
-网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可将当前筛选结果导出为 CSV。CSV 会引用并转义字段，且阻止表格公式注入。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。API 25 真机上的临时 OkHttp 4.12 debug 应用已验证本机 HTTP 请求、Logcat 采集、旧设备 PID 回退和路径脱敏；尚未在用户的真实应用中验证接入。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
+网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可将当前筛选结果导出为 CSV。CSV 会引用并转义字段，且阻止表格公式注入。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。API 25 真机上的旧验证覆盖本机 HTTP 请求、Logcat 采集、PID 回退与默认路径省略；本轮加入的显式脱敏路径协议通过本地自动化验证，尚未在用户的真实应用中接入。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
 
 堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用，并导出 HPROF 中实际保存的 Java 缓冲区原始 `.bin` 字节。Android 15（API 35）及以上还可调用系统 Bitmap PNG heap dump，将 `Bitmap.dumpData` 元数据所引用且通过 PNG 结构与 CRC 检查的图片单独导出；这条路径不能用于较旧 Android 版本。普通缓冲区导出不会转换成 PNG；两种模式都不代表完整的原生或硬件像素内存，也不是保留大小。
 

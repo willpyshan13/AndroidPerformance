@@ -22,6 +22,7 @@ public class NetworkEventsTest {
       try(Response response=client.newCall(new Request.Builder().url(base+"/secret?token=private").build()).execute()) {check(response.code()==200,"status");check(response.body().string().equals("hello"),"body");}
       check(records.size()==1,"one event"); NetworkEvents.Record first=records.get(0);
       check(first.status==200&&!first.failed&&first.responseBytes==5,"response evidence");
+      check(first.path==null,"path is absent by default");
       check(first.host.equals("127.0.0.1")&&first.method.equals("GET")&&first.elapsedNs>0,"request metadata");
       check(first.connectNs!=null&&first.tlsNs==null,"connection phases");
       check(first.waitNs!=null&&first.waitNs>=0&&first.receiveNs!=null&&first.receiveNs>=0,"waiting and body reading phases");
@@ -29,6 +30,14 @@ public class NetworkEventsTest {
       check(records.size()==2&&records.get(1).connectNs==null,"connection reuse has absent connection duration");
       try(Response response=client.newCall(new Request.Builder().url(base+"/redirect").build()).execute()) {response.body().string();}
       check(records.size()==3&&records.get(2).waitNs==null&&records.get(2).receiveNs==null,"redirect phases remain unknown");
+      List<NetworkEvents.Record> detailed=new ArrayList<>();
+      OkHttpClient detailedClient=new OkHttpClient.Builder().eventListenerFactory(NetworkEvents.factory(detailed::add, encodedPath -> {
+        check(!encodedPath.contains("?"),"sanitizer never receives query");
+        return encodedPath.replace("/secret","/users/{user}");
+      })).build();
+      try(Response response=detailedClient.newCall(new Request.Builder().url(base+"/secret?token=private").build()).execute()) {response.body().string();}
+      check(detailed.size()==1&&"/users/{user}".equals(detailed.get(0).path),"only app-sanitized path is retained");
+      detailedClient.dispatcher().executorService().shutdownNow();detailedClient.connectionPool().evictAll();
       server.stop(0);client.connectionPool().evictAll();
       try {client.newCall(new Request.Builder().url(base+"/secret").build()).execute();throw new AssertionError("expected failure");}catch(java.io.IOException expected){}
       check(records.size()==4&&records.get(3).failed&&records.get(3).status==0&&records.get(3).responseBytes==null&&records.get(3).waitNs==null,"failed call evidence");

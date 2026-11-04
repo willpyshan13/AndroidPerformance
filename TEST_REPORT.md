@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-04）
 
+## OkHttp Agent 脱敏路径详情
+
+- OkHttp Agent 新增可选 `PathSanitizer`：默认不采路径；启用后 callback 只接收 URL encoded path，不会接收 query、header 或 body。返回值限 2,048 UTF-8 字节，拒绝 query、fragment 与控制字符；Agent v3 带 event ID，桌面端保留 v1/v2 兼容并将有效 path 用于域名/接口统计、筛选和导出。路径脱敏由目标应用负责；没有可靠规则时应保持默认关闭。
+- 自动化覆盖 v3 可选路径、无 query 和无效路径拒绝、旧协议兼容、Agent ZIP 实际源码与中英文说明。本机 OkHttp 4.12 + loopback HTTP smoke 验证真实调用、连接复用、失败记录及自定义 path sanitizer；编译仅有 Kotlin 元数据类缺失警告，执行通过。定向网络/i18n 43 项通过；全量 `npm test`：377 项，361 通过、0 失败、16 项因缺少可选官方样例跳过。`npm run check`、`git diff --check`、macOS ARM64 `npm run package:mac` 与 `node scripts/mac-desktop-smoke.js` 通过。未操作 Android 设备。
+
 ## Compose State apply 与函数体执行时序
 
 - Layout Agent 的 Snapshot apply observer 现为变更 State 记录首末 `System.nanoTime()`，并通过当前 `RecomposeScope` State 读取映射将时间戳写入对应 Runtime 组 XML；不读取 State 值。桌面端按 Compose group key 查找 apply 之后最早的 uptime 编译器函数体执行事件，只对唯一 key 显示时间差，重复 key 标记歧义；这提供时序证据，不证明因果或该 State 导致帧变化。

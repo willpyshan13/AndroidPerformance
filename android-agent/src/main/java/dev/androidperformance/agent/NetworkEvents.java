@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import okhttp3.Call;
 import okhttp3.EventListener;
@@ -15,31 +16,38 @@ import okhttp3.Response;
 /** Opt-in OkHttp call measurements. Supply a fresh listener for every call. */
 public final class NetworkEvents extends EventListener {
   public interface Sink { void accept(Record record); }
+  /** Receives only the encoded URL path; query, headers and body are never passed to this callback. */
+  public interface PathSanitizer { String sanitize(String encodedPath); }
   public static final class Record {
-    public final String scheme, host, method;
+    public final String scheme, host, method, path;
     public final int port, status;
     public final long startedAtMs, elapsedNs;
     public final Long responseBytes, dnsNs, connectNs, tlsNs, waitNs, receiveNs;
     public final boolean failed;
-    Record(String scheme, String host, int port, String method, int status,
+    Record(String scheme, String host, String method, String path, int port, int status,
         long startedAtMs, long elapsedNs, Long responseBytes, Long dnsNs,
         Long connectNs, Long tlsNs, Long waitNs, Long receiveNs, boolean failed) {
-      this.scheme=scheme; this.host=host; this.port=port; this.method=method; this.status=status;
+      this.scheme=scheme; this.host=host; this.port=port; this.method=method; this.path=path; this.status=status;
       this.startedAtMs=startedAtMs; this.elapsedNs=elapsedNs; this.responseBytes=responseBytes;
       this.dnsNs=dnsNs; this.connectNs=connectNs; this.tlsNs=tlsNs; this.waitNs=waitNs; this.receiveNs=receiveNs; this.failed=failed;
     }
   }
   public static EventListener.Factory factory(Sink sink) {
+    return factory(sink, null);
+  }
+  /** Path detail is absent unless the app explicitly supplies a sanitizer. */
+  public static EventListener.Factory factory(Sink sink, PathSanitizer pathSanitizer) {
     if (sink == null) throw new IllegalArgumentException("sink is required");
-    return call -> new NetworkEvents(sink);
+    return call -> new NetworkEvents(sink, pathSanitizer);
   }
   private final Sink sink;
+  private final PathSanitizer pathSanitizer;
   private long start, startedAt, dnsStart, connectStart, tlsStart, bytes;
   private long dns, connect, tls;
   private boolean hasDns, hasConnect, hasTls, hasBytes, emitted;
   private int status, requestHeadersCount, requestBodyStarts, requestBodyEnds, responseHeadersCount, responseBodyStarts, responseBodyEnds;
   private long requestHeadersEnd, requestBodyEnd, responseHeadersStart, responseBodyStart, responseBodyEnd;
-  private NetworkEvents(Sink sink) { this.sink=sink; }
+  private NetworkEvents(Sink sink, PathSanitizer pathSanitizer) { this.sink=sink; this.pathSanitizer=pathSanitizer; }
   @Override public synchronized void callStart(Call call) { start=System.nanoTime(); startedAt=System.currentTimeMillis(); }
   @Override public synchronized void dnsStart(Call call, String domainName) { dnsStart=System.nanoTime(); }
   @Override public synchronized void dnsEnd(Call call, String domainName, List<InetAddress> addresses) {
@@ -63,19 +71,25 @@ public final class NetworkEvents extends EventListener {
   @Override public void callEnd(Call call) { emit(call,false); }
   @Override public void callFailed(Call call, IOException failure) { emit(call,true); }
   private void emit(Call call, boolean failed) {
+    Request request=call.request(); String path=null;
+    if(pathSanitizer!=null)try{path=safeSanitizedPath(pathSanitizer.sanitize(request.url().encodedPath()));}catch(RuntimeException ignored){}
     Record record;
     synchronized(this) {
       if(emitted)return; emitted=true;
-      Request request=call.request();
       long requestEnd=requestBodyEnds==1?requestBodyEnd:requestHeadersEnd;
       Long waitNs=!failed && requestHeadersCount==1 && requestBodyStarts==requestBodyEnds && requestBodyEnds<=1
           && responseHeadersCount==1 && requestEnd!=0 && responseHeadersStart>=requestEnd ? responseHeadersStart-requestEnd : null;
       Long receiveNs=!failed && requestHeadersCount==1 && responseHeadersCount==1 && responseBodyStarts==1 && responseBodyEnds==1 && responseBodyEnd>=responseBodyStart
           ? responseBodyEnd-responseBodyStart : null;
-      record=new Record(request.url().scheme(),request.url().host(),request.url().port(),request.method(),status,
+      record=new Record(request.url().scheme(),request.url().host(),request.method(),path,request.url().port(),status,
         startedAt,Math.max(0,System.nanoTime()-start),hasBytes?bytes:null,hasDns?dns:null,hasConnect?connect:null,hasTls?tls:null,waitNs,receiveNs,failed);
     }
     // Instrumentation must not break the application's HTTP calls.
     try { sink.accept(record); } catch (RuntimeException ignored) { }
+  }
+  private static String safeSanitizedPath(String path) {
+    if(path==null||path.length()>2048||path.getBytes(StandardCharsets.UTF_8).length>2048||!path.startsWith("/")||path.indexOf('?')>=0||path.indexOf('#')>=0)return null;
+    for(int i=0;i<path.length();i++)if(path.charAt(i)<0x20||path.charAt(i)==0x7f)return null;
+    return path;
   }
 }

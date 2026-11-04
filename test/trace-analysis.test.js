@@ -226,20 +226,21 @@ test('Compose uptime maps through monotonic clock snapshots without extrapolatio
  assert.throws(()=>parseMonotonicClockSnapshots(csv.replace('"","1"','"7","1"')),/多台设备/);
 });
 
-test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline frames',async(t)=>{
- const {queryComposeFrameCorrelation,queryCpuFrameCorrelation,queryLayoutFrameCorrelation,queryFrameTimeline}=await import('../src/trace-analysis.js');
+test('Trace Processor maps Compose, CPU and network intervals to actual synthetic FrameTimeline frames',async(t)=>{
+ const {queryComposeFrameCorrelation,queryCpuFrameCorrelation,queryLayoutFrameCorrelation,queryNetworkFrameCorrelation,queryFrameTimeline}=await import('../src/trace-analysis.js');
  const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const v=n=>{n=BigInt(n);const b=[];do{let x=Number(n&127n);n>>=7n;if(n)x|=128;b.push(x);}while(n);return Buffer.from(b);};
  const num=(field,n)=>Buffer.concat([v(field*8),v(n)]),msg=(field,b)=>Buffer.concat([v(field*8+2),v(b.length),b]);
  const frameStart=Buffer.concat([num(1,123),num(2,42),num(3,43),num(4,1000),msg(5,Buffer.from('example layer')),num(6,2),num(7,0),num(9,64),num(10,1)]);
  const framePacket=(ts,event)=>msg(1,Buffer.concat([num(8,ts),num(10,1),msg(76,event)]));
+ const packageName='com.example.app',processDescriptor=Buffer.concat([num(1,1000),msg(3,Buffer.from(packageName))]),processTree=msg(1,processDescriptor),processPacket=msg(1,Buffer.concat([msg(2,processTree)]));
  const expected=Buffer.concat([num(1,124),num(2,42),num(3,43),num(4,1000),msg(5,Buffer.from('example layer'))]);
  // TracePacket.clock_snapshot: repeated Clock values, with BOOTTIME selected as the primary trace clock.
  const clock=(id,timestamp)=>Buffer.concat([num(1,id),num(2,timestamp)]);
  const snapshot=(mono,boot)=>Buffer.concat([msg(1,clock(3,mono)),msg(1,clock(6,boot)),num(2,6)]);
  const clockPacket=(mono,boot)=>msg(1,Buffer.concat([num(8,boot),msg(6,snapshot(mono,boot))]));
- const data=Buffer.concat([
+ const data=Buffer.concat([processPacket,
   clockPacket(500000000,1000000000),clockPacket(600000000,1100000000),
   framePacket(1000000000,msg(3,expected)),framePacket(1016000000,msg(5,num(1,124))),framePacket(1000000000,msg(4,frameStart)),framePacket(1030000000,msg(5,num(1,123)))
  ]);
@@ -248,6 +249,8 @@ test('Trace Processor maps Compose uptime to actual synthetic FrameTimeline fram
   const layout=await queryLayoutFrameCorrelation(path,{packageName:null,captureStartUptimeNs:'510000000',captureEndUptimeNs:'520000000'});assert.equal(layout.available,true,JSON.stringify(layout));assert.equal(layout.traceStartNs,'1010000000');assert.equal(layout.traceEndNs,'1020000000');assert.equal(layout.matchedFrameCount,1,JSON.stringify(layout));assert.equal(layout.frames[0].overlapNs,'10000000');assert.equal(layout.frames[0].layer,'example layer');
   const outOfRange=await queryLayoutFrameCorrelation(path,{packageName:null,captureStartUptimeNs:'400000000',captureEndUptimeNs:'410000000'});assert.equal(outOfRange.available,false);assert.match(outOfRange.reason,/不能安全外推/);
   const cpu=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:1000,tid:43,weight:'123',name:'MainActivity.draw'}]});assert.equal(cpu.available,true,JSON.stringify(cpu));assert.equal(cpu.mappedSamples,1);assert.equal(cpu.matchedSamples,1);assert.equal(cpu.frames.length,1);assert.equal(cpu.frames[0].sampleWeight,'123');assert.deepEqual(cpu.frames[0].functions,[{name:'MainActivity.draw',count:1,weight:'123'}]);
+  const filteredTimeline=await queryFrameTimeline(path,{packageName});assert.equal(filteredTimeline.frames.length,1,JSON.stringify(filteredTimeline));
+  const network=await queryNetworkFrameCorrelation(path,{packageName,requests:[{id:7,pid:1000,startNs:'515000000',durationNs:'10000000'}]});assert.equal(network.available,true,JSON.stringify(network));assert.equal(network.clockSnapshots,2);assert.equal(network.mappedRequests,1);assert.equal(network.unmappedRequests,0);assert.equal(network.frameOverlapPairs,1,JSON.stringify(network));assert.equal(network.requests[0].traceStartNs,'1015000000');assert.equal(network.requests[0].traceEndNs,'1025000000');assert.equal(network.requests[0].frames[0].overlapNs,'10000000');
   const wrongPid=await queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'515000000',pid:99,tid:100,weight:'123',name:'Other.draw'}]});assert.equal(wrongPid.available,true);assert.equal(wrongPid.mappedSamples,1);assert.equal(wrongPid.matchedSamples,0);assert.equal(wrongPid.frames.length,0);
   const unknown=await queryCpuFrameCorrelation(path,{clockId:null,samples:[]});assert.equal(unknown.available,false);assert.match(unknown.reason,/CLOCK_MONOTONIC/);
   await assert.rejects(queryCpuFrameCorrelation(path,{clockId:'monotonic',samples:[{timeNs:'bad'}]}),/CPU 采样关联数据无效/);

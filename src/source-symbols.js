@@ -57,6 +57,32 @@ export function demangleItaniumSymbol(symbol){
  if((nested&&(index>value.length||value[index-1]!=='E'||parts.length<2))||(!nested&&parts.length!==1))return null;
  return parts.join('::');
 }
+export function normalizeDemangledItaniumName(symbol){
+ if(typeof symbol!=='string'||!symbol.trim()||symbol.length>2000)return null;
+ let value=symbol.trim().replace(/\s*\[abi:[^\]]+\]/g,'');
+ // Drop the argument list. Using the final opening paren preserves operator().
+ const argsStart=value.lastIndexOf('(');if(argsStart>=0)value=value.slice(0,argsStart).trimEnd();
+ if(!value)return null;
+ const stripTemplateArgs=input=>{let out='',depth=0;for(const ch of input){if(ch==='<'){depth++;continue;}if(ch==='>'&&depth){depth--;continue;}if(!depth)out+=ch;}return depth===0?out.trim():null;};
+ const conversion=value.lastIndexOf('operator ');
+ if(conversion>=0){
+  const operatorSuffix=value.slice(conversion+9).trim();
+  if(/^(?:[A-Za-z_][\w:]*|new(?:\[\])?|delete(?:\[\])?)$/.test(operatorSuffix)){
+   let prefix=value.slice(0,conversion).trimEnd(),separator=prefix.lastIndexOf('::'),scope=separator>=0?prefix.slice(0,separator).trimEnd():'';
+   if(scope){const split=[...scope.matchAll(/\s+(?![^<>]*>)/g)].at(-1);if(split)scope=scope.slice(split.index+split[0].length);}
+   const cleanScope=stripTemplateArgs(scope);if(cleanScope===null)return null;
+   return `${cleanScope?`${cleanScope}::`:''}operator ${operatorSuffix}`;
+  }
+ }
+ // Demanglers include return types for some template functions. Select the
+ // final top-level whitespace suffix, which is the qualified function name.
+ let depth=0,split=-1;
+ for(let i=0;i<value.length;i++){const ch=value[i];if(ch==='<')depth++;else if(ch==='>'&&depth)depth--;else if(/\s/.test(ch)&&depth===0)split=i;}
+ if(split>=0)value=value.slice(split+1).trim();
+ const clean=stripTemplateArgs(value),identifier='~?[A-Za-z_][\\w$]*',operator='operator(?:\\(\\)|\\[\\]|\\s*[!%&*+\\-/<>^|~,=]+|\\s+[A-Za-z_][\\w:]*)';
+ if(clean===null||!clean||!new RegExp(`^(?:${identifier}::)*(?:${identifier}|${operator})$`).test(clean))return null;
+ return clean;
+}
 export function parseSourceSymbol(symbol){
  if(typeof symbol!=='string'||!symbol.trim()||symbol.length>500)throw new Error('符号名称无效');
  const raw=symbol.trim(),demangled=demangleItaniumSymbol(raw),nativeInput=demangled||raw;

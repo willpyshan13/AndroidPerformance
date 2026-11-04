@@ -2,13 +2,16 @@ import {constants} from 'node:fs';
 import {lstat, mkdir, open, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {basename, extname, isAbsolute, join, relative, sep} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
-import {parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod} from './source-symbols.js';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {parseSourceSymbol,normalizeDemangledItaniumName,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod} from './source-symbols.js';
 
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const digestPattern=/^[a-f0-9]{64}$/;
 const extensions=new Set(['.kt','.kts','.java','.xml','.gradle','.c','.cc','.cpp','.cxx','.c++','.h','.hh','.hpp','.hxx','.h++','.ipp','.inl','.aidl','.rs','.proto','.properties','.toml']);
 const excluded=new Set(['.git','.gradle','.idea','node_modules','build','dist','out','.cxx']);
 const maxFiles=5000,maxFile=512*1024,maxTotal=32*1024*1024,maxEntries=50000;
+const execFileAsync=promisify(execFile);
 const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
 const inside=(root,path)=>path===root||path.startsWith(root+sep);
 const snapshotPath=(root,id)=>{if(!idPattern.test(id||''))throw new Error('源码快照标识无效');return join(root,id);};
@@ -62,8 +65,19 @@ export async function searchSource(root,id,query){
  }
  return {matches,truncated};
 }
-export async function resolveSourceSymbol(root,id,symbol){
- const parsed=parseSourceSymbol(symbol),meta=await getSourceSnapshot(root,id),matches=[];let total=0;const mappingFiles=parsed.isNative?[]:meta.files.filter(file=>file.path.split('/').at(-1).toLowerCase()==='mapping.txt'),deobfuscated=[];let mappingTruncated=false;
+export async function resolveSourceSymbol(root,id,symbol,{demanglerPath=null,demangler=null}={}){
+ let parsed;
+ try{parsed=parseSourceSymbol(symbol);}catch(error){
+  if(!String(symbol).trim().startsWith('_Z')||(!demanglerPath&&!demangler))throw error;
+  let demangled;
+  try{
+   if(demangler)demangled=await demangler(symbol);
+   else {const mangled=String(symbol).trim().replace(/\+0x[\da-f]+$/i,'');const result=await execFileAsync(demanglerPath,[mangled],{encoding:'utf8',timeout:2000,maxBuffer:8192,windowsHide:true});demangled=result.stdout.split(/\r?\n/,1)[0];}
+  }catch{throw error;}
+  const normalized=normalizeDemangledItaniumName(demangled);if(!normalized)throw error;
+  parsed=parseSourceSymbol(normalized);
+ }
+ const meta=await getSourceSnapshot(root,id),matches=[];let total=0;const mappingFiles=parsed.isNative?[]:meta.files.filter(file=>file.path.split('/').at(-1).toLowerCase()==='mapping.txt'),deobfuscated=[];let mappingTruncated=false;
  for(const mappingFile of mappingFiles){const mapping=await readIndexedFile(root,id,mappingFile);for(const entry of deobfuscateJavaMethod(mapping.text,parsed)){if(deobfuscated.length===200){mappingTruncated=true;break;}deobfuscated.push({...entry,path:mappingFile.path});}if(mappingTruncated)break;}
  const targets=deobfuscated.length?deobfuscated.map(mapping=>({parsed:parseSourceSymbol(`${mapping.originalClass}${mapping.originalMethod?`.${mapping.originalMethod}()` : ''}`),mapping})): [{parsed,mapping:null}];
  const uniqueMatches=new Map();

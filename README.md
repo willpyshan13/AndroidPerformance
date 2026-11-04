@@ -12,7 +12,7 @@
 
 ### 本机运行桌面版
 
-项目面向本机使用，不提供安装包或发布流程。在 macOS Apple Silicon 上运行 `npm run package:mac` 可生成本机 `.app` 目录并启动桌面版；应用包含 Electron、ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
+项目面向本机使用。在 macOS Apple Silicon 上运行 `npm run package:mac` 可生成本机 `.app` 目录并启动桌面版；应用包含 Electron、ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
 GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检查和桌面启动 smoke。
 
@@ -41,7 +41,7 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线、筛选后的峰值并发、HTTP 协议、OkHttp Agent 明确记录的连接复用状态和域名连接阶段；支持本机抽象 socket 增量采集与旧版 Logcat 兼容；可将筛选结果导出为脱敏 HAR、CSV 或 JSON；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并提示环境差异；逐项设置优化方向和回归阈值，导出 JSON、CSV、Markdown 与 CI JSON；可运行已安装的 instrumentation，或配置启动方式、ART 编译模式、启动/滚动/动画/页面切换场景、预热/迭代次数和 Baseline Profile 输入，再运行带 Gradle Wrapper 的 Macrobenchmark 工程；配置以 APS Gradle properties 和环境变量传入，目标测试需要显式读取；载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看并导出逐指标的报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
-| 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 函数及布局类名定位 Java/Kotlin/C/C++ 声明候选 | 本机目录或公开 Git 仓库 |
+| 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 与布局证据定位 Java/Kotlin/C/C++ 声明候选；匹配 Build ID 的 Native ELF 还可提供 DWARF 源码行 | 本机目录或公开 Git 仓库 |
 | APK 分析 | 查看包信息、权限、组件、文件大小、DEX、原生库、证书和 Manifest | 本地 APK、AAPT2 |
 | 外观设置 | 跟随系统或切换浅色/深色主题，设置 90%–120% 缩放；桌面偏好退出后保留 | 系统外观与本机设置 |
 | 采集记录 | 保存、回放及导入导出 JSON 报告 | 本地记录 |
@@ -103,10 +103,12 @@ npm run package:mac   # 本机生成 macOS arm64 .app 目录
 - **堆分析**：采集通常需要可调试应用；字段和数组元素数据字节不等于浅大小或保留大小，支持分页查看已索引实例、跟随引用、查找有限的候选根路径和浏览近似支配图。最多索引 100 万个对象；支配图用 CSR 类型化数组计算，最多读取 150 万条引用边，超限会标记结果不完整。支配图基于可见 GC 根、字段、数组、类及静态字段关系；不区分强弱引用，可能缺少运行时关系。记录数据字节不含对象头、对齐等信息，不能作为保留大小；快照对比或路径结果都不能证明泄漏。
 - **实时生命周期与应用帧观察**：内存页可选择 Android 工程目录，将 Activity Agent 注入目标 app 的 `src/debug` source set；已有 debug Manifest 会先备份，文件冲突时停止，已有 AndroidX Fragment 依赖时可选择加入 Fragment 桥接。项目已添加 AndroidX `metrics-performance` debug 依赖时，也可一并注入 JankStats 桥接。注入后需自行构建并安装 debug 变体。Agent 按弱引用观察已销毁 Activity / Fragment，在 5 秒、30 秒、2 分钟报告仍可达的候选，不强制 GC 或持有对象强引用。帧页仍提供独立 JankStats Agent 源码包下载。两者都只用于 debug 构建；生命周期候选不读取对象图，也不等于确认泄漏，确认分析请使用 HPROF / LeakCanary Shark。
 - **GPU**：桌面版可选择或启动本机安装的 AGI；导出 `.gfxtrace` 后需在 AGI 中手动打开。校验仅检测导入后文件是否变化，不能验证来源或格式；单个产物上限 512 MiB，交给内置追踪分析器的上限为 256 MiB。此功能不采集 GPU 数据。
-- **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照包含受支持的文本源码，并在 Gradle 工程中额外收集 `build/outputs/mapping/**/mapping.txt`；其他构建产物和符号链接会跳过。最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位会优先使用 R8 / ProGuard 映射文件还原混淆类名、方法名及可用的行号范围，再按源码声明生成候选；没有映射时按声明名、类名和包名排序。C/C++ 支持常见源码符号及部分 Itanium ABI 嵌套函数名解码；简单内置类型和名称模板实参会保留在显示符号中，全局函数与模板类候选按基础声明名查找。CPU 采样还会保留受限的 ELF 文件地址和 Build ID；macOS ARM64 包内 LLVM symbolizer 可在符号目录中验证同 Build ID 的 ELF，再读取 DWARF 源码行及内联帧。无匹配 Build ID、未剥离符号文件或 DWARF 行表时无法给出精确行；解析出的构建路径仍须与源码快照核对。函数参数和完整 ABI substitution 仍未解码，复杂编码会提示改用文本搜索。
+- **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照包含受支持的文本源码，并在 Gradle 工程中额外收集 `build/outputs/mapping/**/mapping.txt`；其他构建产物和符号链接会跳过。最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位会优先使用 R8 / ProGuard 映射文件还原混淆类名、方法名及可用的行号范围，再按源码声明生成候选；没有映射时按声明名、类名和包名排序。C/C++ 符号先尝试内置解析；遇到复杂 Itanium ABI 编码时，macOS ARM64 桌面包会调用 NDK `llvm-cxxfilt` 解码后匹配源码声明。此处生成的是文本候选，不等于 ELF 地址级证明。CPU 采样还会保留受限的 ELF 文件地址和 Build ID；macOS ARM64 包内 LLVM symbolizer 可在符号目录中验证同 Build ID 的 ELF，再读取 DWARF 源码行及内联帧。无匹配 Build ID、未剥离符号文件或 DWARF 行表时无法给出精确行；解析出的构建路径仍须与源码快照核对。
 - **APK**：一次分析一个 APK；split APK 的结果只涵盖导入的文件。证书页面展示签名结构和证书信息，**不验证签名完整性或证书信任链**。
 
-仍需补齐：State 变更与实际重组执行、帧表现之间的因果关联，以及未接入应用的网络请求明细采集。可选 Perfetto 追踪在 Android 12+ 可请求 ODPM 按 UID 系统能耗估算（仅部分设备提供）；硬件功耗轨道仍不归属应用，ODPM 不可用时也没有应用级能耗证据。网络页现可用系统 UID 累计快照比较移动网络和 Wi-Fi 总字节数，但不能显示请求、域名或时间线。电池页在统计窗口一致且系统提供 UID mAh 时可显示两次系统估计值的区间差；它仍是 batterystats 模型估算，无法拆分共享 UID。布局页可在 debug 构建中接入应用内 Agent；兼容的 Compose UI 运行时会采集合并/未合并 Semantics 节点，也可反射读取兼容 Compose 版本的运行时组合组树及按 RecomposeScope 聚合的 State 读取关联数（不读取 State 值）。手动 probe 可统计指定 Composable 的 SideEffect 提交；Kotlin 2.2.21 编译器插件可统计本模块 Composable 函数体执行与 Composer 跳过次数，并提供按函数和可用组 key 聚合的父子调用树，组 key 可与 Agent 组合组节点对照；未接入时使用 UIAutomator 回退。自动插件不能覆盖未重编译的依赖或区分同名实例，部分 lambda 没有组 key；Agent 的 State 关联不代表因果；新版 runtime event 可通过追踪内的 CLOCK_MONOTONIC 快照映射至 Perfetto FrameTimeline，新版布局 Agent 的 System.nanoTime 采集区间也可映射至帧时间线并列出重叠候选；旧 Agent 档案没有单调时钟时无法映射。所有时间重合只表示区间相交，不证明同一帧或因果，真实设备 Trace 兼容性仍待实测；View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列，并可导出带公式注入防护的 CSV；嵌入式 Perfetto UI 的查询仍不会自动进入工作台报告。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
+仍需补齐：State 变更与实际重组执行、帧表现之间的因果关联，以及未接入应用的网络请求明细采集。可选 Perfetto 追踪在 Android 12+ 可请求 ODPM 按 UID 系统能耗估算（仅部分设备提供）；硬件功耗轨道仍不归属应用，ODPM 不可用时也没有应用级能耗证据。网络页现可用系统 UID 累计快照比较移动网络和 Wi-Fi 总字节数，但不能显示请求、域名或时间线。电池页在统计窗口一致且系统提供 UID mAh 时可显示两次系统估计值的区间差；它仍是 batterystats 模型估算，无法拆分共享 UID。布局页可在 debug 构建中接入应用内 Agent；兼容的 Compose UI 运行时会采集合并/未合并 Semantics 节点，也可反射读取兼容 Compose 版本的运行时组合组树及按 RecomposeScope 聚合的 State 读取关联数（不读取 State 值）。手动 probe 可统计指定 Composable 的 SideEffect 提交；Kotlin 2.2.21 编译器插件可统计本模块 Composable 函数体执行与 Composer 跳过次数，并提供按函数和可用组 key 聚合的父子调用树，组 key 可与 Agent 组合组节点对照；未接入时使用 UIAutomator 回退。自动插件不能覆盖未重编译的依赖或区分同名实例，部分 lambda 没有组 key；Agent 的 State 关联不代表因果；新版 runtime event 可通过追踪内的 CLOCK_MONOTONIC 快照映射至 Perfetto FrameTimeline，新版布局 Agent 的 System.nanoTime 采集区间也可映射至帧时间线并列出重叠候选；旧 Agent 档案没有单调时钟时无法映射。所有时间重合只表示区间相交，不证明同一帧或因果，真实设备 Trace 兼容性仍待实测；View.draw 对安全窗口和部分硬件合成内容有限制；Compose 编译报告是静态信息。布局差异可在当前截图标记新增和变化节点，并在保留的基线截图回放移除节点及移动前位置；参考截图仍需手动缩放和平移校准。主工作台支持对当前追踪运行只读 SELECT / WITH 查询，结果最多 500 行、50 列，并可导出带公式注入防护的 CSV；嵌入式 Perfetto UI 导出 CSV 时会自动将查询结果加入当前追踪报告；CSV 不含 SQL 文本，手动导入仍可作为备用方式。Benchmark 运行后会核对标准报告的更新时间和大小，只在确认文件于本次运行中更新时自动载入；设备不支持文件元数据检查时可手动指定报告路径读取。
+
+Compose State 时间面板会保留每个唯一 group key 的 apply 首末单调时钟和计数，并统计最后一次 apply 之后所有同 key 函数体执行事件及其首末时间。多个 Runtime 组共用一个 key 时拒绝唯一关联；这是观察到的时序候选，不证明这些执行由该 State 导致，也不等于帧因果。
 
 ## 验证记录
 
@@ -153,7 +155,7 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 
 系统追踪录制可选择包含当前应用的 ATrace 标记；目标应用需要实际提供标记，勾选本身不保证 TTID/TTFD 可计算。导入或录制的追踪可以保存到本机档案、重新载入或导出原始文件；档案载入前会校验 SHA-256。
 
-追踪页可导出 JSON 分析报告，包含追踪摘要、当前会话最近一次工作台 SQL 查询结果，以及已加载的启动、帧、Binder、GPU、功耗和 CPU / Compose 关联证据。报告只纳入同一追踪会话的数据；SQL 结果最多 500 行、50 列，报告最大 16 MiB。嵌入式 Perfetto UI 中执行的查询仍需单独在工作台运行，才能进入此报告。
+追踪页可导出 JSON 分析报告，包含追踪摘要、当前会话最近一次工作台 SQL 查询结果、导入的 Perfetto UI 查询 CSV，以及已加载的启动、帧、Binder、GPU、功耗和 CPU / Compose 关联证据。Perfetto UI 中下载 CSV 时会自动纳入当前追踪报告；同一追踪保留最新一次结果，也可手动导入替换。CSV 结果最多 2,000 行、50 列，文件最大 8 MiB；报告最大 16 MiB。Perfetto UI 导出的 CSV 不包含 SQL 文本，报告会保留来源文件名和结果，并明确标注查询语句未验证。
 
 完整 Perfetto UI 使用自托管的 v59.1 静态资源。点击追踪页“在本机完整 Perfetto 中查看”会通过本机服务将当前追踪送入同源 iframe；分享与下载开关默认关闭，追踪留在本机浏览器内存。源码运行前执行 `npm run prepare:perfetto-ui`；桌面打包会将该资源放入应用资源目录。主工作台与 Perfetto UI 各自使用不同 CSP，Perfetto 仅允许本机资源、WASM 和本地 worker。
 

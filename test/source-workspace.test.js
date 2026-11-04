@@ -13,6 +13,13 @@ test('local source snapshots are immutable, searchable and never follow symlinks
  await assert.rejects(readSourceFile(store,snapshot.id,'../secret.kt'),/没有该文件/);await assert.rejects(readSourceFile(store,'../outside','src/Screen.kt'),/标识无效|不存在/);
  await writeFile(join(store,snapshot.id,'blobs',snapshot.files[0].sha256),'tampered');await assert.rejects(readSourceFile(store,snapshot.id,'src/Screen.kt'),/校验失败/);
 });
+test('source resolution uses a full Itanium demangler when built-in parsing cannot handle substitutions',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'apw-source-itanium-')),source=join(base,'project'),store=join(base,'store');t.after(()=>rm(base,{recursive:true,force:true}));
+ await mkdir(join(source,'src'),{recursive:true});await writeFile(join(source,'src','vector.hpp'),'namespace std {\ntemplate<class T, class Alloc>\nclass vector {\n  T& operator[](unsigned long index);\n};\n}\n');
+ const snapshot=await createSourceSnapshot(source,store);let seen='';
+ const result=await resolveSourceSymbol(store,snapshot.id,'_ZNSt6vectorIiSaIiEEixEm+0x18',{demangler:async symbol=>{seen=symbol;return 'std::vector<int, std::allocator<int> >::operator[](unsigned long)';}});
+ assert.equal(seen,'_ZNSt6vectorIiSaIiEEixEm+0x18');assert.deepEqual(result.matches.map(row=>row.line),[4]);assert.ok(result.matches[0].reasons.includes('作用域名匹配：std::vector'));
+});
 test('snapshot creation rejects empty sources and cleans incomplete artifacts',async t=>{
  const base=await mkdtemp(join(tmpdir(),'apw-source-empty-'));t.after(()=>rm(base,{recursive:true,force:true}));const root=join(base,'source'),store=join(base,'store');await mkdir(root);await writeFile(join(root,'readme.md'),'nothing');
  await assert.rejects(createSourceSnapshot(root,store),/没有可读取/);assert.deepEqual(await listSourceSnapshots(store),[]);await assert.rejects(createSourceSnapshot('relative',store),/绝对目录/);

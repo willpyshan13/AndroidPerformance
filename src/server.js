@@ -38,11 +38,12 @@ async function readBody(req) {
   catch { throw Object.assign(new Error('JSON 格式错误'), { status: 400 }); }
 }
 
-export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath, composeInspectorDir, composeInspectorJavaPath, macrobenchmarkRunner = runMacrobenchmark, javaPath }) {
+export function createApp({ adb, dataDir = join(root, 'data'), token = randomBytes(24).toString('hex'), desktop = false, apkAnalyzer, perfettoUiDir, sharkDir, sharkJavaPath, composeInspectorDir, composeInspectorJavaPath, nativeDemanglerPath, macrobenchmarkRunner = runMacrobenchmark, javaPath }) {
   const gpuDir=join(dataDir,'gpu-artifacts');
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
   const perfettoUiRoot=perfettoUiDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'perfetto-ui'):join(root,'tools','perfetto-ui'));
+  const nativeDemangler=nativeDemanglerPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'native-symbolizer','llvm-cxxfilt'):join(root,'tools','native-symbolizer','llvm-cxxfilt'));
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false, macrobenchmarkBusy=false, macrobenchmarkArtifacts=new Map();
   let gpuBusy=false;
@@ -312,7 +313,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/source/files')return json(await getSourceSnapshot(sourceDir,body.id));
         if(path==='/api/source/file')return json(await readSourceFile(sourceDir,body.id,body.path));
         if(path==='/api/source/search')return json(await searchSource(sourceDir,body.id,body.query));
-        if(path==='/api/source/resolve')return json(await resolveSourceSymbol(sourceDir,body.id,body.symbol));
+        if(path==='/api/source/resolve')return json(await resolveSourceSymbol(sourceDir,body.id,body.symbol,{demanglerPath:nativeDemangler}));
         if(path==='/api/trace/slice-arguments'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');

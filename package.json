@@ -148,6 +148,7 @@
           "to": "native-symbolizer",
           "filter": [
             "llvm-symbolizer",
+            "llvm-cxxfilt",
             "NOTICE*",
             "MODULE_LICENSE_*",
             "source.json"

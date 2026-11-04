@@ -25,6 +25,8 @@ try{
  const result=await symbolizeNativeAddress({symfs,dso,address:symbol[1],expectedBuildId:buildId});
  const match=result.frames.find(frame=>frame.function?.includes('apw::smoke')&&frame.source?.endsWith('native-smoke.cpp')&&frame.line===2);
  if(!match)throw new Error(`DWARF smoke did not resolve the expected C++ source location: ${JSON.stringify(result)}`);
+ const cxxfilt=join(bin,'llvm-cxxfilt'),demangled=run(cxxfilt,['_ZN3apw11SmokeWorker3runEv']).trim();
+ if(demangled!=='apw::SmokeWorker::run()')throw new Error(`NDK llvm-cxxfilt smoke failed: ${demangled}`);
  await assert.rejects(symbolizeNativeAddress({symfs,dso,address:symbol[1],expectedBuildId:'0000000000000000000000000000000000000000'}),/Build ID 与采样记录不匹配/);
- console.log(`Native DWARF smoke passed: ${match.function} → ${match.source}:${match.line}; Build ID verified.`);
+ console.log(`Native DWARF and C++ demangler smoke passed: ${match.function} → ${match.source}:${match.line}; Build ID verified; ${demangled}.`);
 }finally{await rm(temp,{recursive:true,force:true});}

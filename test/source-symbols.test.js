@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod,demangleItaniumSymbol} from '../src/source-symbols.js';
+import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod,demangleItaniumSymbol,normalizeDemangledItaniumName} from '../src/source-symbols.js';
 
 test('symbol declarations ignore comments, strings and ordinary call sites',()=>{
  const text=`package com.example;
@@ -102,6 +102,13 @@ test('Itanium global function templates preserve their specialization and match 
  assert.equal(symbol.method,'foo');
  const candidates=findNativeSourceDeclarations('template<class T> void foo(T value) {}','templates.cpp',symbol);
  assert.deepEqual(candidates.map(candidate=>candidate.line),[1]);
+});
+
+test('full demangler output reduces nested template and substitution names to source declaration names',()=>{
+ assert.equal(normalizeDemangledItaniumName('std::vector<int, std::allocator<int> >::operator[](unsigned long)'), 'std::vector::operator[]');
+ assert.equal(normalizeDemangledItaniumName('void foo<int>(int)'), 'foo');
+ assert.equal(normalizeDemangledItaniumName('void* demo::Widget::operator bool() const'), 'demo::Widget::operator bool');
+ assert.equal(normalizeDemangledItaniumName('std::vector<int, std::allocator<int> >::'), null);
 });
 
 test('native C++ candidate matching spans wrapped function signatures without matching wrapped calls',()=>{

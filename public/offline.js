@@ -916,24 +916,36 @@ export function correlateComposeStateApplyToExecution(runtimeGroups, events) {
   if (!Array.isArray(runtimeGroups) || !Array.isArray(events)) return [];
   const byKey = new Map();
   for (const group of runtimeGroups) {
-    const key = String(group?.key ?? ''), lastApplyNs = group?.lastApplyNs;
+    const key = String(group?.key ?? ''), firstApplyNs = group?.firstApplyNs, lastApplyNs = group?.lastApplyNs;
     if (!/^-?\d{1,12}$/.test(key)) continue;
-    const row = byKey.get(key) || {key, groups: 0, lastApplyNs: null};
-    row.groups++;
-    if (typeof lastApplyNs === 'string' && /^\d{1,19}$/.test(lastApplyNs) && (row.lastApplyNs === null || BigInt(lastApplyNs) > BigInt(row.lastApplyNs))) row.lastApplyNs = lastApplyNs;
-    byKey.set(key, row);
+    const validFirst = typeof firstApplyNs === 'string' && /^\d{1,19}$/.test(firstApplyNs) ? firstApplyNs : null;
+    const validLast = typeof lastApplyNs === 'string' && /^\d{1,19}$/.test(lastApplyNs) ? lastApplyNs : null;
+    const validCount = Number.isSafeInteger(group?.applyCount) && group.applyCount > 0 ? group.applyCount : null;
+    const row = byKey.get(key);
+    if (!row) byKey.set(key, {key, groups: 1, firstApplyNs: validFirst, lastApplyNs: validLast, applyCount: validCount, hasApply: validLast !== null});
+    else {
+      row.groups++;
+      row.hasApply ||= validLast !== null;
+      // Compose keys may be reused. Do not merge different runtime instances' apply ranges or counts.
+      row.firstApplyNs = null;
+      row.lastApplyNs = null;
+      row.applyCount = null;
+    }
   }
   const executions = new Map();
   for (const event of events) {
     if (event?.measurement !== 'automatic-execution' || event.clock !== 'uptime' || event.groupKey === null || event.groupKey === undefined || typeof event.elapsedNs !== 'string' || !/^\d{1,19}$/.test(event.elapsedNs)) continue;
     const key = String(event.groupKey), group = byKey.get(key);
-    if (!group || group.groups !== 1 || BigInt(event.elapsedNs) < BigInt(group.lastApplyNs)) continue;
-    const previous = executions.get(key);
-    if (!previous || BigInt(event.elapsedNs) < BigInt(previous.executionNs)) executions.set(key, {executionNs: event.elapsedNs, name: event.name || null});
+    if (!group || group.groups !== 1 || group.lastApplyNs===null || BigInt(event.elapsedNs) <= BigInt(group.lastApplyNs)) continue;
+    let bucket=executions.get(key);if(!bucket){bucket={executionCount:0,firstExecutionNs:null,lastExecutionNs:null,firstExecutionName:null,lastExecutionName:null};executions.set(key,bucket);}
+    bucket.executionCount++;
+    if(bucket.firstExecutionNs===null||BigInt(event.elapsedNs)<BigInt(bucket.firstExecutionNs)){bucket.firstExecutionNs=event.elapsedNs;bucket.firstExecutionName=event.name||null;}
+    if(bucket.lastExecutionNs===null||BigInt(event.elapsedNs)>BigInt(bucket.lastExecutionNs)){bucket.lastExecutionNs=event.elapsedNs;bucket.lastExecutionName=event.name||null;}
   }
-  return [...byKey.values()].filter(row => row.lastApplyNs !== null).map(row => {
+  return [...byKey.values()].filter(row => row.hasApply).map(row => {
+    const {hasApply, ...visible} = row;
     const execution = executions.get(row.key);
-    return {...row, ...(execution ? {executionNs: execution.executionNs, executionName: execution.name, deltaNs: (BigInt(execution.executionNs) - BigInt(row.lastApplyNs)).toString()} : {})};
+    return {...visible, ...(execution ? {...execution,deltaNs:(BigInt(execution.firstExecutionNs)-BigInt(row.lastApplyNs)).toString()} : {})};
   });
 }
 

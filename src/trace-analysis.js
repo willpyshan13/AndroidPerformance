@@ -331,6 +331,49 @@ export async function queryComposeFrameCorrelation(path,{events,packageName=null
  return {available:true,frames:frames.filter(frame=>frame.composeEvents.length),frameCount:frames.length,clockSnapshots:snapshots.length,mappedEvents,unmappedEvents,clockMismatchCount,matchedEventFramePairs,uniqueMatchedEvents:uniqueMatched.size,truncated:timeline.truncated,note:'Compose uptime 时间通过追踪内置 CLOCK_MONOTONIC 快照映射至 Perfetto 时间轴；只表示时间区间重合，不证明 State 更新导致该帧或 Jank。'};
 }
 
+export function correlateJankFramesToTimeline(frames,timelineFrames,{toleranceNs='5000000',truncated=false}={}){
+ if(!Array.isArray(frames)||!Array.isArray(timelineFrames)||typeof toleranceNs!=='string'||!/^\d{1,9}$/.test(toleranceNs))throw new Error('JankStats FrameTimeline 匹配参数无效');
+ const byPid=new Map();
+ for(const [timelineIndex,frame] of timelineFrames.entries()){
+  if(!Number.isSafeInteger(frame?.pid)||frame.pid<1||!/^\-?\d{1,19}$/.test(frame.tsNs||'')||!/^\d{1,19}$/.test(frame.durationNs||'')||BigInt(frame.durationNs)<=0n)continue;
+  const row={timelineIndex,frame,start:BigInt(frame.tsNs)};const list=byPid.get(frame.pid)||[];list.push(row);byPid.set(frame.pid,list);
+ }
+ for(const rows of byPid.values())rows.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0);
+ const tolerance=BigInt(toleranceNs),results=[];let mappedFrames=0,unmappedFrames=0,matchedFrames=0,ambiguousFrames=0;
+ for(const event of frames){
+  if(typeof event?.traceStartNs!=='string'||!/^\-?\d{1,19}$/.test(event.traceStartNs)){unmappedFrames++;continue;}mappedFrames++;
+  const time=BigInt(event.traceStartNs),rows=byPid.get(event.pid)||[];let low=0,high=rows.length;
+  while(low<high){const mid=(low+high)>>1;if(rows[mid].start<time-tolerance)low=mid+1;else high=mid;}
+  const candidates=[];
+  for(let i=low;i<rows.length&&rows[i].start<=time+tolerance;i++){
+   const delta=rows[i].start>time?rows[i].start-time:time-rows[i].start;
+   candidates.push({timelineIndex:rows[i].timelineIndex,process:rows[i].frame.process,layer:rows[i].frame.layer,tsNs:rows[i].frame.tsNs,durationNs:rows[i].frame.durationNs,jankType:rows[i].frame.jankType,presentType:rows[i].frame.presentType,processId:rows[i].frame.processId,startDeltaNs:delta.toString()});
+  }
+  if(candidates.length){matchedFrames++;if(candidates.length>1)ambiguousFrames++;if(results.length<1000)results.push({...event,candidates:candidates.slice(0,8),candidateCount:candidates.length});}
+ }
+ return {available:true,frames:results,mappedFrames,unmappedFrames,matchedFrames,ambiguousFrames,truncated:!!truncated||matchedFrames>results.length};
+}
+
+export async function queryJankStatsFrameCorrelation(path,{frames,packageName,locator=locateTraceProcessor,runner=exec}={}){
+ if(!Array.isArray(frames)||frames.length>10000)throw new Error('JankStats 逐帧记录最多支持 10,000 条');
+ if(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName))throw new Error('JankStats 帧关联需要有效目标包名');
+ const selected=frames.map(frame=>{
+  if(!frame||!Number.isSafeInteger(frame.pid)||frame.pid<1||typeof frame.startNs!=='string'||!/^\d{1,19}$/.test(frame.startNs)||typeof frame.uiDurationNs!=='string'||!/^\d{1,19}$/.test(frame.uiDurationNs)||BigInt(frame.uiDurationNs)<1n||typeof frame.jank!=='boolean'||typeof frame.activity!=='string'||frame.activity.length>160||typeof frame.windowId!=='string'||frame.windowId.length>32||!frame.states||typeof frame.states!=='object'||Array.isArray(frame.states))throw new Error('JankStats 逐帧记录格式无效');
+  return {pid:frame.pid,startNs:frame.startNs,uiDurationNs:frame.uiDurationNs,jank:frame.jank,activity:frame.activity,windowId:frame.windowId,states:frame.states,cpuDurationNs:frame.cpuDurationNs??null,overrunNs:frame.overrunNs??null};
+ });
+ const [timeline,snapshots]=await Promise.all([
+  queryFrameTimeline(path,{packageName,locator,runner}),
+  (async()=>{const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,MONOTONIC_CLOCK_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Monotonic 时钟查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseMonotonicClockSnapshots(result.stdout);})()
+ ]);
+ const unavailable=(reason,extra={})=>({available:false,reason,frames:[],clockSnapshots:snapshots.length,mappedFrames:0,unmappedFrames:selected.length,matchedFrames:0,ambiguousFrames:0,truncated:timeline.truncated,...extra});
+ if(snapshots.length<2)return unavailable('追踪没有足够的 CLOCK_MONOTONIC 快照，不能映射 JankStats 帧时间。');
+ const mapped=selected.map(event=>{const traceStartNs=mapMonotonicToTraceNs(event.startNs,snapshots);return traceStartNs===null?null:{...event,traceStartNs};});
+ const result=correlateJankFramesToTimeline(mapped,timeline.frames,{truncated:timeline.truncated});
+ result.clockSnapshots=snapshots.length;
+ result.note='JankStats frameStartNanos 经追踪 CLOCK_MONOTONIC 快照映射后，按同进程 PID 和 ±5 ms 起始时间窗口匹配 FrameTimeline。该 API 未提供可用的 vsync/frame ID；多个图层或近邻帧会保留为候选。时间匹配不证明两条记录是同一帧，也不证明因果或卡顿来源。';
+ return result;
+}
+
 export async function queryLayoutFrameCorrelation(path,{captureStartUptimeNs,captureEndUptimeNs,packageName,locator=locateTraceProcessor,runner=exec}={}){
  if(typeof captureStartUptimeNs!=='string'||!/^[1-9]\d{0,18}$/.test(captureStartUptimeNs)||typeof captureEndUptimeNs!=='string'||!/^[1-9]\d{0,18}$/.test(captureEndUptimeNs)||BigInt(captureEndUptimeNs)<BigInt(captureStartUptimeNs))throw new Error('布局 Agent 单调时钟区间无效');
  if(packageName!==null&&(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName)))throw new Error('布局帧关联包名无效');

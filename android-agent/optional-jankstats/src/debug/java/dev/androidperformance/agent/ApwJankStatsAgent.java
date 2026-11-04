@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 /** Optional debug bridge for Jetpack JankStats. Logcat writes are aggregated off the frame callback. */
 public final class ApwJankStatsAgent {
     private static final String TAG = "APWJank";
+    private static final String FRAME_TAG = "APWJankFrame";
     private static final Object LOCK = new Object();
     private static final Map<Activity, JankStats> TRACKERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<String, Aggregate> PENDING = new LinkedHashMap<>();
@@ -65,7 +66,7 @@ public final class ApwJankStatsAgent {
             JankStats stats = TRACKERS.get(activity);
             if (stats != null) stats.setTrackingEnabled(false);
         }
-        flush();
+        FLUSHER.execute(ApwJankStatsAgent::flush);
     }
 
     public static void onActivityDestroyed(Activity activity) {
@@ -73,7 +74,7 @@ public final class ApwJankStatsAgent {
             JankStats stats = TRACKERS.remove(activity);
             if (stats != null) stats.setTrackingEnabled(false);
         }
-        flush();
+        FLUSHER.execute(ApwJankStatsAgent::flush);
     }
 
     private static void record(Activity activity, Window window, FrameData frame) {
@@ -118,6 +119,10 @@ public final class ApwJankStatsAgent {
         for (Aggregate value : batch) {
             try { Log.i(TAG, value.toJson().toString()); }
             catch (RuntimeException error) { Log.w(TAG, "Could not encode JankStats aggregate", error); }
+            for (int offset = 0; offset < value.frames.size(); offset += 12) {
+                try { Log.i(FRAME_TAG, value.framesToJson(offset, Math.min(offset + 12, value.frames.size())).toString()); }
+                catch (RuntimeException error) { Log.w(FRAME_TAG, "Could not encode JankStats frame batch", error); }
+            }
         }
     }
 
@@ -125,6 +130,8 @@ public final class ApwJankStatsAgent {
         final String activity, windowId;
         final Map<String, String> states;
         final Map<Integer, Integer> histogram = new TreeMap<>();
+        final List<FrameObservation> frames = new ArrayList<>();
+        long frameRowsDropped;
         long frameStartNs = Long.MAX_VALUE, frameEndNs, frameCount, jankCount, durationTotalNs, durationMinNs = Long.MAX_VALUE, durationMaxNs, cpuTotalNs, overrunTotalNs;
         int cpuCount, overrunCount;
         Aggregate(String activity, String windowId, Map<String, String> states) {
@@ -138,15 +145,21 @@ public final class ApwJankStatsAgent {
             histogram.put(bucketMs, histogram.containsKey(bucketMs) ? histogram.get(bucketMs) + 1 : 1);
             if (cpu >= 0) { cpuTotalNs += cpu; cpuCount++; }
             if (overrun != Long.MIN_VALUE) { overrunTotalNs += overrun; overrunCount++; }
+            if (frames.size() < 600) frames.add(new FrameObservation(start, duration, jank, cpu, overrun));
+            else frameRowsDropped++;
         }
         JSONObject toJson() {
             try {
                 JSONObject bins = new JSONObject(), stateValues = new JSONObject();
                 for (Map.Entry<Integer, Integer> item : histogram.entrySet()) bins.put(String.valueOf(item.getKey()), item.getValue());
-                for (Map.Entry<String, String> item : states.entrySet()) stateValues.put(item.getKey(), item.getValue());
+                int stateCount = 0;
+                for (Map.Entry<String, String> item : states.entrySet()) {
+                    if (stateCount++ >= 8) break;
+                    stateValues.put(item.getKey().substring(0, Math.min(40, item.getKey().length())), item.getValue().substring(0, Math.min(80, item.getValue().length())));
+                }
                 JSONObject row = new JSONObject();
                 row.put("version", 1); row.put("activity", activity); row.put("windowId", windowId);
-                row.put("frameStartNs", frameStartNs); row.put("frameEndNs", frameEndNs);
+                row.put("frameStartNs", Long.toString(frameStartNs)); row.put("frameEndNs", Long.toString(frameEndNs));
                 row.put("frameCount", frameCount); row.put("jankCount", jankCount);
                 row.put("durationTotalNs", durationTotalNs); row.put("durationMinNs", durationMinNs); row.put("durationMaxNs", durationMaxNs);
                 row.put("histogram", bins); row.put("states", stateValues);
@@ -154,6 +167,35 @@ public final class ApwJankStatsAgent {
                 row.put("overrunTotalNs", overrunCount == 0 ? JSONObject.NULL : overrunTotalNs); row.put("overrunCount", overrunCount);
                 return row;
             } catch (JSONException error) { throw new IllegalStateException("Could not encode frame aggregate", error); }
+        }
+        JSONObject framesToJson(int start, int end) {
+            try {
+                JSONObject stateValues = new JSONObject();
+                for (Map.Entry<String, String> item : states.entrySet()) stateValues.put(item.getKey(), item.getValue());
+                org.json.JSONArray rows = new org.json.JSONArray();
+                for (int i = start; i < end; i++) {
+                    FrameObservation frame = frames.get(i);
+                    JSONObject row = new JSONObject();
+                    row.put("startNs", Long.toString(frame.startNs)); row.put("uiDurationNs", Long.toString(frame.uiDurationNs));
+                    row.put("jank", frame.jank); row.put("cpuDurationNs", frame.cpuDurationNs < 0 ? JSONObject.NULL : Long.toString(frame.cpuDurationNs));
+                    row.put("overrunNs", frame.overrunNs == Long.MIN_VALUE ? JSONObject.NULL : Long.toString(frame.overrunNs));
+                    rows.put(row);
+                }
+                JSONObject output = new JSONObject();
+                output.put("version", 1); output.put("activity", activity); output.put("windowId", windowId);
+                output.put("states", stateValues); output.put("frames", rows);
+                output.put("dropped", start == 0 ? frameRowsDropped : 0);
+                return output;
+            } catch (JSONException error) { throw new IllegalStateException("Could not encode JankStats frame batch", error); }
+        }
+    }
+
+    private static final class FrameObservation {
+        final long startNs, uiDurationNs, cpuDurationNs, overrunNs;
+        final boolean jank;
+        FrameObservation(long startNs, long uiDurationNs, boolean jank, long cpuDurationNs, long overrunNs) {
+            this.startNs = startNs; this.uiDurationNs = uiDurationNs; this.jank = jank;
+            this.cpuDurationNs = cpuDurationNs; this.overrunNs = overrunNs;
         }
     }
 }

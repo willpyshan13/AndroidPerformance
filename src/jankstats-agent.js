@@ -1,5 +1,5 @@
-const MAX_RAW_BYTES = 4 * 1024 * 1024;
-const LINE = /^\s*(\d{9,}(?:\.\d+)?)\s+(\d+)\s+\d+\s+[VDIWEF]\s+APWJank\s*:\s*(\{.{1,12000}\})\s*$/;
+const MAX_RAW_BYTES = 8 * 1024 * 1024;
+const LINE = /^\s*(\d{9,}(?:\.\d+)?)\s+(\d+)\s+\d+\s+[VDIWEF]\s+(APWJank|APWJankFrame)\s*:\s*(\{.{1,12000}\})\s*$/;
 
 function boundedString(value, max = 240) {
   return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max) : '';
@@ -9,6 +9,10 @@ function integer(value, max = Number.MAX_SAFE_INTEGER) {
 }
 function signedInteger(value) {
   return Number.isSafeInteger(value) ? value : null;
+}
+function exactLong(value) {
+  if (typeof value === 'string' && /^\d{1,19}$/.test(value) && BigInt(value) <= 9223372036854775807n) return value;
+  return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
 }
 function parseAggregate(value, pid, logTimestamp) {
   let row;
@@ -28,8 +32,8 @@ function parseAggregate(value, pid, logTimestamp) {
     const name = boundedString(key, 80), stateValue = boundedString(item, 160);
     if (name && stateValue) states[name] = stateValue;
   }
-  const frameStartNs = integer(row.frameStartNs), frameEndNs = integer(row.frameEndNs);
-  if (frameStartNs === null || frameEndNs === null || frameEndNs < frameStartNs) return null;
+  const frameStartNs = exactLong(row.frameStartNs), frameEndNs = exactLong(row.frameEndNs);
+  if (frameStartNs === null || frameEndNs === null || BigInt(frameEndNs) < BigInt(frameStartNs)) return null;
   const cpuTotalNs = row.cpuTotalNs === null ? null : integer(row.cpuTotalNs), overrunTotalNs = row.overrunTotalNs === null ? null : signedInteger(row.overrunTotalNs);
   if ((row.cpuTotalNs !== null && cpuTotalNs === null) || (row.overrunTotalNs !== null && overrunTotalNs === null)) return null;
   return {
@@ -43,22 +47,50 @@ function parseAggregate(value, pid, logTimestamp) {
   };
 }
 
+function parseFrameBatch(value, pid, logTimestamp) {
+  let row;
+  try { row = JSON.parse(value); } catch { return null; }
+  if (!row || row.version !== 1 || !Array.isArray(row.frames) || row.frames.length < 1 || row.frames.length > 20 || !row.states || typeof row.states !== 'object' || Array.isArray(row.states)) return null;
+  const states = {};
+  for (const [key, item] of Object.entries(row.states).slice(0, 20)) {
+    const name = boundedString(key, 80), stateValue = boundedString(item, 160);
+    if (name && stateValue) states[name] = stateValue;
+  }
+  const activity = boundedString(row.activity, 160), windowId = boundedString(row.windowId, 32), dropped = integer(row.dropped, 600) ?? 0;
+  const frames = [];
+  for (const frame of row.frames) {
+    if (!frame || typeof frame.startNs !== 'string' || !/^\d{1,19}$/.test(frame.startNs) || BigInt(frame.startNs) > 9223372036854775807n || typeof frame.uiDurationNs !== 'string' || !/^\d{1,19}$/.test(frame.uiDurationNs) || BigInt(frame.uiDurationNs) < 1n || BigInt(frame.uiDurationNs) > 10000000000n || typeof frame.jank !== 'boolean') return null;
+    const optionalLong = item => item === null ? null : typeof item === 'string' && /^-?\d{1,19}$/.test(item) && BigInt(item) >= -9223372036854775808n && BigInt(item) <= 9223372036854775807n ? item : undefined;
+    const cpuDurationNs = optionalLong(frame.cpuDurationNs), overrunNs = optionalLong(frame.overrunNs);
+    if (cpuDurationNs === undefined || overrunNs === undefined || (cpuDurationNs !== null && BigInt(cpuDurationNs) < 0n)) return null;
+    frames.push({ id: `${pid}:${frame.startNs}`, pid, timestamp: Math.floor(Number(logTimestamp) * 1000), activity, windowId, states, startNs: frame.startNs, uiDurationNs: frame.uiDurationNs, jank: frame.jank, cpuDurationNs, overrunNs });
+  }
+  return { frames, dropped };
+}
+
 // Input lines must be epoch-format Logcat from the APWJank tag; app payloads are parsed as bounded JSON.
-export function parseJankStatsLog(raw, { limit = 300 } = {}) {
+export function parseJankStatsLog(raw, { limit = 300, frameLimit = 10000 } = {}) {
   const input = String(raw);
-  if (Buffer.byteLength(input, 'utf8') > MAX_RAW_BYTES) throw new Error('JankStats Logcat 超过 4 MiB 限制');
-  const items = []; let ignored = 0;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 300 || !Number.isInteger(frameLimit) || frameLimit < 1 || frameLimit > 20000) throw new Error('JankStats 读取数量上限无效');
+  if (Buffer.byteLength(input, 'utf8') > MAX_RAW_BYTES) throw new Error('JankStats Logcat 超过 8 MiB 限制');
+  const items = [], frameItems = []; let ignored = 0, droppedFrameRows = 0;
   for (const line of input.split(/\r?\n/)) {
     if (!line.trim() || line.startsWith('---------')) continue;
     const match = line.match(LINE);
     if (!match) { ignored++; continue; }
-    const item = parseAggregate(match[3], Number(match[2]), match[1]);
-    if (!item) { ignored++; continue; }
-    items.push(item);
+    if (match[3] === 'APWJankFrame') {
+      const batch = parseFrameBatch(match[4], Number(match[2]), match[1]);
+      if (!batch) { ignored++; continue; }
+      frameItems.push(...batch.frames); droppedFrameRows += batch.dropped;
+    } else {
+      const item = parseAggregate(match[4], Number(match[2]), match[1]);
+      if (!item) { ignored++; continue; }
+      items.push(item);
+    }
   }
-  const capped = items.length > limit;
+  const capped = items.length > limit, framesCapped = frameItems.length > frameLimit;
   const output = items.slice(-limit).reverse();
-  return { items: output, summary: summarizeJankStats(output), ignored, truncated: capped, limit };
+  return { items: output, summary: summarizeJankStats(output), frames: frameItems.slice(-frameLimit).reverse(), droppedFrameRows, ignored, truncated: capped, framesTruncated: framesCapped || droppedFrameRows > 0, limit, frameLimit };
 }
 
 export function summarizeJankStats(items = []) {

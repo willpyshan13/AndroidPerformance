@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
 import {access,readFile} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
-import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,queryPowerRailDiagnostics,locateTraceProcessor} from '../src/trace-analysis.js';
+import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,queryPowerRailDiagnostics,correlateJankFramesToTimeline,queryJankStatsFrameCorrelation,locateTraceProcessor} from '../src/trace-analysis.js';
 const req=(chunks,headers={})=>{const r=Readable.from(chunks);r.headers=headers;return r;};
 test('CSV handles escaped quotes and embedded newlines',()=>{
  assert.deepEqual(parseCsv('"a","b"\r\n"x, y","z""q\nq"\n'),[['a','b'],['x, y','z"q\nq']]);
@@ -21,6 +21,20 @@ test('trace summary keeps timestamps as exact strings and missing evidence empty
  const r=parseTraceSummary('"kind","label","count","value"\n"bounds","trace","9007199254740993","9007199254741093"\n"slice","776F726B","2","12.5"\n');
  assert.equal(r.bounds.startNs,'9007199254740993');assert.deepEqual(r.slices,[{name:'work',count:2,totalMs:12.5}]);assert.deepEqual(r.threads,[]);
  assert.throws(()=>parseTraceSummary('bad\n'),/列/);
+});
+test('JankStats frame matching keeps PID and bounded start-time candidates distinct',()=>{
+ const frames=[{pid:1000,traceStartNs:'1015000000',startNs:'515000000',uiDurationNs:'12000000',jank:true,activity:'HomeActivity',windowId:'1',states:{Screen:'home'},overrunNs:'3000000'},null];
+ const timeline=[{pid:1000,tsNs:'1016000000',durationNs:'16000000',process:'com.example',layer:'app',jankType:'App Deadline Missed'},{pid:1000,tsNs:'1019000000',durationNs:'16000000',process:'com.example',layer:'surface',jankType:'None'},{pid:2000,tsNs:'1015000000',durationNs:'16000000',process:'other',layer:'other',jankType:'None'}];
+ const result=correlateJankFramesToTimeline(frames,timeline);assert.equal(result.available,true);assert.equal(result.mappedFrames,1);assert.equal(result.unmappedFrames,1);assert.equal(result.matchedFrames,1);assert.equal(result.ambiguousFrames,1);assert.equal(result.frames[0].candidateCount,2);assert.equal(result.frames[0].candidates[0].startDeltaNs,'1000000');assert.equal(result.frames[0].pid,1000);
+ assert.throws(()=>correlateJankFramesToTimeline([],[],{toleranceNs:'-1'}),/参数/);
+});
+test('JankStats query maps frame timestamps through trace clock snapshots before matching PID',async()=>{
+ const frameHeader='ts,dur,process_hex,layer_hex,jank_hex,present_hex,process_pid,surface_token,display_token,on_time_finish,expected_ts,expected_dur,expected_matches,actual_matches,process_id,track_id';
+ const frameCsv=`${frameHeader}\n1015000000,16000000,636F6D2E6578616D706C652E617070,617070,41707020446561646C696E65204D6973736564,,4242,10,11,1,1015000000,16000000,1,1,77,8\n`;
+ const clockCsv='machine_id,snapshot_id,clock_name_hex,clock_value,trace_ts\n1,1,4d4f4e4f544f4e4943,500000000,1000000000\n1,2,4d4f4e4f544f4e4943,600000000,1100000000\n';
+ const result=await queryJankStatsFrameCorrelation('/tmp/fake.trace',{packageName:'com.example.app',frames:[{pid:4242,startNs:'515000000',uiDurationNs:'12000000',jank:true,activity:'HomeActivity',windowId:'a1',states:{Screen:'home'}}],locator:async()=>'/trace-processor',runner:async(_binary,args)=>({stdout:args[4].includes('clock_snapshot')?clockCsv:frameCsv})});
+ assert.equal(result.available,true);assert.equal(result.clockSnapshots,2);assert.equal(result.mappedFrames,1);assert.equal(result.matchedFrames,1);assert.equal(result.frames[0].traceStartNs,'1015000000');assert.equal(result.frames[0].candidates[0].process,'com.example.app');
+ await assert.rejects(queryJankStatsFrameCorrelation('/tmp/fake.trace',{packageName:'bad',frames:[]} ),/包名/);
 });
 test('GPU trace diagnostics parse render stages, frequency and per-process memory without assuming absent sources',async()=>{
  const result=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async(_bin,args)=>{

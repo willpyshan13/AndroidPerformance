@@ -6,6 +6,7 @@ import {parseJankStatsLog, summarizeJankStats} from '../src/jankstats-agent.js';
 function log(timestamp, pid, aggregate, priority='I') {
  return `${timestamp}  ${pid}  44 ${priority} APWJank: ${JSON.stringify(aggregate)}`;
 }
+function frameLog(timestamp,pid,batch){return `${timestamp}  ${pid}  44 I APWJankFrame: ${JSON.stringify(batch)}`;}
 function aggregate({activity='FeedActivity',windowId='a1',states={Activity:'FeedActivity',Screen:'home'},frameStartNs=1000000000,frameEndNs=1030000000,frameCount=2,jankCount=1,durationTotalNs=30000000,durationMinNs=10000000,durationMaxNs=20000000,histogram={'10':1,'20':1},cpuTotalNs=24000000,overrunTotalNs=3000000}={}) {
  return {version:1,activity,windowId,states,frameStartNs,frameEndNs,frameCount,jankCount,durationTotalNs,durationMinNs,durationMaxNs,histogram,cpuTotalNs,overrunTotalNs};
 }
@@ -19,15 +20,28 @@ test('JankStats parser validates aggregates and summarizes per Activity, window,
 });
 
 test('JankStats parser caps log size and returned aggregate count',()=>{
- const row=log('1730000000.0',4242,aggregate());assert.throws(()=>parseJankStatsLog(row.repeat(200000)),/4 MiB/);
+ const row=log('1730000000.0',4242,aggregate());assert.throws(()=>parseJankStatsLog(row.repeat(200000)),/8 MiB/);
  const parsed=parseJankStatsLog(Array.from({length:5},(_,index)=>log(`173000000${index}.0`,4242,aggregate({frameStartNs:1e9+index*1e7,frameEndNs:1.02e9+index*1e7}))).join('\n'),{limit:3});
  assert.equal(parsed.items.length,3);assert.equal(parsed.truncated,true);assert.equal(parsed.summary[0].frameCount,6);
+});
+
+test('JankStats parser reads bounded exact-timestamp frame batches with UI state',()=>{
+ const frame={startNs:'9223372036854775000',uiDurationNs:'12000000',jank:true,cpuDurationNs:'18000000',overrunNs:'3000000'};
+ const parsed=parseJankStatsLog(frameLog('1730000000.0',4242,{version:1,activity:'FeedActivity',windowId:'a1',states:{Screen:'home'},frames:[frame],dropped:2}));
+ assert.equal(parsed.frames.length,1);assert.equal(parsed.frames[0].startNs,frame.startNs);assert.equal(parsed.frames[0].states.Screen,'home');assert.equal(parsed.frames[0].jank,true);assert.equal(parsed.frames[0].overrunNs,'3000000');assert.equal(parsed.droppedFrameRows,2);assert.equal(parsed.framesTruncated,true);
+ assert.equal(parseJankStatsLog(frameLog('1730000000.0',4242,{version:1,activity:'A',windowId:'x',states:{},frames:[{...frame,startNs:'-1'}],dropped:0})).frames.length,0);
+});
+
+test('JankStats aggregate frame range preserves long nanosecond strings',()=>{
+ const start='9223372036854775000',end='9223372036854775800';
+ const parsed=parseJankStatsLog(log('1730000000.0',4242,aggregate({frameStartNs:start,frameEndNs:end}))).items[0];
+ assert.equal(parsed.frameStartNs,start);assert.equal(parsed.frameEndNs,end);
 });
 
 test('ADB JankStats snapshot filters the target UID and preserves the old-device PID fallback',async()=>{
  const payload=log('1730000000.0',4242,aggregate()),calls=[];
  const adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:calls.length===1?'package:com.example.app uid:10043\n':`${payload}\n`};});
- const result=await adb.jankStatsSnapshot('device-1','com.example.app');assert.equal(result.processScope,'uid');assert.equal(result.items.length,1);assert.ok(calls[1].includes("'APWJank:I'"));
+ const result=await adb.jankStatsSnapshot('device-1','com.example.app');assert.equal(result.processScope,'uid');assert.equal(result.items.length,1);assert.ok(calls[1].includes("'APWJank:I'"));assert.ok(calls[1].includes("'APWJankFrame:I'"));
  const legacyCalls=[];const legacy=new Adb('adb',async(_path,args)=>{legacyCalls.push(args);const command=args.join(' ');if(command.includes("'cmd' 'package'"))throw new Error('Unrecognized Option');if(command.includes("'dumpsys' 'package'"))return {stdout:'userId=10043\n'};if(command.includes("'am' 'get-current-user'"))return {stdout:'0\n'};if(command.includes('--uid='))throw new Error('Unrecognized Option');if(command.includes("'pidof'"))return {stdout:'4242\n'};return {stdout:`${payload}\n`};});
  const fallback=await legacy.jankStatsSnapshot('device-old','com.example.app');assert.equal(fallback.processScope,'main-process');assert.equal(fallback.pid,4242);assert.equal(fallback.summary[0].jankCount,1);
  await assert.rejects(()=>adb.jankStatsSnapshot('device','com.example.app;id'),/包名/);

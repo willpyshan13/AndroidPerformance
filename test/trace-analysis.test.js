@@ -22,10 +22,10 @@ test('trace summary keeps timestamps as exact strings and missing evidence empty
  assert.equal(r.bounds.startNs,'9007199254740993');assert.deepEqual(r.slices,[{name:'work',count:2,totalMs:12.5}]);assert.deepEqual(r.threads,[]);
  assert.throws(()=>parseTraceSummary('bad\n'),/列/);
 });
-test('JankStats frame matching keeps PID and bounded start-time candidates distinct',()=>{
+test('JankStats frame matching keeps PID and bounded start-time candidates distinct and ranks interval overlap',()=>{
  const frames=[{pid:1000,traceStartNs:'1015000000',startNs:'515000000',uiDurationNs:'12000000',jank:true,activity:'HomeActivity',windowId:'1',states:{Screen:'home'},overrunNs:'3000000'},null];
  const timeline=[{pid:1000,tsNs:'1016000000',durationNs:'16000000',process:'com.example',layer:'app',jankType:'App Deadline Missed'},{pid:1000,tsNs:'1019000000',durationNs:'16000000',process:'com.example',layer:'surface',jankType:'None'},{pid:2000,tsNs:'1015000000',durationNs:'16000000',process:'other',layer:'other',jankType:'None'}];
- const result=correlateJankFramesToTimeline(frames,timeline);assert.equal(result.available,true);assert.equal(result.mappedFrames,1);assert.equal(result.unmappedFrames,1);assert.equal(result.matchedFrames,1);assert.equal(result.ambiguousFrames,1);assert.equal(result.frames[0].candidateCount,2);assert.equal(result.frames[0].candidates[0].startDeltaNs,'1000000');assert.equal(result.frames[0].pid,1000);
+ const result=correlateJankFramesToTimeline(frames,timeline);assert.equal(result.available,true);assert.equal(result.mappedFrames,1);assert.equal(result.unmappedFrames,1);assert.equal(result.matchedFrames,1);assert.equal(result.ambiguousFrames,1);assert.equal(result.frames[0].candidateCount,2);assert.equal(result.frames[0].candidates[0].startDeltaNs,'1000000');assert.equal(result.frames[0].candidates[0].overlapNs,'11000000');assert.equal(result.frames[0].candidates[0].matchBasis,'interval-overlap');assert.equal(result.frames[0].candidates[1].overlapNs,'8000000');assert.equal(result.frames[0].pid,1000);
  assert.throws(()=>correlateJankFramesToTimeline([],[],{toleranceNs:'-1'}),/参数/);
 });
 test('JankStats query maps frame timestamps through trace clock snapshots before matching PID',async()=>{

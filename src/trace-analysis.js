@@ -342,13 +342,15 @@ export function correlateJankFramesToTimeline(frames,timelineFrames,{toleranceNs
  const tolerance=BigInt(toleranceNs),results=[];let mappedFrames=0,unmappedFrames=0,matchedFrames=0,ambiguousFrames=0;
  for(const event of frames){
   if(typeof event?.traceStartNs!=='string'||!/^\-?\d{1,19}$/.test(event.traceStartNs)){unmappedFrames++;continue;}mappedFrames++;
-  const time=BigInt(event.traceStartNs),rows=byPid.get(event.pid)||[];let low=0,high=rows.length;
+  const time=BigInt(event.traceStartNs),eventDuration=typeof event.uiDurationNs==='string'&&/^\d{1,19}$/.test(event.uiDurationNs)&&BigInt(event.uiDurationNs)>0n?BigInt(event.uiDurationNs):null,eventEnd=eventDuration===null?null:time+eventDuration,rows=byPid.get(event.pid)||[];let low=0,high=rows.length;
   while(low<high){const mid=(low+high)>>1;if(rows[mid].start<time-tolerance)low=mid+1;else high=mid;}
   const candidates=[];
   for(let i=low;i<rows.length&&rows[i].start<=time+tolerance;i++){
    const delta=rows[i].start>time?rows[i].start-time:time-rows[i].start;
-   candidates.push({timelineIndex:rows[i].timelineIndex,process:rows[i].frame.process,layer:rows[i].frame.layer,tsNs:rows[i].frame.tsNs,durationNs:rows[i].frame.durationNs,jankType:rows[i].frame.jankType,presentType:rows[i].frame.presentType,processId:rows[i].frame.processId,startDeltaNs:delta.toString()});
+   const candidateStart=rows[i].start,candidateEnd=candidateStart+BigInt(rows[i].frame.durationNs),overlapStart=candidateStart>time?candidateStart:time,overlapEnd=eventEnd===null?overlapStart:(candidateEnd<eventEnd?candidateEnd:eventEnd),overlapNs=overlapEnd>overlapStart?overlapEnd-overlapStart:0n;
+   candidates.push({timelineIndex:rows[i].timelineIndex,process:rows[i].frame.process,layer:rows[i].frame.layer,tsNs:rows[i].frame.tsNs,durationNs:rows[i].frame.durationNs,jankType:rows[i].frame.jankType,presentType:rows[i].frame.presentType,processId:rows[i].frame.processId,startDeltaNs:delta.toString(),overlapNs:overlapNs.toString(),matchBasis:overlapNs>0n?'interval-overlap':'start-time-window'});
   }
+  candidates.sort((a,b)=>{const left=BigInt(a.overlapNs),right=BigInt(b.overlapNs);return left===right?(BigInt(a.startDeltaNs)<BigInt(b.startDeltaNs)?-1:BigInt(a.startDeltaNs)>BigInt(b.startDeltaNs)?1:a.timelineIndex-b.timelineIndex):left>right?-1:1;});
   if(candidates.length){matchedFrames++;if(candidates.length>1)ambiguousFrames++;if(results.length<1000)results.push({...event,candidates:candidates.slice(0,8),candidateCount:candidates.length});}
  }
  return {available:true,frames:results,mappedFrames,unmappedFrames,matchedFrames,ambiguousFrames,truncated:!!truncated||matchedFrames>results.length};

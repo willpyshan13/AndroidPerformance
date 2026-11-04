@@ -13,7 +13,8 @@ import { captureLayoutFromAgent } from './layout-agent.js';
 import { parseComposeRecompositionLog } from './compose-runtime.js';
 import { parseSimpleperfDiagnostics } from './simpleperf-diagnostics.js';
 import { parseLeakCanaryLog } from './leakcanary-live.js';
-import { parseStartupAgentLog } from './startup-agent.js';
+import { parseStartupAgentLog, startupAgentIterationEvidence } from './startup-agent.js';
+import { parseStartupSystemEvents, startupSystemIterationEvidence } from './startup-events.js';
 import { parseJankStatsLog } from './jankstats-agent.js';
 import { openNetworkAgentSocket, pollNetworkAgentSocket } from './network-agent-socket.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
@@ -289,14 +290,15 @@ export class Adb {
     try{return {...parseCompilationState(await this.shell(serial,['dumpsys','package',packageName],{timeout:30000}),packageName),timestamp:Date.now(),source:'adb',serial,packageName};}
     catch(error){return {available:false,entries:[],reason:error.message,timestamp:Date.now(),source:'adb',serial,packageName};}
   }
-  async startup(serial, packageName, { mode = 'cold', runs = 3, compilationMode = 'unchanged' } = {}) {
+  async startup(serial, packageName, { mode = 'cold', runs = 3, compilationMode = 'unchanged', captureAgentMilestones = false, captureSystemMilestones = false } = {}) {
     validateTarget(serial, packageName);
-    if (!['cold', 'warm', 'hot'].includes(mode) || !Number.isInteger(runs) || runs < 1 || runs > 10 || !['unchanged', 'speed-profile', 'speed'].includes(compilationMode)) throw new Error('启动参数无效');
+    if (!['cold', 'warm', 'hot'].includes(mode) || !Number.isInteger(runs) || runs < 1 || runs > 10 || !['unchanged', 'speed-profile', 'speed'].includes(compilationMode) || typeof captureAgentMilestones !== 'boolean' || typeof captureSystemMilestones !== 'boolean') throw new Error('启动参数无效');
     return this.exclusive(serial, async () => {
       const resolve = await this.shell(serial, ['cmd', 'package', 'resolve-activity', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', packageName]);
       const component = resolve.trim().split(/\r?\n/).find(s => /^[\w.]+\/[\w.$]+$/.test(s));
       if (!component || !component.startsWith(`${packageName}/`)) throw new Error('没有找到目标应用的可启动 Activity');
       const start = () => this.shell(serial, ['am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', '-n', component], { timeout: 45000 });
+      const readSystemEvents=async()=>parseStartupSystemEvents(await this.shell(serial,['logcat','-b','events','-t','10000','-v','brief','-s','am_activity_launch_time:I','am_activity_fully_drawn_time:I','*:S'],{timeout:30000,maxBuffer:2*1024*1024}),{packageName,component});
       let compilationAction = { mode: compilationMode, applied: false, output: null };
       if (compilationMode !== 'unchanged') {
         compilationAction.output = await this.shell(serial, ['cmd', 'package', 'compile', '-f', '-m', compilationMode, packageName], { timeout: 120000 });
@@ -307,13 +309,27 @@ export class Adb {
       if (mode !== 'cold') { await start(); await new Promise(r => setTimeout(r, 1000)); }
       const results = [];
       for (let i = 0; i < runs; i++) {
+        let agentBefore=null,systemBefore=null;
+        if(captureAgentMilestones){
+          try{agentBefore=await this.startupAgentSnapshot(serial,packageName);}
+          catch(error){agentBefore=/目标应用主进程未运行/.test(error.message)?{processSessionId:null,events:[]}:{error:error.message};}
+        }
+        if(captureSystemMilestones){try{systemBefore=await readSystemEvents();}catch(error){systemBefore={error:error.message};}}
         if (mode === 'cold') await this.shell(serial, ['am', 'force-stop', packageName]);
         if (mode === 'warm') await this.shell(serial, ['input', 'keyevent', '4']);
         if (mode === 'hot') await this.shell(serial, ['input', 'keyevent', '3']);
         await new Promise(r => setTimeout(r, 700));
         const result = parseStartup(await start());
         if (result.status !== 'ok' || result.totalTimeMs === null) throw new Error(`第 ${i + 1} 次启动没有返回有效 TotalTime：${result.raw.slice(0, 600)}`);
-        results.push({ run: i + 1, ...result });
+        let agentEvidence;
+        if(captureAgentMilestones){
+          let agentAfter;
+          try{agentAfter=await this.startupAgentSnapshot(serial,packageName);}catch(error){agentAfter={error:error.message};}
+          agentEvidence=startupAgentIterationEvidence(agentBefore,agentAfter);
+        }
+        let systemEvidence;
+        if(captureSystemMilestones){let systemAfter;try{systemAfter=await readSystemEvents();}catch(error){systemAfter={error:error.message};}systemEvidence=startupSystemIterationEvidence(systemBefore,systemAfter,{component,packageName});}
+        results.push({ run: i + 1, ...result, ...(captureAgentMilestones?{agentEvidence}:{}), ...(captureSystemMilestones?{systemEvidence}:{}) });
         await new Promise(r => setTimeout(r, 700));
       }
       const valid = results.filter(r => r.totalTimeMs !== null && r.status === 'ok');

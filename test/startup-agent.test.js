@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import yauzl from 'yauzl';
 import {buildStartupAgentPackage} from '../src/agent-package.js';
 import {createApp} from '../src/server.js';
-import {parseStartupAgentLog} from '../src/startup-agent.js';
+import {parseStartupAgentLog,startupAgentIterationEvidence} from '../src/startup-agent.js';
 import {Adb} from '../src/adb.js';
 
 async function archiveEntries(buffer) {
@@ -46,6 +46,20 @@ test('Startup Agent parser validates PID/session identities and computes monoton
   assert.equal(result.activitySummaries[0].activity,'com.example.MainActivity');assert.equal(result.activitySummaries[0].createdToResumedMs,20);assert.equal(result.activitySummaries[0].resumedToFirstDrawMs,70);assert.equal(result.activitySummaries[0].firstDrawToFullyDrawnMs,110);
   assert.equal(parseStartupAgentLog(row('first-draw',1),{pids:[100]}).eventCount,0);
   assert.throws(()=>parseStartupAgentLog('x'.repeat(8*1024*1024+1)),/8 MiB/);
+});
+
+test('Startup Agent iteration pairing uses a monotonic watermark and handles process restarts',()=>{
+  const session='0123456789abcdef0123456789abcdef',next='abcdef0123456789abcdef0123456789',activityId='11111111111111111111111111111111';
+  const event=(name,monotonicNs,processSessionId=session)=>({name,monotonicNs,processSessionId,activityId,activity:'com.example.MainActivity',pid:42});
+  const before={processSessionId:session,events:[event('activity-resumed','100')]};
+  const after={processSessionId:session,eventCount:3,events:[event('activity-resumed','100'),event('first-draw','120'),event('fully-drawn','150')]};
+  const paired=startupAgentIterationEvidence(before,after);
+  assert.equal(paired.available,true);assert.equal(paired.boundary,'monotonic-cursor');assert.deepEqual(paired.events.map(row=>row.name),['first-draw','fully-drawn']);assert.equal(paired.activitySummaries[0].resumedToFirstDrawMs,null);
+  const restarted=startupAgentIterationEvidence(before,{processSessionId:next,events:[event('activity-created','10',next)]});
+  assert.equal(restarted.available,true);assert.equal(restarted.boundary,'new-process-session');assert.equal(restarted.events[0].name,'activity-created');
+  assert.equal(startupAgentIterationEvidence({error:'offline'},after).available,false);
+  assert.equal(startupAgentIterationEvidence(before,{processSessionId:session,events:[]}).available,false);
+  assert.throws(()=>startupAgentIterationEvidence(before,after,{limit:101}),/上限无效/);
 });
 
 test('Startup Agent read endpoint requires the local token and binds the selected package',async t=>{

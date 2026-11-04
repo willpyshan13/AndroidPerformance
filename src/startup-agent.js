@@ -18,7 +18,7 @@ function phaseMs(start, end) {
   return delta < 0n ? null : Number(delta) / 1e6;
 }
 
-function activitySummaries(events) {
+export function summarizeStartupAgentEvents(events) {
   const groups = new Map();
   for (const event of events) {
     if (!event.activityId) continue;
@@ -33,6 +33,23 @@ function activitySummaries(events) {
     firstDrawToFullyDrawnMs:phaseMs(group.times['first-draw'],group.times['fully-drawn']),
     milestones:group.events.map(event=>event.name),
   }));
+}
+
+export function startupAgentIterationEvidence(before,after,{limit=100}={}) {
+  if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('启动里程碑逐轮事件上限无效');
+  if(before?.error)return {available:false,reason:`无法建立运行前的 Agent 事件边界：${before.error}`,events:[],activitySummaries:[]};
+  if(after?.error)return {available:false,reason:`运行后无法读取 Agent 事件：${after.error}`,events:[],activitySummaries:[]};
+  if(!after?.processSessionId||!Array.isArray(after.events)||after.events.length===0)return {available:false,reason:'运行后未读取到可配对的 Startup Agent 事件',events:[],activitySummaries:[]};
+  const sameSession=before?.processSessionId===after.processSessionId;
+  let events=after.events;
+  if(sameSession){
+    const previous=before.events||[],highWater=previous.reduce((value,event)=>{const stamp=BigInt(event.monotonicNs);return value===null||stamp>value?stamp:value;},null);
+    if(highWater!==null)events=events.filter(event=>BigInt(event.monotonicNs)>highWater);
+  }
+  const eventCount=events.length;
+  events=events.slice(-limit);
+  if(!events.length)return {available:false,reason:'启动区间内没有新的 Startup Agent 事件',events:[],activitySummaries:[]};
+  return {available:true,processSessionId:after.processSessionId,events,activitySummaries:summarizeStartupAgentEvents(events),boundary:sameSession?'monotonic-cursor':'new-process-session',truncated:eventCount>limit};
 }
 
 /** Parses only APWS1 records and optionally limits them to PIDs already resolved for the target package. */
@@ -54,5 +71,5 @@ export function parseStartupAgentLog(text,{serial=null,packageName=null,pids=nul
     matches.push({processSessionId,activityId:activityId==='-'?null:activityId,name:eventName,activity,pid,monotonicNs:timestamp.toString()});
   }
   const session=matches.at(-1)?.processSessionId||null,sessionEvents=session?matches.filter(event=>event.processSessionId===session).sort((a,b)=>BigInt(a.monotonicNs)<BigInt(b.monotonicNs)?-1:BigInt(a.monotonicNs)>BigInt(b.monotonicNs)?1:0):[],events=sessionEvents.slice(-limit);
-  return {source:'agent',serial,packageName,processSessionId:session,events,activitySummaries:activitySummaries(events),eventCount:sessionEvents.length,ignored,truncated:sessionEvents.length>limit||inputTruncated,processSessions:[...new Set(matches.map(event=>event.processSessionId))]};
+  return {source:'agent',serial,packageName,processSessionId:session,events,activitySummaries:summarizeStartupAgentEvents(events),eventCount:sessionEvents.length,ignored,truncated:sessionEvents.length>limit||inputTruncated,processSessions:[...new Set(matches.map(event=>event.processSessionId))]};
 }

@@ -35,7 +35,7 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 | 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV / Markdown / JSON；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告，并导出完整报告 TXT / JSON；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配；分析已导入追踪中的 ART GC 回收量、运行 / 等待时间，以及 JIT、类加载、验证和初始化切片 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd 与 Trace Processor |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间；可选接入 Jetpack JankStats Debug Agent，按 Activity、Window、Fragment 和应用 UI 状态汇总应用侧帧耗时，并按同 PID、±5 ms 起始窗口查找 FrameTimeline 候选，按帧区间重叠时长排序 | `dumpsys gfxinfo framestats`、Perfetto、AndroidX JankStats |
-| 启动测试 | 重复冷、温、热启动；可选择保持现有 ART 编译状态或先执行 `speed-profile` / `speed` 编译；查看 P50 / P90、耗时波动、复核候选、设备报告的启动模式及编译状态；可导出包含每轮原始输出和编译上下文的 JSON，或导出逐轮 CSV；保存两份实验后可对比 P50、P90 与均值并导出 JSON；可下载可选 debug-only Startup Agent，在目标应用接入后读取 Application / Activity、首次 PreDraw 和应用显式报告的 fully-drawn 里程碑 | `am start -W`、`cmd package compile`、`dumpsys package`、Startup Debug Agent |
+| 启动测试 | 重复冷、温、热启动；可选择保持现有 ART 编译状态或先执行 `speed-profile` / `speed` 编译；查看 P50 / P90、耗时波动、复核候选、设备报告的启动模式及编译状态；可导出包含每轮原始输出和编译上下文的 JSON，或导出逐轮 CSV；保存两份实验后可对比 P50、P90 与均值并导出 JSON；可下载可选 debug-only Startup Agent，在目标应用接入后读取 Application / Activity、首次 PreDraw 和应用显式报告的 fully-drawn 里程碑；可选择逐轮读取 Agent Logcat，或读取系统 event log 里的首帧 / fully-drawn 事件 | `am start -W`、Android event log、`cmd package compile`、`dumpsys package`、Startup Debug Agent |
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；布局检查线索附有规则 ID、严重级别、置信度和节点证据，并在层级明确报告不可见或完全透明节点时提示复核；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
@@ -47,6 +47,8 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 | 采集记录 | 保存、回放及导入导出 JSON 报告 | 本地记录 |
 
 桌面版提供原生文件选择、菜单和快捷键。`⌘/Ctrl+1…9` 切换分析模块，`⌘/Ctrl+O` 打开采集记录，`⌘/Ctrl+,` 打开帮助。
+
+启动测试的逐轮 Agent 或系统事件采集均为可选项，会在每轮前后额外读取日志，因此会增加实验总耗时；`TotalTime` 仍只取设备返回的 `am start -W` 数据。TTID/TTFD 只在设备实际报告对应事件时显示，未报告或读取失败时保留为不可用。
 
 ## 从源码运行
 

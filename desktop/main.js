@@ -194,8 +194,10 @@ async function smokeStartupExportsInRenderer() {
     try{
       if(!/退出演示|Exit demo mode/.test(mode?.textContent||'')){mode?.click();await settle();}
       location.hash='#startup';await settle();
-      const jsonButton=document.querySelector('[data-action="export-startup-json"]'),csvButton=document.querySelector('[data-action="export-startup-csv"]');
+      const jsonButton=document.querySelector('[data-action="export-startup-json"]'),csvButton=document.querySelector('[data-action="export-startup-csv"]'),capture=document.querySelector('#startup-agent-iterations'),captureSystem=document.querySelector('#startup-system-iterations');
       if(!jsonButton||!csvButton||jsonButton.disabled||csvButton.disabled)return fail('startup export buttons are unavailable');
+      if(!capture||!capture.disabled||capture.checked)return fail('milestone capture should be visible and disabled in demo mode');
+      if(!captureSystem||!captureSystem.disabled||captureSystem.checked)return fail('system milestone capture should be visible and disabled in demo mode');
       const blobs=[],originalCreate=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;
       try{
         URL.createObjectURL=blob=>{blobs.push(blob);return 'blob:startup-export-smoke-'+blobs.length;};HTMLAnchorElement.prototype.click=()=>{};
@@ -204,8 +206,8 @@ async function smokeStartupExportsInRenderer() {
       if(blobs.length!==2)return fail('startup exports did not create two files');
       const json=JSON.parse(await blobs[0].text()),csv=await blobs[1].text(),csvBytes=new Uint8Array(await blobs[1].arrayBuffer()),rows=csv.split(/\\r?\\n/).filter(Boolean),utf8Bom=csvBytes[0]===0xef&&csvBytes[1]===0xbb&&csvBytes[2]===0xbf;
       const jsonOk=blobs[0].type==='application/json;charset=utf-8'&&json.schema==='android-performance.startup-experiment-report'&&json.schemaVersion===1&&json.context.packageName==='com.example.reading'&&json.runs.length===3&&json.summary.p50>0&&json.runs.every(row=>typeof row.raw==='string');
-      const csvOk=blobs[1].type==='text/csv;charset=utf-8'&&utf8Bom&&rows.length===4&&rows[0].includes('"raw_output"')&&rows[1].includes('"com.example.reading"');
-      return {ok:jsonOk&&csvOk,json:{schema:json.schema,packageName:json.context.packageName,runs:json.runs.length,p50:json.summary.p50},csv:{type:blobs[1].type,rows:rows.length,utf8Bom}};
+      const csvOk=blobs[1].type==='text/csv;charset=utf-8'&&utf8Bom&&rows.length===4&&rows[0].includes('"raw_output"')&&rows[0].includes('"milestone_events_json"')&&rows[0].includes('"system_startup_evidence_json"')&&rows[1].includes('"com.example.reading"');
+      return {ok:jsonOk&&csvOk&&capture.disabled&&captureSystem.disabled,json:{schema:json.schema,packageName:json.context.packageName,runs:json.runs.length,p50:json.summary.p50},csv:{type:blobs[1].type,rows:rows.length,utf8Bom,milestoneEvidence:rows[0].includes('"milestone_events_json"'),systemEvidence:rows[0].includes('"system_startup_evidence_json"')},milestoneControl:{visible:!!capture,disabled:capture.disabled,checked:capture.checked},systemMilestoneControl:{visible:!!captureSystem,disabled:captureSystem.disabled,checked:captureSystem.checked}};
     }catch(error){return fail(error.stack||error.message||String(error));}finally{location.hash='#overview';await settle();}
   })()`);
 }

@@ -20,7 +20,7 @@ Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`
 
 内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV / Markdown / JSON；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。2026-11-04 macOS ARM 打包 smoke 已验证三种格式的筛选内容、MIME 和报告字段；完整回归 407 项中 391 通过、16 项因未配置可选官方样本而跳过、0 失败。Smoke 需在沙盒外启动 Electron；修正按钮忙碌状态和筛选设置后通过。
 
-macOS ARM64 本机打包验证（2026-11-04）：`npm run package:dmg` 生成本机安装包，`hdiutil verify` 校验通过；桌面 smoke 覆盖 16 个英文路由、HPROF 导出、50,000 样本 CPU 时间线栅格和 AAPT2 APK 导入。目标是本机使用与功能验证；正式发布、Apple Developer 签名和公证不在本项目待办范围内。
+macOS ARM64 本机打包验证（2026-11-04）：DMG 曾用于本机打包检查；当前仅保留 `.app` 目录构建和桌面 smoke，不提供安装包或发布流程。桌面 smoke 覆盖 16 个英文路由、HPROF 导出、50,000 样本 CPU 时间线栅格和 AAPT2 APK 导入。
 
 Network JSON 导出（2026-11-04）：新增独立于 HAR 的筛选 JSON，保留规范化请求状态、阶段耗时和显式脱敏元数据；URL 凭据、查询和片段被剥除，不导出 Headers、Cookies 或正文。单测覆盖密钥移除、缺失时间、无效协议和 50,000 条上限；本机完整回归 409 项中 393 通过、16 项因缺少可选官方样本跳过、0 失败。macOS ARM 打包 smoke 用含凭据、查询、Header、Cookie 和正文的 HAR fixture 验证筛选 JSON 导出不含秘密；更新后的 DMG 已重新构建并通过 `hdiutil verify`。
 
@@ -34,7 +34,7 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 界面语言：已加入简体中文 / English 切换并持久化到桌面设置；Electron 原生菜单会读取保存语言并在设置切换时同步重建；静态键与 16 个路由的打包页面回归已覆盖；macOS arm64 打包 smoke 对演示状态可见 UI 文本扫描为 0 条残留中文；设备原始字段、工具输出及布局树等用户数据按来源保留，尚未对所有真实设备变体逐一核对。AI 分析按用户决定不实现。
 
-当前桌面 CI 按用户要求只验证 macOS ARM64，测试与目录打包启动 smoke 复用一个 runner；不会构建 DMG、创建 Release 或上传构建产物，本机仍可按需运行 `npm run package:dmg`。固定版本工具资源按准备脚本哈希缓存。最近本机完整回归为 420 项：404 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。历史 clean runner 上的 Android 7 simpleperf 资源回退、DMG 构建与桌面 smoke 已由 Actions run `41600895526` 全部验证通过；Java 25 runtime 的下载、macOS ARM64 DMG 构建与打包启动 smoke 由 Actions run `41604882683` 全部验证通过。提交 `ef722b2` 加入 Markdown-only push / pull request 跳过规则，并通过 Actions run `41605693946` 的单一 macOS ARM64 全流程；纯文档提交 `d0a8e7f` 推送后未产生新的 Actions run，确认文档-only 跳过生效。C++ 运算符源码定位提交 `cf60ac1` 的全量测试、DMG 和打包启动 smoke 由 Actions run `41607030022` 验证通过；后续 Itanium ABI 解码提交 `55e2f5b` 也由 run `41608493308` 验证通过。CI 缓存 workflow 首次尝试因旧的配置断言未更新而失败；提交 `2e6d6d8` 修正断言后，单一 macOS ARM64 全流程 run `41627090070` 通过。提交 `b42d198` 加入全局函数模板候选和 cache v6；run `41628495523` 命中缓存并跳过 Java、Android SDK/NDK 及 ADB、AAPT2、simpleperf、Shark、Inspector、Perfetto UI 准备，随后 DMG 和打包启动 smoke 通过。上述 Actions 记录均为历史验证，不代表当前 workflow 还会构建 DMG；历史跨平台构建结果保留作已完成验证记录，不代表当前仍发布 Windows/Linux 安装包。
+当前桌面 CI 按用户要求只验证 macOS ARM64，测试与目录打包启动 smoke 复用一个 runner；不构建安装包、不创建 Release、不上传构建产物。当前本机桌面构建命令为 `npm run package:mac`，生成 `.app` 目录。固定版本工具资源按准备脚本哈希缓存。最近本机完整回归为 420 项：404 通过、0 失败、16 项因未配置可选官方样本而跳过；`npm run check` 通过。其余 Actions、DMG 和跨平台安装器记录均为历史验证，不代表当前提供安装包或发布 Windows/Linux 构建。
 
 Compose Inspector 运行时修复（2026-11-03）：AOSP CLI 含 Java 25 字节码，之前桌面传入的 Java 17 会导致 `UnsupportedClassVersionError`。现在 macOS ARM64 包内单独携带 SHA-256 固定的 Temurin JRE 25，并通过打包资源路径在 API 35 模拟器 Compose fixture 上完整采集树、参数、语义、边界和截图；run `41604882683` 又验证了 clean runner 下载、DMG 构建与打包启动 smoke。本轮验证使用模拟器及本地打包资源；不要求连接真实设备，也没有覆盖各厂商实体设备行为。
 
@@ -95,6 +95,8 @@ CPU 调用栈时间图提供 PNG 导出，导出的是当前已绘制视图，�
 ## 启动实验统计与对比
 
 启动实验现显示 P50、最近秩 P90、波动系数、范围和基于中位数 / MAD 的复核候选，并保留逐轮 TotalTime 原始行。可选择两份本机保存的实验，比较 P50、P90、均值及变化百分比，报告包名、启动模式和设备序列号缺失 / 不一致，导出 JSON。对比明确按描述性数据处理，不把同份记录内的重复启动视为独立实验，也不推断显著性或因果。统计函数和上下文差异测试通过；macOS arm64 打包桌面 smoke 实际保存两份临时记录、点击比较并验证 JSON 导出与设备差异提示。TTID / TTFD 和 ART 阶段归因仍由单独 Perfetto 追踪提供，不与启动实验自动配对。
+
+启动实验可独立导出包含逐轮原始 `am start -W` 输出、编译前后快照和上下文的 JSON 报告，以及逐轮 CSV；CSV 含 UTF-8 BOM、正确引用字段并中和表格公式。导出数量限 10 轮、JSON 限 4 MiB。演示数据现在提供包名和设备标识，可在本机模式检验导出。430 项全量测试中 414 项通过、16 项因未配置可选官方样本跳过、0 失败；`npm run check` 通过；macOS arm64 `.app` smoke 实际触发两种导出并核对 JSON schema、轮数、摘要、CSV 行和 BOM。
 
 ## Benchmark 回归阈值与报告
 

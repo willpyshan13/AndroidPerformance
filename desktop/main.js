@@ -176,6 +176,27 @@ async function smokeStartupComparisonInRenderer() {
     }catch(error){return fail(error.message);}finally{document.querySelector('#detail-dialog')?.close();location.hash='#overview';await settle();}
   })()`);
 }
+async function smokeStartupExportsInRenderer() {
+  return window.webContents.executeJavaScript(`(async()=>{
+    const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),fail=reason=>({ok:false,reason}),mode=document.querySelector('#mode-btn');
+    try{
+      if(!/退出演示|Exit demo mode/.test(mode?.textContent||'')){mode?.click();await settle();}
+      location.hash='#startup';await settle();
+      const jsonButton=document.querySelector('[data-action="export-startup-json"]'),csvButton=document.querySelector('[data-action="export-startup-csv"]');
+      if(!jsonButton||!csvButton||jsonButton.disabled||csvButton.disabled)return fail('startup export buttons are unavailable');
+      const blobs=[],originalCreate=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;
+      try{
+        URL.createObjectURL=blob=>{blobs.push(blob);return 'blob:startup-export-smoke-'+blobs.length;};HTMLAnchorElement.prototype.click=()=>{};
+        jsonButton.click();csvButton.click();
+      }finally{URL.createObjectURL=originalCreate;HTMLAnchorElement.prototype.click=originalClick;}
+      if(blobs.length!==2)return fail('startup exports did not create two files');
+      const json=JSON.parse(await blobs[0].text()),csv=await blobs[1].text(),csvBytes=new Uint8Array(await blobs[1].arrayBuffer()),rows=csv.split(/\\r?\\n/).filter(Boolean),utf8Bom=csvBytes[0]===0xef&&csvBytes[1]===0xbb&&csvBytes[2]===0xbf;
+      const jsonOk=blobs[0].type==='application/json;charset=utf-8'&&json.schema==='android-performance.startup-experiment-report'&&json.schemaVersion===1&&json.context.packageName==='com.example.reading'&&json.runs.length===3&&json.summary.p50>0&&json.runs.every(row=>typeof row.raw==='string');
+      const csvOk=blobs[1].type==='text/csv;charset=utf-8'&&utf8Bom&&rows.length===4&&rows[0].includes('"raw_output"')&&rows[1].includes('"com.example.reading"');
+      return {ok:jsonOk&&csvOk,json:{schema:json.schema,packageName:json.context.packageName,runs:json.runs.length,p50:json.summary.p50},csv:{type:blobs[1].type,rows:rows.length,utf8Bom}};
+    }catch(error){return fail(error.stack||error.message||String(error));}finally{location.hash='#overview';await settle();}
+  })()`);
+}
 async function smokeBenchmarkRegressionInRenderer() {
   return window.webContents.executeJavaScript(`(async()=>{
     const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),token=document.querySelector('meta[name="api-token"]')?.content||'',headers={'X-Workbench-Token':token,'Content-Type':'application/json'},fail=reason=>({ok:false,reason}),params={mode:'cold'},key=JSON.stringify(['SmokeBenchmark','startup',params,'metrics','timeNs']),context={build:{model:'smoke-device',device:'smoke-device',version:{sdk:35},fingerprint:'smoke-fingerprint'},compilationMode:'speed',cpuLocked:true,cpuCoreCount:8,cpuMaxFreqHz:2000000000,sustainedPerformanceModeEnabled:true,artMainlineVersion:'1'};
@@ -319,6 +340,7 @@ function createWindow() {
       smokeStep='LeakCanary Debug Agent package';rendererState.leakCanaryAgentPackage=await smokeLeakCanaryAgentPackageInRenderer();
       smokeStep='JankStats Debug Agent package';rendererState.jankStatsAgentPackage=await smokeJankStatsAgentPackageInRenderer();
       smokeStep='startup comparison';rendererState.startupComparisonSmoke=await smokeStartupComparisonInRenderer();
+      smokeStep='startup exports';rendererState.startupExportSmoke=await smokeStartupExportsInRenderer();
       smokeStep='Benchmark regression';rendererState.benchmarkRegressionSmoke=await smokeBenchmarkRegressionInRenderer();
       if(process.env.APW_SMOKE_NETWORK_SERIAL&&process.env.APW_SMOKE_NETWORK_PACKAGE)rendererState.networkAgentDeviceSmoke=await smokeNetworkAgentDeviceInRenderer(process.env.APW_SMOKE_NETWORK_SERIAL,process.env.APW_SMOKE_NETWORK_PACKAGE);
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
@@ -327,7 +349,7 @@ function createWindow() {
       smokeStep='power UID energy diagnostics';rendererState.powerUidEnergySmoke=await smokePowerUidEnergyInRenderer();
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routeGateChecks={routeChecksDemoActive:routeChecks.demoActive,emptyRoutes:checksValid(routeChecks.empty),demoRoutes:checksValid(routeChecks.demo),cpuStackTimeline:!!demoCpuRoute?.stackTimeline,cpuPngExport:!!rendererState.cpuPngExport?.ok,cpuLargeTimeline:!!rendererState.cpuLargeTimeline?.ok,heapCsvExport:!!rendererState.heapCsvExport?.ok,heapDominatorGraph:!!rendererState.heapCsvExport?.dominatorGraph?.ok,heapMarkdownExport:!!rendererState.heapMarkdownExport?.ok,heapJsonExport:!!rendererState.heapJsonExport?.ok,layoutFindings:!!rendererState.layoutFindings?.ok,homeArtifactSection:!!rendererState.homeArtifactChecks.section,homeArtifactEmptyState:!!rendererState.homeArtifactChecks.emptyState,networkAgentPackage:!!rendererState.networkAgentPackage?.ok,networkJsonExport:!!rendererState.networkJsonExport?.ok,leakCanaryAgentPackage:!!rendererState.leakCanaryAgentPackage?.ok,jankStatsAgentPackage:!!rendererState.jankStatsAgentPackage?.ok,startupComparison:!!rendererState.startupComparisonSmoke?.ok,benchmarkRegression:!!rendererState.benchmarkRegressionSmoke?.ok,layoutTraceOnly:!!rendererState.layoutTraceOnlySmoke?.ok,traceAnalysisReport:!!rendererState.traceAnalysisReportSmoke?.ok,powerUidEnergy:!!rendererState.powerUidEnergySmoke?.ok,sourceWorkspace:!process.env.APW_SMOKE_SOURCE_DIR||!!rendererState.sourceWorkspaceSmoke?.ok,apkAnalysis:!process.env.APW_SMOKE_APK_PATH||!!rendererState.apkAnalysisSmoke?.ok,networkAgentDevice:!process.env.APW_SMOKE_NETWORK_SERIAL||!!rendererState.networkAgentDeviceSmoke?.ok};
+      const routeGateChecks={routeChecksDemoActive:routeChecks.demoActive,emptyRoutes:checksValid(routeChecks.empty),demoRoutes:checksValid(routeChecks.demo),cpuStackTimeline:!!demoCpuRoute?.stackTimeline,cpuPngExport:!!rendererState.cpuPngExport?.ok,cpuLargeTimeline:!!rendererState.cpuLargeTimeline?.ok,heapCsvExport:!!rendererState.heapCsvExport?.ok,heapDominatorGraph:!!rendererState.heapCsvExport?.dominatorGraph?.ok,heapMarkdownExport:!!rendererState.heapMarkdownExport?.ok,heapJsonExport:!!rendererState.heapJsonExport?.ok,layoutFindings:!!rendererState.layoutFindings?.ok,homeArtifactSection:!!rendererState.homeArtifactChecks.section,homeArtifactEmptyState:!!rendererState.homeArtifactChecks.emptyState,networkAgentPackage:!!rendererState.networkAgentPackage?.ok,networkJsonExport:!!rendererState.networkJsonExport?.ok,leakCanaryAgentPackage:!!rendererState.leakCanaryAgentPackage?.ok,jankStatsAgentPackage:!!rendererState.jankStatsAgentPackage?.ok,startupComparison:!!rendererState.startupComparisonSmoke?.ok,startupExport:!!rendererState.startupExportSmoke?.ok,benchmarkRegression:!!rendererState.benchmarkRegressionSmoke?.ok,layoutTraceOnly:!!rendererState.layoutTraceOnlySmoke?.ok,traceAnalysisReport:!!rendererState.traceAnalysisReportSmoke?.ok,powerUidEnergy:!!rendererState.powerUidEnergySmoke?.ok,sourceWorkspace:!process.env.APW_SMOKE_SOURCE_DIR||!!rendererState.sourceWorkspaceSmoke?.ok,apkAnalysis:!process.env.APW_SMOKE_APK_PATH||!!rendererState.apkAnalysisSmoke?.ok,networkAgentDevice:!process.env.APW_SMOKE_NETWORK_SERIAL||!!rendererState.networkAgentDeviceSmoke?.ok};
       rendererState.failedReadinessChecks=Object.entries(routeGateChecks).filter(([,passed])=>!passed).map(([name])=>name);
       const routesReady=rendererState.failedReadinessChecks.length===0;
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;

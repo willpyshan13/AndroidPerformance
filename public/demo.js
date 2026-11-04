@@ -22,7 +22,7 @@ export function demoFrames(budgetMs = 16.667) {
 export function demoStartup(mode = 'cold', runs = 3) {
   const base = { cold: 470, warm: 210, hot: 88 }[mode];
   const results = Array.from({ length: runs }, (_, i) => ({ run: i + 1, status: 'ok', observedMode: mode, totalTimeMs: base + [18, -22, 7, -13, 24][i % 5], thisTimeMs: null, waitTimeMs: base + 40, activity: `${DEMO_PACKAGE}/.MainActivity` }));
-  return { source: 'demo', timestamp: Date.now(), requestedMode: mode, results, meanMs: results.reduce((s, r) => s + r.totalTimeMs, 0) / runs };
+  return { source: 'demo', timestamp: Date.now(), serial: DEMO_DEVICE.serial, packageName: DEMO_PACKAGE, requestedMode: mode, compilationMode: 'unchanged', results, meanMs: results.reduce((s, r) => s + r.totalTimeMs, 0) / runs };
 }
 export function demoCpuTimeline() {
   const base=1_730_000_000_000_000_000n,threads=[

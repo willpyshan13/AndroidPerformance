@@ -184,6 +184,9 @@ test('sample stack timeline preserves chronology, thread identity, top function 
  const many=buildSampleTimeline({samples:Array.from({length:50000},(_,i)=>({timeNs:String(1000000+i*1000000),period:String(i%7+1),thread:`worker-${i%4}`,pid:1,tid:i%4+1,frames:['root',`fn-${i%31}`]}))});
  const bounded=sampleStackTimeline(many);assert.equal(bounded.totalSamples,50000);assert.equal(bounded.renderedSamples,2000);assert.equal(bounded.truncated,true);
  assert.equal(bounded.entries[0].sample.timeNs,'1000000');assert.equal(bounded.entries.at(-1).sample.timeNs,'50000000000');assert.ok(bounded.functions.length<=8);
+ const viewport=sampleStackTimeline(many,{rangeMs:{start:10,end:20}});assert.equal(viewport.totalSamples,11);assert.equal(viewport.renderedSamples,11);assert.equal(viewport.truncated,false);assert.equal(viewport.entries[0].sample.timeNs,'11000000');assert.equal(viewport.entries.at(-1).sample.timeNs,'21000000');assert.equal(viewport.startMs,10);assert.equal(viewport.endMs,20);
+ const threadViewport=sampleStackTimeline(many,{rangeMs:{start:10,end:20},thread:'worker-2-1/3'});assert.equal(threadViewport.totalSamples,3);assert.deepEqual(threadViewport.entries.map(entry=>entry.sample.timeNs),['11000000','15000000','19000000']);
+ assert.throws(()=>sampleStackTimeline(many,{rangeMs:{start:-1,end:2}}),/无效/);assert.throws(()=>sampleStackTimeline(many,{rangeMs:{start:1,end:50000}}),/无效/);
 });
 test('reverse callers aggregate inclusive weights, respect scope and count recursion explicitly',async()=>{
  const {reverseCallTree}=await import('../public/offline.js');

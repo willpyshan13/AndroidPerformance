@@ -782,10 +782,18 @@ export function sampleStackChart(timeline, limit=8) {
 }
 // Keep chronological sample stacks visible without creating one DOM/SVG node per frame.
 // The renderer consumes this bounded projection and draws it to a canvas.
-export function sampleStackTimeline(timeline,{thread=null,maxSamples=2000,maxDepth=32}={}) {
- if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(maxSamples)||maxSamples<1||maxSamples>5000||!Number.isInteger(maxDepth)||maxDepth<1||maxDepth>64||thread!==null&&typeof thread!=='string')throw new Error('调用栈时间图数据无效');
- const ordered=timeline.samplesByTime||[...timeline.samples].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0),candidates=thread===null?ordered:ordered.filter(sample=>sample.thread===thread);
- if(!candidates.length)return {entries:[],functions:[],totalSamples:0,renderedSamples:0,truncated:false,maxDepth,startTime:null,endTime:null};
+export function sampleStackTimeline(timeline,{thread=null,rangeMs=null,maxSamples=2000,maxDepth=32}={}) {
+ if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(maxSamples)||maxSamples<1||maxSamples>5000||!Number.isInteger(maxDepth)||maxDepth<1||maxDepth>64||thread!==null&&typeof thread!=='string'||rangeMs!==null&&(!rangeMs||!Number.isFinite(rangeMs.start)||!Number.isFinite(rangeMs.end)||rangeMs.start<0||rangeMs.end<rangeMs.start||rangeMs.end>timeline.durationMs))throw new Error('调用栈时间图数据无效');
+ const ordered=timeline.samplesByTime||[...timeline.samples].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
+ let first=0,last=ordered.length;
+ if(rangeMs&&ordered.length){
+  const origin=ordered[0].time,start=origin+BigInt(Math.round(rangeMs.start*1e6)),end=origin+BigInt(Math.round(rangeMs.end*1e6));
+  const lowerBound=value=>{let lo=first,hi=last;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<value)lo=mid+1;else hi=mid;}return lo;};
+  const upperBound=value=>{let lo=first,hi=last;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<=value)lo=mid+1;else hi=mid;}return lo;};
+  first=lowerBound(start);last=upperBound(end);
+ }
+ const inRange=ordered.slice(first,last),candidates=thread===null?inRange:inRange.filter(sample=>sample.thread===thread);
+ if(!candidates.length)return {entries:[],functions:[],totalSamples:0,renderedSamples:0,truncated:false,maxDepth,startTime:null,endTime:null,startMs:rangeMs?.start??null,endMs:rangeMs?.end??null};
  const count=Math.min(candidates.length,maxSamples),entries=[],weights=new Map();
  for(let i=0;i<count;i++){
   const index=count===candidates.length?i:count===1?Math.floor((candidates.length-1)/2):Math.round(i*(candidates.length-1)/(count-1)),sample=candidates[index],allFrames=sample.frames||[],frames=allFrames.length>maxDepth?allFrames.slice(-maxDepth):allFrames;
@@ -793,7 +801,8 @@ export function sampleStackTimeline(timeline,{thread=null,maxSamples=2000,maxDep
   for(const name of frames){const weight=(weights.get(name)||0)+sample.weight;if(!Number.isSafeInteger(weight))throw new Error('调用栈时间图权重超出安全范围');weights.set(name,weight);}
  }
  const functions=[...weights].map(([name,weight])=>({name,weight})).sort((a,b)=>b.weight-a.weight||a.name.localeCompare(b.name)).slice(0,8);
- return {entries,functions,totalSamples:candidates.length,renderedSamples:entries.length,truncated:entries.length<candidates.length,maxDepth,startTime:candidates[0].time,endTime:candidates.at(-1).time};
+ const origin=ordered[0].time;
+ return {entries,functions,totalSamples:candidates.length,renderedSamples:entries.length,truncated:entries.length<candidates.length,maxDepth,startTime:candidates[0].time,endTime:candidates.at(-1).time,startMs:Number(candidates[0].time-origin)/1e6,endMs:Number(candidates.at(-1).time-origin)/1e6};
 }
 export function drawSampleStackTimeline(canvas,projection,{devicePixelRatio=globalThis.devicePixelRatio||1}={}) {
  if(!canvas||!Array.isArray(projection?.entries)||!projection.entries.length||!Number.isFinite(devicePixelRatio)||devicePixelRatio<=0)throw new Error('调用栈时间图画布无效');

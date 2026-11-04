@@ -911,6 +911,8 @@ export function inspectLayout(nodes,{densityDpi=null}={}){
  const findings=[],stack=[];
  const finding=(node,kind,confidence,evidence,extra={})=>({id:node.id,nodeId:node.id,kind,ruleId:`UIA_${kind.replace(/[A-Z]/g,letter=>`_${letter}`).toUpperCase()}`,severity:kind==='smallTouchTarget'?'warning':kind==='unlabelled'?'warning':'info',confidence,evidence,...extra});
  const flush=()=>{const item=stack.pop(),a=item.node.attributes||{};
+  const alpha=typeof a.alpha==='string'&&/^(?:0|1|0?\.\d+)$/.test(a.alpha)?Number(a.alpha):null;
+  if(['invisible','gone'].includes(a.visibility)||(a.visibility==='visible'&&alpha===0))findings.push(finding(item.node,'invisibleNode','high',{visibility:a.visibility||null,alpha:alpha===null?null:a.alpha,bounds:item.node.bounds||null}));
   const interactive=a.clickable==='true'||a['long-clickable']==='true'||a.checkable==='true';
   if(interactive&&a.enabled!=='false'){
    if(item.complete&&!item.label)findings.push(finding(item.node,'unlabelled','high',{emptyLabelFields:['text','content-desc'],checkedSubtree:true}));

@@ -41,6 +41,23 @@ test('touch target findings use device density and skip disabled or incomplete d
  assert.equal(inspectLayout([node(0,[0,0,120,180])]).some(x=>x.kind==='smallTouchTarget'),false);
  assert.equal(inspectLayout([node(0,[0,0,120,180])],{densityDpi:NaN}).some(x=>x.kind==='smallTouchTarget'),false);
 });
+test('layout findings report only explicitly invisible or fully transparent Agent nodes',()=>{
+ const node=(id,attributes)=>({id,depth:0,bounds:[0,0,20,20],attributes:{class:'android.view.View',...attributes}});
+ const findings=inspectLayout([
+  node(0,{visibility:'invisible',alpha:'1.000'}),
+  node(1,{visibility:'gone',alpha:'1.000'}),
+  node(2,{visibility:'visible',alpha:'0.000'}),
+  node(3,{visibility:'visible',alpha:'0.500'}),
+  node(4,{}),
+ ]);
+ assert.deepEqual(findings.map(row=>({id:row.id,kind:row.kind,confidence:row.confidence})),[
+  {id:0,kind:'invisibleNode',confidence:'high'},
+  {id:1,kind:'invisibleNode',confidence:'high'},
+  {id:2,kind:'invisibleNode',confidence:'high'},
+ ]);
+ assert.equal(findings[0].ruleId,'UIA_INVISIBLE_NODE');
+ assert.deepEqual(findings[2].evidence,{visibility:'visible',alpha:'0.000',bounds:[0,0,20,20]});
+});
 test('layout isolation keeps exactly the selected subtree and its original IDs',()=>{
  const nodes=[{id:0,depth:0},{id:1,depth:1},{id:2,depth:2},{id:3,depth:2},{id:4,depth:1},{id:5,depth:2}];
  assert.deepEqual(layoutScope(nodes,1).map(n=>n.id),[1,2,3]);

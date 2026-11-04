@@ -4,6 +4,8 @@
 
 Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`，复用桌面端 Gradle 执行器，可配置设备、启动模式、ART 编译模式、场景、预热 / 迭代数、Baseline Profile 身份、trace 输出目录和超时；输出 JSON 摘要、可选完整结果文件和适用于 CI 的退出码。结果文件默认拒绝覆盖。目标 Gradle 测试仍须显式读取 APS properties / 环境变量并负责生成 trace。本轮 CLI / runner 集成测试通过；不连接设备运行任务。macOS arm64 `.app` 打包和桌面 smoke 通过，`app.asar` 中确认包含 CLI 模块。
 
+布局线索补强（2026-11-04）：对当前层级明确提供的 `visibility=invisible/gone`、或 `visibility=visible` 且 `alpha=0` 增加 `UIA_INVISIBLE_NODE` 信息线索；缺失字段不推断。单测覆盖不可见、gone、透明、半透明和字段缺失，打包 macOS arm64 smoke 已导入含不可见 View 的 XML 并验证 UI 规则 ID、严重级别、置信度与证据；全套 404 项中 388 通过、16 项可选样本跳过，0 失败。该规则依赖采集源明确导出可见性字段，不声称覆盖 Compose 绘制、窗口遮挡或硬件合成。
+
 内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。
 
 UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信度、节点 ID 和可审阅证据；触控区域线索仍只依据可见节点边界，不代表系统实际命中区域。

@@ -42,7 +42,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间；可选接入 Jetpack JankStats Debug Agent，按 Activity、Window、Fragment 和应用 UI 状态汇总应用侧帧耗时，并按同 PID、±5 ms 起始窗口查找 FrameTimeline 候选，按帧区间重叠时长排序 | `dumpsys gfxinfo framestats`、Perfetto、AndroidX JankStats |
 | 启动测试 | 重复冷、温、热启动；可选择保持现有 ART 编译状态或先执行 `speed-profile` / `speed` 编译；查看 P50 / P90、耗时波动、复核候选、设备报告的启动模式及编译状态；保存两份实验后可对比 P50、P90 与均值并导出 JSON | `am start -W`、`cmd package compile`、`dumpsys package` |
-| 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；UIAutomator 检查线索附有规则 ID、严重级别、置信度和节点证据；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
+| 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；布局检查线索附有规则 ID、严重级别、置信度和节点证据，并在层级明确报告不可见或完全透明节点时提示复核；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线、筛选后的峰值并发和域名连接阶段；支持 OkHttp Agent 的本机抽象 socket 增量采集与旧版 Logcat 兼容；可将筛选结果导出为脱敏 HAR 或 CSV；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
@@ -145,7 +145,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告不能替代 AGI 自身的设备兼容性验证。
 
-布局检查支持按保存时间浏览本地快照、汇总每一版相对上一版的新增/移除/变化与未消歧 ID，并可一键载入任意相邻版本查看详情；也可分别载入任意快照作为当前版本和基线，并在差异列表中定位当前节点。全量摘要仅读取层级 XML，不下载历史截图。布局线索仅基于 UIAutomator 已读节点；设备报告显示密度时会把可交互节点边界换算为 dp，并将小于 48 dp 的结果标作人工复核候选。48 dp 是 Android 对触控目标的建议值；UIAutomator 可见边界不是实际触控区域，padding、TouchDelegate 或 Compose 最小触控语义可能扩展它。[Android 可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。优先按唯一包名与资源 ID 匹配；重复 ID 可在共同唯一祖先内进行有限的候选匹配，不能确认控件身份；无 resource-id 节点不参与摘要计数。
+布局检查支持按保存时间浏览本地快照、汇总每一版相对上一版的新增/移除/变化与未消歧 ID，并可一键载入任意相邻版本查看详情；也可分别载入任意快照作为当前版本和基线，并在差异列表中定位当前节点。全量摘要仅读取层级 XML，不下载历史截图。检查线索只依据当前采集到的层级字段：只有当来源明确提供 `visibility=invisible/gone` 或 `visibility=visible` 且 `alpha=0` 时，才报告不可见 / 透明节点；缺少这些字段时不作推断。设备报告显示密度时会把可交互节点边界换算为 dp，并将小于 48 dp 的结果标作人工复核候选。48 dp 是 Android 对触控目标的建议值；UIAutomator 可见边界不是实际触控区域，padding、TouchDelegate 或 Compose 最小触控语义可能扩展它。[Android 可访问性指南](https://developer.android.com/guide/topics/ui/accessibility/apps)。优先按唯一包名与资源 ID 匹配；重复 ID 可在共同唯一祖先内进行有限的候选匹配，不能确认控件身份；无 resource-id 节点不参与摘要计数。
 
 布局检查还可导入 Compose Compiler 生成的 `composables.txt`、`composables.csv` 和 `classes.txt`，按函数、包、参数或类字段搜索 restartable/skippable 状态与静态稳定性推断。该报告不含应用运行时重组/跳过次数；运行时数据仍需单独采集，静态报告也不能单独证明性能问题。[Android Compose 稳定性诊断文档](https://developer.android.com/develop/ui/compose/performance/stability/diagnose)。
 

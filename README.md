@@ -141,6 +141,8 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可导出脱敏 HAR 或 CSV。CSV 会引用并转义字段，且阻止表格公式注入；HAR 只从归一化记录重建，不包含请求头、Cookie、查询参数或正文，并保留阶段耗时和缺失值标记。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。当前 Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。首选通路通过本机抽象 socket、共享 debug 令牌和 ADB forward 按 cursor 增量读取；空令牌时保留旧版 Logcat 兼容。socket 协议、Agent 源码 ZIP 和 desktop API 已通过本机自动化测试，尚未在 Android 设备端完成端到端验证。API 25 真机上的旧 Logcat 验证覆盖本机 HTTP 请求、PID 回退与默认路径省略。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
 
+网络页面还可将筛选后的归一化请求导出为独立 JSON。JSON、HAR 和 CSV 都会移除 URL 凭据、查询和片段，并且不输出请求头、Cookie 或正文；HAR 适合与兼容工具交换，JSON 保留本工具的状态、阶段耗时和脱敏标记。
+
 堆分析可查看已索引 Bitmap 的 Java 字段与可识别的 byte[] 引用，并导出 HPROF 中实际保存的 Java 缓冲区原始 `.bin` 字节。Android 15（API 35）及以上还可调用系统 Bitmap PNG heap dump，将 `Bitmap.dumpData` 元数据所引用且通过 PNG 结构与 CRC 检查的图片单独导出；这条路径不能用于较旧 Android 版本。普通缓冲区导出不会转换成 PNG；两种模式都不代表完整的原生或硬件像素内存，也不是保留大小。
 
 GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告不能替代 AGI 自身的设备兼容性验证。

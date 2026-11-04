@@ -4,6 +4,11 @@ import {readFile} from 'node:fs/promises';
 import {supportedLanguages,translate,localizeTextNodes} from '../public/i18n.js';
 import {CATEGORY_NAMES} from '../src/apk.js';
 
+test('network JSON export labels and count toast are localized',()=>{
+ assert.equal(translate('导出筛选 JSON','en-US'),'Export filtered JSON');
+ assert.equal(translate('已导出 3 条脱敏 JSON 请求','en-US'),'3 redacted JSON requests exported');
+});
+
 test('language selector supports Chinese and English while preserving user content',()=>{
   assert.deepEqual(supportedLanguages,['zh-CN','en-US']);
   assert.equal(translate('概览','en-US'),'Overview');

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseHar,filterNetworkRequests,networkRequestsCsv,networkRequestsHar,summarizeHarHosts,summarizeNetworkEndpoints,summarizeNetworkConcurrency,buildNetworkTimeline} from '../public/offline.js';
+import {parseHar,filterNetworkRequests,networkRequestsCsv,networkRequestsHar,networkRequestsJson,summarizeHarHosts,summarizeNetworkEndpoints,summarizeNetworkConcurrency,buildNetworkTimeline} from '../public/offline.js';
 
 test('HAR host statistics use only present phase evidence, including zero and independent TLS',()=>{
  const entries=[
@@ -52,6 +52,14 @@ test('network HAR export preserves normalized evidence and excludes request secr
  const [roundTrip]=parseHar(doc);assert.equal(roundTrip.url,'https://example.test/api/items');assert.equal(roundTrip.timeMs,12);assert.equal(roundTrip.startedAt,Date.parse('2026-01-01T00:00:00.000Z'));
  const unknown=networkRequestsHar([{url:'https://example.test/a?x=1',method:'GET',startedAt:null,timeMs:null,status:0,bytes:null,timings:{}}]).log.entries[0];assert.equal(unknown.startedDateTime,null);assert.equal(unknown.time,-1);assert.equal(unknown._apw.timeUnavailable,true);assert.equal(unknown.timings.dns,-1);
  assert.throws(()=>networkRequestsHar([{url:'file:///tmp/a'}]),/URL/);assert.throws(()=>networkRequestsHar(Array(50001).fill(row)),/超过/);
+});
+
+test('network JSON export retains normalized metrics and excludes URL and request secrets',()=>{
+ const [row]=parseHar({log:{entries:[{startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-1',request:{url:'https://user:pass@example.test/api/items?token=secret',method:'POST',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],postData:{text:'secret'}},response:{status:201,content:{size:42}},time:12,timings:{dns:1,connect:2,ssl:3,wait:4,receive:5}}]}});
+ const doc=networkRequestsJson([{...row,url:'https://user:pass@example.test/api/items?token=secret#fragment',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],body:'secret'}]);
+ assert.equal(doc.schemaVersion,1);assert.equal(doc.type,'android-performance-network');assert.equal(doc.records[0].url,'https://example.test/api/items');assert.equal(doc.records[0].method,'POST');assert.equal(doc.records[0].status,201);assert.equal(doc.records[0].connectionId,'socket-1');assert.deepEqual(doc.records[0].timings,{dns:1,connect:2,ssl:3,wait:4,receive:5});
+ assert.doesNotMatch(JSON.stringify(doc),/secret|user:pass|token=/);assert.deepEqual(doc.redaction,{credentialsRemoved:true,queryAndFragmentRemoved:true,headersIncluded:false,cookiesIncluded:false,bodyIncluded:false});
+ const unknown=networkRequestsJson([{url:'https://example.test/a?token=secret',method:'GET',startedAt:1e100,timeMs:null,status:0,bytes:null,timings:{}}]).records[0];assert.equal(unknown.startedAt,null);assert.equal(unknown.timeMs,null);assert.equal(unknown.responseBytes,null);assert.throws(()=>networkRequestsJson([{url:'file:///tmp/a'}]),/URL/);assert.throws(()=>networkRequestsJson(Array(50001).fill(row)),/超过/);
 });
 
 test('network activity timeline positions overlapping requests and excludes missing times',()=>{

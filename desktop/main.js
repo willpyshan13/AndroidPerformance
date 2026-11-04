@@ -83,6 +83,28 @@ async function smokeApkAnalyzerInRenderer(apkPath) {
     return {ok:true,packageName,expectedPackage,tabs:checks,manifestFileFilter:filtered,jsonReport:true};
   })(${encoded})`);
 }
+async function smokeNetworkJsonExportInRenderer() {
+  return window.webContents.executeJavaScript(`(async()=>{
+    const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),fail=reason=>({ok:false,reason});
+    const documentModel={log:{entries:[{startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-smoke',request:{url:'https://user:pass@example.test/api/items?token=secret#fragment',method:'GET',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],postData:{text:'secret'}},response:{status:200,content:{size:42}},time:12,timings:{dns:1,connect:2,ssl:3,wait:4,receive:5}}]}};
+    location.hash='#network';await settle();const input=document.querySelector('#file-input'),button=document.querySelector('[data-action="import-har"]');if(!input||!button)return fail('HAR import controls are missing');
+    const transfer=new DataTransfer();transfer.items.add(new File([JSON.stringify(documentModel)],'network-smoke.har',{type:'application/json'}));const originalClick=HTMLInputElement.prototype.click;
+    try{
+      HTMLInputElement.prototype.click=function(){if(this.id==='file-input'){Object.defineProperty(this,'files',{configurable:true,value:transfer.files});this.dispatchEvent(new Event('change',{bubbles:true}));}else originalClick.call(this);};
+      button.click();const importDeadline=performance.now()+5000;while(performance.now()<importDeadline&&!document.querySelector('#network-table')?.innerText.includes('/api/items'))await new Promise(resolve=>setTimeout(resolve,20));
+      if(!document.querySelector('#network-table')?.innerText.includes('/api/items'))return fail('Synthetic HAR was not imported: '+(document.querySelector('#main')?.innerText||'network route missing').slice(0,300));
+      const search=document.querySelector('#network-search');if(search){search.value='items';search.dispatchEvent(new Event('input',{bubbles:true}));await settle();}
+      const exportButton=document.querySelector('[data-action="export-network-json"]');if(!exportButton||exportButton.disabled)return fail('Filtered network JSON export is unavailable');
+      let blob=null;const originalCreate=URL.createObjectURL,originalAnchorClick=HTMLAnchorElement.prototype.click;
+      try{
+        URL.createObjectURL=value=>{blob=value;return 'blob:network-json-smoke';};HTMLAnchorElement.prototype.click=()=>{};exportButton.click();
+        if(!blob)return fail('Network JSON export did not create a Blob');const text=await blob.text(),doc=JSON.parse(text),record=doc.records?.[0],ok=blob.type==='application/json;charset=utf-8'&&doc.type==='android-performance-network'&&doc.records.length===1&&record?.url==='https://example.test/api/items'&&record.timings.wait===4&&!text.match(/secret|user:pass|token=/);
+        return {ok,type:blob.type,filteredRecordCount:doc.records?.length,sanitizedUrl:record?.url,credentialsRemoved:!text.includes('user:pass'),queryRemoved:!text.includes('token='),headersIncluded:false,cookiesIncluded:false,bodyIncluded:false};
+      }finally{URL.createObjectURL=originalCreate;HTMLAnchorElement.prototype.click=originalAnchorClick;}
+    }finally{HTMLInputElement.prototype.click=originalClick;location.hash='#overview';await settle();}
+  })()`);
+}
+
 async function smokeNetworkAgentPackageInRenderer() {
   return window.webContents.executeJavaScript(`(async()=>{
     const response=await fetch('/api/network/agent-package',{headers:{'X-Workbench-Token':document.querySelector('meta[name="api-token"]')?.content||''}});
@@ -284,6 +306,7 @@ function createWindow() {
       smokeStep='home artifacts';rendererState.homeArtifactChecks=await window.webContents.executeJavaScript("(()=>{const text=document.querySelector('#main')?.innerText||'';return {section:text.includes('最近分析产物')||text.includes('Recent analysis artifacts'),emptyState:text.includes('暂无本地分析产物')||text.includes('No local analysis artifacts')};})()");
       smokeStep='source workspace';rendererState.sourceWorkspaceSmoke=await smokeSourceWorkspaceInRenderer();
       smokeStep='network agent package';rendererState.networkAgentPackage=await smokeNetworkAgentPackageInRenderer();
+      smokeStep='network JSON export';rendererState.networkJsonExport=await smokeNetworkJsonExportInRenderer();
       smokeStep='LeakCanary Debug Agent package';rendererState.leakCanaryAgentPackage=await smokeLeakCanaryAgentPackageInRenderer();
       smokeStep='JankStats Debug Agent package';rendererState.jankStatsAgentPackage=await smokeJankStatsAgentPackageInRenderer();
       smokeStep='startup comparison';rendererState.startupComparisonSmoke=await smokeStartupComparisonInRenderer();
@@ -293,7 +316,7 @@ function createWindow() {
       smokeStep='trace-only layout evidence';rendererState.layoutTraceOnlySmoke=await smokeTraceOnlyLayoutEvidence();
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routeGateChecks={routeChecksDemoActive:routeChecks.demoActive,emptyRoutes:checksValid(routeChecks.empty),demoRoutes:checksValid(routeChecks.demo),cpuStackTimeline:!!demoCpuRoute?.stackTimeline,cpuPngExport:!!rendererState.cpuPngExport?.ok,cpuLargeTimeline:!!rendererState.cpuLargeTimeline?.ok,heapCsvExport:!!rendererState.heapCsvExport?.ok,heapDominatorGraph:!!rendererState.heapCsvExport?.dominatorGraph?.ok,heapMarkdownExport:!!rendererState.heapMarkdownExport?.ok,heapJsonExport:!!rendererState.heapJsonExport?.ok,layoutFindings:!!rendererState.layoutFindings?.ok,homeArtifactSection:!!rendererState.homeArtifactChecks.section,homeArtifactEmptyState:!!rendererState.homeArtifactChecks.emptyState,networkAgentPackage:!!rendererState.networkAgentPackage?.ok,leakCanaryAgentPackage:!!rendererState.leakCanaryAgentPackage?.ok,jankStatsAgentPackage:!!rendererState.jankStatsAgentPackage?.ok,startupComparison:!!rendererState.startupComparisonSmoke?.ok,benchmarkRegression:!!rendererState.benchmarkRegressionSmoke?.ok,layoutTraceOnly:!!rendererState.layoutTraceOnlySmoke?.ok,sourceWorkspace:!process.env.APW_SMOKE_SOURCE_DIR||!!rendererState.sourceWorkspaceSmoke?.ok,apkAnalysis:!process.env.APW_SMOKE_APK_PATH||!!rendererState.apkAnalysisSmoke?.ok,networkAgentDevice:!process.env.APW_SMOKE_NETWORK_SERIAL||!!rendererState.networkAgentDeviceSmoke?.ok};
+      const routeGateChecks={routeChecksDemoActive:routeChecks.demoActive,emptyRoutes:checksValid(routeChecks.empty),demoRoutes:checksValid(routeChecks.demo),cpuStackTimeline:!!demoCpuRoute?.stackTimeline,cpuPngExport:!!rendererState.cpuPngExport?.ok,cpuLargeTimeline:!!rendererState.cpuLargeTimeline?.ok,heapCsvExport:!!rendererState.heapCsvExport?.ok,heapDominatorGraph:!!rendererState.heapCsvExport?.dominatorGraph?.ok,heapMarkdownExport:!!rendererState.heapMarkdownExport?.ok,heapJsonExport:!!rendererState.heapJsonExport?.ok,layoutFindings:!!rendererState.layoutFindings?.ok,homeArtifactSection:!!rendererState.homeArtifactChecks.section,homeArtifactEmptyState:!!rendererState.homeArtifactChecks.emptyState,networkAgentPackage:!!rendererState.networkAgentPackage?.ok,networkJsonExport:!!rendererState.networkJsonExport?.ok,leakCanaryAgentPackage:!!rendererState.leakCanaryAgentPackage?.ok,jankStatsAgentPackage:!!rendererState.jankStatsAgentPackage?.ok,startupComparison:!!rendererState.startupComparisonSmoke?.ok,benchmarkRegression:!!rendererState.benchmarkRegressionSmoke?.ok,layoutTraceOnly:!!rendererState.layoutTraceOnlySmoke?.ok,sourceWorkspace:!process.env.APW_SMOKE_SOURCE_DIR||!!rendererState.sourceWorkspaceSmoke?.ok,apkAnalysis:!process.env.APW_SMOKE_APK_PATH||!!rendererState.apkAnalysisSmoke?.ok,networkAgentDevice:!process.env.APW_SMOKE_NETWORK_SERIAL||!!rendererState.networkAgentDeviceSmoke?.ok};
       rendererState.failedReadinessChecks=Object.entries(routeGateChecks).filter(([,passed])=>!passed).map(([name])=>name);
       const routesReady=rendererState.failedReadinessChecks.length===0;
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;

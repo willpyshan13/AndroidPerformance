@@ -218,15 +218,38 @@ export function networkRequestsCsv(rows){
  return [columns.map(([name])=>cell(name)).join(','),...rows.map(row=>columns.map(([,get])=>cell(get(row))).join(','))].join('\r\n')+'\r\n';
 }
 
+function networkExportUrl(value){
+ let url=null;
+ try{url=new URL(value);if(!['http:','https:'].includes(url.protocol))url=null;else{url.username='';url.password='';url.search='';url.hash='';}}catch{}
+ if(!url)throw new Error('网络记录包含无效 URL');
+ return url.toString();
+}
+
+export function networkRequestsJson(rows){
+ if(!Array.isArray(rows)||rows.length>50000)throw new Error('网络导出记录无效或超过 50,000 条');
+ const finite=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;
+ const records=rows.map((row,index)=>({
+  id:Number.isSafeInteger(row.id)&&row.id>0?row.id:index+1,
+  startedAt:finite(row.startedAt)===null||!Number.isFinite(new Date(row.startedAt).getTime())?null:new Date(row.startedAt).toISOString(),
+  method:typeof row.method==='string'?row.method:'GET',
+  url:networkExportUrl(row.url),
+  status:Number.isInteger(row.status)&&row.status>=0?row.status:null,
+  failed:typeof row.failed==='boolean'?row.failed:null,
+  connectionId:typeof row.connectionId==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(row.connectionId)?row.connectionId:null,
+  timeMs:finite(row.timeMs),
+  responseBytes:finite(row.bytes),
+  timings:Object.fromEntries(['dns','connect','ssl','wait','receive'].map(key=>[key,finite(row.timings?.[key])]))
+ }));
+ return {schemaVersion:1,type:'android-performance-network',redaction:{credentialsRemoved:true,queryAndFragmentRemoved:true,headersIncluded:false,cookiesIncluded:false,bodyIncluded:false},records};
+}
+
 // Export only the normalized, privacy-reduced request model. Raw headers,
 // cookies, query strings, credentials and bodies are never reconstructed.
 export function networkRequestsHar(rows){
  if(!Array.isArray(rows)||rows.length>50000)throw new Error('网络导出记录无效或超过 50,000 条');
  const finite=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;
  const entries=rows.map(row=>{
-  let url=null;
-  try{url=new URL(row.url);if(!['http:','https:'].includes(url.protocol))url=null;else{url.username='';url.password='';url.search='';url.hash='';}}catch{}
-  if(!url)throw new Error('网络记录包含无效 URL');
+  const url=new URL(networkExportUrl(row.url));
   const startedAt=finite(row.startedAt),date=startedAt===null?null:new Date(startedAt),startedDateTime=date&&Number.isFinite(date.getTime())?date.toISOString():null;
   const timing=value=>finite(value)??-1;
   return {

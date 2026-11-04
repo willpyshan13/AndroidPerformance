@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseHar,filterNetworkRequests,networkRequestsCsv,summarizeHarHosts,summarizeNetworkEndpoints,buildNetworkTimeline} from '../public/offline.js';
+import {parseHar,filterNetworkRequests,networkRequestsCsv,summarizeHarHosts,summarizeNetworkEndpoints,summarizeNetworkConcurrency,buildNetworkTimeline} from '../public/offline.js';
 
 test('HAR host statistics use only present phase evidence, including zero and independent TLS',()=>{
  const entries=[
@@ -49,6 +49,14 @@ test('network activity timeline positions overlapping requests and excludes miss
  const result=buildNetworkTimeline(rows);assert.equal(result.startMs,0);assert.equal(result.endMs,150);assert.equal(result.unavailable,2);assert.deepEqual(result.items.map(x=>x.id),[1,2]);assert.equal(result.items[0].left,0);assert.equal(result.items[1].left,1/3);assert.equal(result.items[0].width,2/3);
  const limited=buildNetworkTimeline(rows,1);assert.equal(limited.truncated,true);assert.equal(limited.total,2);assert.equal(limited.endMs,100);
  assert.equal(buildNetworkTimeline([{id:1,startedAt:null,timeMs:2}]).items.length,0);assert.throws(()=>buildNetworkTimeline(rows,0),/参数/);
+});
+
+test('network concurrency counts only overlapping intervals with available timing',()=>{
+ const rows=[{startedAt:0,timeMs:100},{startedAt:50,timeMs:100},{startedAt:150,timeMs:50},{startedAt:20,timeMs:null},{startedAt:null,timeMs:10}];
+ assert.deepEqual(summarizeNetworkConcurrency(rows),{peak:2,peakAtMs:50,eligible:3,unavailable:2});
+ assert.deepEqual(summarizeNetworkConcurrency([{startedAt:0,timeMs:10},{startedAt:10,timeMs:20}]),{peak:1,peakAtMs:0,eligible:2,unavailable:0});
+ assert.deepEqual(summarizeNetworkConcurrency([{startedAt:0,timeMs:0}]),{peak:0,peakAtMs:null,eligible:1,unavailable:0});
+ assert.throws(()=>summarizeNetworkConcurrency(null),/参数/);
 });
 
 test('endpoint latency grouping respects method, host, path and missing values',()=>{

@@ -282,6 +282,21 @@ export function summarizeNetworkEndpoints(rows){
  }).sort((a,b)=>b.count-a.count||a.host.localeCompare(b.host)||a.path.localeCompare(b.path)||a.method.localeCompare(b.method));
 }
 
+// Peak in-flight request count from recorded wall-clock intervals. End events
+// sort before starts at the same timestamp, so adjacent requests do not overlap.
+export function summarizeNetworkConcurrency(rows){
+ if(!Array.isArray(rows))throw new Error('网络并发统计参数无效');
+ const events=[];let eligible=0;
+ for(const row of rows){
+  if(!Number.isFinite(row?.startedAt)||!Number.isFinite(row?.timeMs)||row.timeMs<0||!Number.isFinite(row.startedAt+row.timeMs))continue;
+  eligible++;events.push([row.startedAt,1],[row.startedAt+row.timeMs,-1]);
+ }
+ events.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+ let active=0,peak=0,peakAtMs=null;
+ for(const [timestamp,delta] of events){active+=delta;if(active>peak){peak=active;peakAtMs=timestamp;}}
+ return {peak,peakAtMs,eligible,unavailable:rows.length-eligible};
+}
+
 // Only entries with recorded start and duration can be positioned on a wall
 // clock timeline. Overlap is descriptive and does not imply causation.
 export function buildNetworkTimeline(rows,limit=200){

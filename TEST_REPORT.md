@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-04）
 
+## 网络请求峰值并发
+
+- 网络页根据筛选后请求的开始时间和耗时计算最大同时在途请求数，并报告可用/缺失时间数据的请求数；缺失区间不补值，同一时刻结束与开始按不重叠处理。该值描述观测时间区间，不代表设备完整流量，也不证明请求间因果关系。
+- `test/network-summary.test.js` 覆盖区间交叠、相邻边界、零时长及无效输入；网络 / Agent / 本地化定向回归 49/49 通过。全量 `npm test`：369 项，353 通过、0 失败、16 项因缺少可选官方样本跳过；`npm run check` 与 `git diff --check` 通过。macOS ARM64 `npm run package:mac` 和桌面 smoke 通过。未使用模拟器或设备。
+
 ## Jetpack JankStats 应用帧归因
 
 - 可选 Debug Agent 使用 AndroidX JankStats，按 Activity、Window 和 `PerformanceMetricsState` 状态聚合应用侧帧数、heuristic Jank、1 ms 桶 P95、均值 / 最大时长，并在 API 支持时记录 CPU 帧时长及 deadline overrun。每两秒批量写 `APWJank` Logcat，暂停或销毁 Activity 时冲刷；桌面端按目标 UID（旧设备回退主进程）读取，并与 gfxinfo 预算超限和 Perfetto 平台分类分开显示。

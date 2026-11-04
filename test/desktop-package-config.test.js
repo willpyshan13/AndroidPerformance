@@ -6,6 +6,8 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),locales=await readFile(new URL('../public/i18n.js',import.meta.url),'utf8');
  assert.match(app,/heap-shark-export-txt/);assert.match(app,/heap-shark-export-json/);assert.match(app,/state\.heapSharkReport=null/);
  for(const text of ['导出原始报告 TXT','导出报告 JSON','界面只显示报告前 2 MiB；导出文件保留完整已捕获输出。','Shark 原始报告已导出','Shark 报告 JSON 已导出'])assert.ok(locales.includes(text),`missing Shark localization: ${text}`);
+ assert.match(app,/trace-binder-export-csv/);assert.match(app,/trace-binder-export-json/);
+ for(const text of ['导出 CSV','导出 JSON','Binder 事务 CSV 已导出','Binder 事务 JSON 已导出'])assert.ok(locales.includes(text),`missing Binder localization: ${text}`);
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
  assert.ok(pkg.build.files.includes('android-agent/LEAKCANARY_AGENT_README.md'));assert.ok(pkg.build.files.includes('android-agent/optional-androidx/**'));assert.ok(pkg.build.asarUnpack.includes('android-agent/optional-androidx/**'));assert.ok(pkg.build.files.includes('android-agent/optional-jankstats/**'));assert.ok(pkg.build.asarUnpack.includes('android-agent/optional-jankstats/**'));
  assert.equal(pkg.author.name,'Android Performance Workbench');assert.match(pkg.author.email,/^[^@]+@users\.noreply\.github\.com$/);

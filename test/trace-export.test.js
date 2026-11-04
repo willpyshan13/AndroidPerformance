@@ -34,6 +34,23 @@ test('trace analysis report includes matching SQL and trace evidence while exclu
   assert.equal(parsed.customSql,null);
 });
 
+test('trace analysis report includes current JankStats attribution and network frame overlaps only for its session',()=>{
+  const trace={sessionId:'trace-current'};
+  const jankStatsFrames=[{pid:42,startNs:'1000',uiDurationNs:'16000000',activity:'Home',windowId:'main',states:{Screen:'home'},jank:true}];
+  const report=createTraceAnalysisReport({trace,jankStatsFrames,
+    jankStatsFrameCorrelation:{sessionId:'trace-current',available:true,frames:[{pid:42,startNs:'1000',candidateCount:1,candidates:[{timelineIndex:0,jankType:'App Deadline Missed'}]}]},
+    networkTraceCorrelation:{sessionId:'trace-current',requests:[{id:7,frames:[{overlapNs:'5000000'}]}]},
+  });
+  assert.equal(report.evidence.jankStatsFrameCorrelation.frames.length,1);
+  assert.equal(report.evidence.jankStatsFrameAttribution[0].jankPercent,100);
+  assert.equal(report.evidence.jankStatsFrameAttribution[0].platformJankCandidates,1);
+  assert.equal(report.evidence.networkTraceCorrelation.requests[0].frames[0].overlapNs,'5000000');
+  const stale=createTraceAnalysisReport({trace,jankStatsFrames,
+    jankStatsFrameCorrelation:{sessionId:'trace-old',frames:[]},networkTraceCorrelation:{sessionId:'trace-old',requests:[]},
+  });
+  assert.deepEqual(stale.evidence,{});
+});
+
 test('trace analysis report rejects missing sessions and malformed SQL bounds',()=>{
   assert.throws(()=>createTraceAnalysisReport({trace:{fileName:'missing-id'}}),/active trace session/);
   const trace={sessionId:'trace-a'};

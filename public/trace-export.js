@@ -1,3 +1,5 @@
+import { summarizeFrameAttribution } from './frame-attribution.js';
+
 function csvCell(value) {
   let text=String(value??'');
   if(/^[\s\u0000-\u001f]*[=+\-@]/.test(text))text=`'${text}`;
@@ -10,7 +12,7 @@ export function formatTraceQueryCsv(columns,rows,{maxRows=500}={}) {
   return `\uFEFF${[columns,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n')}${rows.length?'\r\n':''}`;
 }
 
-const REPORT_EVIDENCE_KEYS=['startupTrace','frameTimeline','binderResult','binderBreakdown','gpuTraceDiagnostics','powerRailDiagnostics','composeTraceCorrelation','cpuTraceCorrelation'];
+const REPORT_EVIDENCE_KEYS=['startupTrace','frameTimeline','binderResult','binderBreakdown','gpuTraceDiagnostics','powerRailDiagnostics','composeTraceCorrelation','cpuTraceCorrelation','jankStatsFrameCorrelation','networkTraceCorrelation'];
 const MAX_TRACE_REPORT_BYTES=16*1024*1024;
 
 export function createTraceAnalysisReport({trace,sqlResult=null,sql='',...evidence}={}) {
@@ -32,6 +34,7 @@ export function createTraceAnalysisReport({trace,sqlResult=null,sql='',...eviden
     const value=evidence[key];
     if(value&&typeof value==='object'&&value.sessionId===trace.sessionId)report.evidence[key]=value;
   }
+  if(report.evidence.jankStatsFrameCorrelation&&Array.isArray(evidence.jankStatsFrames))report.evidence.jankStatsFrameAttribution=summarizeFrameAttribution(evidence.jankStatsFrames,report.evidence.jankStatsFrameCorrelation);
   return report;
 }
 

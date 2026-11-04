@@ -130,6 +130,22 @@ async function smokeJankStatsAgentPackageInRenderer() {
     return {ok:complete,contentType:response.headers.get('content-type'),entryCount:paths.length,complete,paths};
   })()`);
 }
+async function smokeStartupComparisonInRenderer() {
+  return window.webContents.executeJavaScript(`(async()=>{
+    const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),token=document.querySelector('meta[name="api-token"]')?.content||'',headers={'X-Workbench-Token':token,'Content-Type':'application/json'},fail=reason=>({ok:false,reason});
+    const save=async(name,serial,values)=>{const payload={kind:'startup',source:'demo',name,packageName:'dev.apw.smoke',payload:{source:'demo',requestedMode:'cold',packageName:'dev.apw.smoke',serial,results:values.map((totalTimeMs,index)=>({run:index+1,totalTimeMs})),meanMs:values.reduce((sum,value)=>sum+value,0)/values.length}};const response=await fetch('/api/sessions',{method:'POST',headers,body:JSON.stringify(payload)});if(!response.ok)throw new Error('startup fixture save failed: '+response.status);return response.json();};
+    try{
+      const baseline=await save('Startup comparison baseline','smoke-device-a',[100,102,98]),current=await save('Startup comparison current','smoke-device-b',[110,112,108]);
+      location.hash='#sessions';await settle();document.querySelector('[data-action="refresh-sessions"]')?.click();const sessionsDeadline=performance.now()+5000;while(performance.now()<sessionsDeadline&&!document.querySelector('#main')?.innerText.includes('Startup comparison current'))await new Promise(resolve=>setTimeout(resolve,20));await settle();
+      location.hash='#startup';await settle();const before=document.querySelector('#startup-compare-baseline'),after=document.querySelector('#startup-compare-current');
+      if(!before||!after)return fail('startup comparison selectors missing');before.value=baseline.id;after.value=current.id;
+      const compare=document.querySelector('[data-action="compare-startup-records"]');if(!compare)return fail('startup comparison button missing');compare.click();
+      const deadline=performance.now()+5000;while(performance.now()<deadline&&!document.querySelector('#detail-dialog')?.open)await new Promise(resolve=>setTimeout(resolve,20));
+      const dialog=document.querySelector('#detail-dialog'),text=dialog?.innerText||'';if(!dialog?.open||!text.includes('10.0%')||!text.includes('Device serial differs'))return fail('startup comparison result or context warning missing: '+text.slice(0,500));
+      let blob=null;const originalCreate=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;try{URL.createObjectURL=value=>{blob=value;return 'blob:startup-comparison-smoke';};HTMLAnchorElement.prototype.click=()=>{};dialog.querySelector('[data-action="export-startup-comparison"]')?.click();const exportDeadline=performance.now()+3000;while(!blob&&performance.now()<exportDeadline)await new Promise(resolve=>setTimeout(resolve,20));if(!blob)return fail('startup comparison JSON export did not create a Blob');const report=JSON.parse(await blob.text());return {ok:report.kind==='startup-experiment-comparison'&&report.deltaPercent.p50===10&&report.warnings.includes('设备序列号不一致'),deltaPercent:report.deltaPercent,warnings:report.warnings,exported:report.kind};}finally{URL.createObjectURL=originalCreate;HTMLAnchorElement.prototype.click=originalClick;}
+    }catch(error){return fail(error.message);}finally{document.querySelector('#detail-dialog')?.close();location.hash='#overview';await settle();}
+  })()`);
+}
 async function smokeNetworkAgentDeviceInRenderer(serial, packageName) {
   const expectedSerial=JSON.stringify(serial),expectedPackage=JSON.stringify(packageName);
   return window.webContents.executeJavaScript(`(async(serial,packageName)=>{
@@ -253,12 +269,13 @@ function createWindow() {
       smokeStep='network agent package';rendererState.networkAgentPackage=await smokeNetworkAgentPackageInRenderer();
       smokeStep='LeakCanary Debug Agent package';rendererState.leakCanaryAgentPackage=await smokeLeakCanaryAgentPackageInRenderer();
       smokeStep='JankStats Debug Agent package';rendererState.jankStatsAgentPackage=await smokeJankStatsAgentPackageInRenderer();
+      smokeStep='startup comparison';rendererState.startupComparisonSmoke=await smokeStartupComparisonInRenderer();
       if(process.env.APW_SMOKE_NETWORK_SERIAL&&process.env.APW_SMOKE_NETWORK_PACKAGE)rendererState.networkAgentDeviceSmoke=await smokeNetworkAgentDeviceInRenderer(process.env.APW_SMOKE_NETWORK_SERIAL,process.env.APW_SMOKE_NETWORK_PACKAGE);
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       smokeStep='trace-only layout evidence';rendererState.layoutTraceOnlySmoke=await smokeTraceOnlyLayoutEvidence();
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&rendererState.leakCanaryAgentPackage?.ok&&rendererState.jankStatsAgentPackage?.ok&&rendererState.layoutTraceOnlySmoke?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok)&&(!process.env.APW_SMOKE_NETWORK_SERIAL||rendererState.networkAgentDeviceSmoke?.ok);
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&rendererState.leakCanaryAgentPackage?.ok&&rendererState.jankStatsAgentPackage?.ok&&rendererState.startupComparisonSmoke?.ok&&rendererState.layoutTraceOnlySmoke?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok)&&(!process.env.APW_SMOKE_NETWORK_SERIAL||rendererState.networkAgentDeviceSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });

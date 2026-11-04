@@ -95,6 +95,7 @@ try {
   if(!ready.rendererState.networkAgentPackage?.ok)throw new Error(`Packaged macOS Network Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.networkAgentPackage)}`);
   if(!ready.rendererState.leakCanaryAgentPackage?.ok)throw new Error(`Packaged macOS LeakCanary Debug Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.leakCanaryAgentPackage)}`);
   if(!ready.rendererState.jankStatsAgentPackage?.ok)throw new Error(`Packaged macOS JankStats Debug Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.jankStatsAgentPackage)}`);
+  if(!ready.rendererState.startupComparisonSmoke?.ok)throw new Error(`Packaged macOS startup comparison smoke failed: ${JSON.stringify(ready.rendererState.startupComparisonSmoke)}`);
   if(!ready.rendererState.layoutTraceOnlySmoke?.ok)throw new Error(`Packaged macOS trace-only layout evidence smoke failed: ${JSON.stringify(ready.rendererState.layoutTraceOnlySmoke)}`);
   if(process.env.APW_SMOKE_NETWORK_SERIAL&&(!ready.rendererState.networkAgentDeviceSmoke?.ok||!ready.rendererState.networkAgentDeviceSmoke?.emptyAgentState))throw new Error(`Packaged macOS live Network Agent UI smoke failed: ${JSON.stringify(ready.rendererState.networkAgentDeviceSmoke)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);

@@ -395,6 +395,20 @@ export function startupRunSummary(runs){
  return {count:samples.length,mean,minimum:samples[0],p50:median,p90:samples[Math.max(0,Math.ceil(samples.length*.9)-1)],maximum:samples.at(-1),range:samples.at(-1)-samples[0],standardDeviation,coefficientOfVariationPercent:samples.length>1&&mean!==0?standardDeviation/Math.abs(mean)*100:null,medianAbsoluteDeviation:mad,outlierRuns};
 }
 
+// Compare two saved startup experiments descriptively; iterations are not independent experiments.
+export function compareStartupExperiments(baseline,current){
+ const read=record=>record?.kind&&record.kind!=='startup'?null:record?.payload||record;
+ const before=read(baseline),after=read(current);
+ if(!before||!after||!Array.isArray(before.results)||!Array.isArray(after.results))throw new Error('启动对比需要两份有效实验记录');
+ const a=startupRunSummary(before.results),b=startupRunSummary(after.results),warnings=[];
+ for(const [label,left,right] of [['目标包名',before.packageName,after.packageName],['请求模式',before.requestedMode,after.requestedMode],['设备序列号',before.serial,after.serial]]){
+  if(left==null||left===''||right==null||right==='')warnings.push(`${label}缺失`);
+  else if(left!==right)warnings.push(`${label}不一致`);
+ }
+ const delta=(x,y)=>x===null||y===null||x===0?null:(y-x)/Math.abs(x)*100;
+ return {schemaVersion:1,kind:'startup-experiment-comparison',timestamp:Date.now(),baseline:{name:baseline?.name||'基线',timestamp:baseline?.timestamp||null,requestedMode:before.requestedMode,packageName:before.packageName,serial:before.serial,summary:a},current:{name:current?.name||'当前',timestamp:current?.timestamp||null,requestedMode:after.requestedMode,packageName:after.packageName,serial:after.serial,summary:b},deltaPercent:{p50:delta(a.p50,b.p50),p90:delta(a.p90,b.p90),mean:delta(a.mean,b.mean)},warnings,note:'描述性实验对比。每份记录内的重复轮次可能相关；结果不表示独立实验、统计显著性或代码因果。'};
+}
+
 export function compareBenchmarks(baseline, current) {
   const group=results=>{const map=new Map();for(const r of results){const list=map.get(r.key)||[];list.push(r);map.set(r.key,list);}return map;};
   const before=group(baseline.results),after=group(current.results),keys=new Set([...after.keys(),...before.keys()]);

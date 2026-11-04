@@ -78,7 +78,7 @@ try {
     await delay(200);
   }
   if (!ready) throw new Error(`Packaged macOS app did not become ready within 60 seconds${childOutput ? `\n${childOutput}` : ''}`);
-  if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify(ready.rendererState)}${childOutput ? `\n${childOutput}` : ''}`);
+  if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify({failed:ready.rendererState.failedReadinessChecks,heapCsv:ready.rendererState.heapCsvExport,heapMarkdown:ready.rendererState.heapMarkdownExport,heapJson:ready.rendererState.heapJsonExport,cpuPng:ready.rendererState.cpuPngExport,cpuTimeline:ready.rendererState.cpuLargeTimeline,layout:ready.rendererState.layoutFindings})}${childOutput ? `\n${childOutput}` : ''}`);
   const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
   const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
   if(missingQuickActions.length)throw new Error(`Packaged macOS home is missing quick actions: ${missingQuickActions.join(', ')}`);

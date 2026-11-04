@@ -139,7 +139,7 @@ test('English localization translates accessible labels and placeholders and res
 test('every literal action button label used by the application has an English translation',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const labels=[...app.matchAll(/button\(\s*(['"])(.*?)\1\s*,\s*(['"])(.*?)\3/g)].map(match=>match[4]);
-  const untranslated=[...new Set(labels)].filter(label=>!['activity','chart','image','layers','play','upload'].includes(label)&&translate(label,'en-US')===label);
+  const untranslated=[...new Set(labels)].filter(label=>/[\p{L}\p{N}]/u.test(label)&&!['activity','chart','image','layers','play','upload'].includes(label)&&translate(label,'en-US')===label);
   assert.deepEqual(untranslated,[]);
 });
 

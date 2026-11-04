@@ -429,6 +429,7 @@ const uiEn={
 };
 
 const toastEn={
+ '内存分析 Markdown 已导出':'Memory analysis Markdown exported',
  '已载入相邻快照差异':'Loaded differences from adjacent snapshots',
  '已打开事件附近的追踪时间范围':'Opened the trace range around the event',
  '追踪已在本机 Perfetto UI 中打开':'Trace opened in the local Perfetto UI',

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatHeapCsv} from '../public/heap-export.js';
+import {formatHeapCsv, formatHeapMarkdown} from '../public/heap-export.js';
 
 test('heap class CSV includes UTF-8 BOM and byte-size caveat',()=>{
   const csv=formatHeapCsv('classes',[['com.example.Foo',12,345]]);
@@ -16,4 +16,18 @@ test('heap comparison CSV escapes cells and guards spreadsheet formulas',()=>{
   assert.match(csv,/"Foo, Bar","","","","","","","no"/);
   assert.match(csv,/"Comparable"/);
   assert.match(csv,/ambiguous rows are marked not comparable/);
+});
+
+test('heap class Markdown exports rows and explains payload byte limits',()=>{
+  const markdown=formatHeapMarkdown('classes',[['com.example.Foo',12,345]]);
+  assert.match(markdown,/^# HPROF class statistics/);
+  assert.match(markdown,/\| Class \| Object count \| Field \/ element payload bytes \|/);
+  assert.match(markdown,/\| com\.example\.Foo \| 12 \| 345 \|/);
+  assert.match(markdown,/not shallow or retained size/);
+});
+
+test('heap comparison Markdown escapes table cells and preserves ambiguity markers',()=>{
+  const markdown=formatHeapMarkdown('comparison',[[ 'Foo|Bar\nBaz',null,null,null,null,null,null,'no' ]]);
+  assert.match(markdown,/\| Foo\\\|Bar<br>Baz \| — \| — \| — \| — \| — \| — \| no \|/);
+  assert.match(markdown,/ambiguous rows are marked not comparable/);
 });

@@ -7,7 +7,7 @@ function log(timestamp, pid, aggregate, priority='I') {
  return `${timestamp}  ${pid}  44 ${priority} APWJank: ${JSON.stringify(aggregate)}`;
 }
 function frameLog(timestamp,pid,batch){return `${timestamp}  ${pid}  44 I APWJankFrame: ${JSON.stringify(batch)}`;}
-function aggregate({activity='FeedActivity',windowId='a1',states={Activity:'FeedActivity',Screen:'home'},frameStartNs=1000000000,frameEndNs=1030000000,frameCount=2,jankCount=1,durationTotalNs=30000000,durationMinNs=10000000,durationMaxNs=20000000,histogram={'10':1,'20':1},cpuTotalNs=24000000,overrunTotalNs=3000000}={}) {
+function aggregate({activity='FeedActivity',windowId='a1',states={Activity:'FeedActivity',Fragment:'FeedFragment',Screen:'home'},frameStartNs=1000000000,frameEndNs=1030000000,frameCount=2,jankCount=1,durationTotalNs=30000000,durationMinNs=10000000,durationMaxNs=20000000,histogram={'10':1,'20':1},cpuTotalNs=24000000,overrunTotalNs=3000000}={}) {
  return {version:1,activity,windowId,states,frameStartNs,frameEndNs,frameCount,jankCount,durationTotalNs,durationMinNs,durationMaxNs,histogram,cpuTotalNs,overrunTotalNs};
 }
 
@@ -16,7 +16,7 @@ test('JankStats parser validates aggregates and summarizes per Activity, window,
  const parsed=parseJankStatsLog(`${log('1730000000.0',4242,first)}\n${log('1730000002.0',4242,second)}\n1730000002.1 4242 44 I Other: ${JSON.stringify(first)}\n${log('1730000003.0',4242,{...first,frameCount:0})}`);
  assert.equal(parsed.items.length,2);assert.equal(parsed.ignored,2);assert.equal(parsed.items[0].pid,4242);
  const [summary]=parsed.summary;assert.equal(summary.activity,'FeedActivity');assert.equal(summary.windowId,'a1');assert.equal(summary.frameCount,4);assert.equal(summary.jankCount,3);assert.equal(summary.jankPercent,75);assert.equal(summary.durationMeanMs,20);assert.equal(summary.durationMaxMs,30);assert.equal(summary.p95Ms,30);assert.equal(summary.cpuCount,4);assert.equal(summary.overrunCount,4);
- assert.equal(summary.states.Screen,'home');
+ assert.equal(summary.states.Screen,'home');assert.equal(summary.states.Fragment,'FeedFragment');
 });
 
 test('JankStats parser caps log size and returned aggregate count',()=>{
@@ -66,6 +66,7 @@ test('protected JankStats snapshot and Agent ZIP routes expose parsed aggregates
  const bundle=await fetch(`${base}/api/frames/jankstats-agent-package`,{headers:{'X-Workbench-Token':'test'}});assert.equal(bundle.status,200);assert.equal(bundle.headers.get('content-type'),'application/zip');
  const {default:yauzl}=await import('yauzl'),archive=Buffer.from(await bundle.arrayBuffer());const paths=await new Promise((resolve,reject)=>yauzl.fromBuffer(archive,{lazyEntries:true},(error,zip)=>{if(error)return reject(error);const names=[];zip.on('error',reject);zip.on('end',()=>resolve(names));zip.on('entry',entry=>{names.push(entry.fileName);zip.readEntry();});zip.readEntry();}));
  assert.ok(paths.includes('src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
+ assert.ok(paths.includes('optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'));
  assert.ok(paths.includes('src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java'));
  assert.ok(paths.includes('JANKSTATS_AGENT_README.md'));
  assert.ok(!paths.includes('LEAKCANARY_AGENT_README.md'));

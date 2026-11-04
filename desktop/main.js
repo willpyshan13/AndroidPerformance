@@ -125,7 +125,7 @@ async function smokeJankStatsAgentPackageInRenderer() {
       if(method!==0||nameStart+nameLength+extraLength+size>bytes.length)return {ok:false,reason:'JankStats Agent ZIP entry uses unexpected compression or bounds'};
       paths.push(decoder.decode(bytes.subarray(nameStart,nameStart+nameLength)));offset=nameStart+nameLength+extraLength+size;
     }
-    const required=['JANKSTATS_AGENT_README.md','src/debug/AndroidManifest.xml','src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'];
+    const required=['JANKSTATS_AGENT_README.md','src/debug/AndroidManifest.xml','src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java','optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'];
     const complete=required.every(path=>paths.includes(path))&&!paths.includes('LEAKCANARY_AGENT_README.md');
     return {ok:complete,contentType:response.headers.get('content-type'),entryCount:paths.length,complete,paths};
   })()`);

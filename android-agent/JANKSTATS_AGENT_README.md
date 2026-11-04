@@ -17,6 +17,8 @@ This optional bridge records Jetpack JankStats frame metrics in a **debug build*
 
 The bridge tracks each resumed Activity window and stops tracking when that Activity pauses. It aggregates data off the frame callback and writes two-second summaries to `APWJank`, plus bounded individual frame batches to `APWJankFrame`.
 
+If the app already uses AndroidX Fragment, the ZIP includes `optional-androidx/src/debug/java/.../ApwAndroidXFragmentLeakAgent.java`. Copy that file into the app's `src/debug/java/dev/androidperformance/agent/` package too (or select both Fragment observation and JankStats when using the in-app injector). Resumed Fragment class names are added to the current JankStats UI state and removed on pause/destroy. The bridge does not read Fragment tags or application page data; same-class instances are represented by a count.
+
 ## Interpreting results
 
 Reports include Activity, Window, UI state, frame and jank counts, duration buckets, and CPU/overrun data when Android exposes them. JankStats uses its own heuristic; its classification is separate from `gfxinfo` and Perfetto FrameTimeline classifications. P95 is estimated from 1 ms buckets. Trace correlation uses nearby timestamps and is only a candidate match, not proof of frame identity or causality.

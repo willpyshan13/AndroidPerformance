@@ -99,4 +99,5 @@ test('packaged desktop smoke exercises local source selection, snapshot, search,
  assert.match(windowsSmoke,/source workspace smoke/);
  assert.match(macSmoke,/source workspace smoke/);
  assert.match(macSmoke,/LeakCanary Debug Agent ZIP smoke/);assert.match(desktopMain,/smokeLeakCanaryAgentPackageInRenderer/);assert.match(desktopMain,/optional-androidx\/src\/debug\/java\/dev\/androidperformance\/agent\/ApwAndroidXFragmentLeakAgent\.java/);
+ assert.match(desktopMain,/smokeJankStatsAgentPackageInRenderer/);assert.match(desktopMain,/JANKSTATS_AGENT_README\.md[\s\S]*optional-androidx\/src\/debug\/java\/dev\/androidperformance\/agent\/ApwAndroidXFragmentLeakAgent\.java/);
 });

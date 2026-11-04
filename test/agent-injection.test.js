@@ -72,6 +72,17 @@ test('Debug Agent injection can add optional JankStats bridge to debug source se
  assert.ok(result.changed.includes('src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
 });
 
+test('combined optional Fragment and JankStats injection carries Fragment state into frame reports',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'apw-agent-fragment-jank-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const module=await appModule(root),result=await injectLeakCanaryDebugAgent({projectPath:root,includeAndroidXFragments:true,includeJankStats:true});
+ assert.equal(result.includeAndroidXFragments,true);assert.equal(result.includeJankStats,true);
+ const fragment=await readFile(join(module,'src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'),'utf8');
+ const jank=await readFile(join(module,'src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'),'utf8');
+ assert.match(fragment,/onFragmentResumed/);assert.match(fragment,/onFragmentPaused/);assert.match(fragment,/onFragmentDestroyed/);
+ assert.match(jank,/state\.putState\("Fragment"/);assert.match(jank,/state\.removeState\("Fragment"/);assert.match(jank,/fragmentLabel\(active\)/);
+ assert.match(jank,/WeakReference<PerformanceMetricsState>/);
+});
+
 test('Debug Agent injection expands self-closing debug application manifests',async t=>{
  const root=await mkdtemp(join(tmpdir(),'apw-agent-manifest-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const module=await appModule(root);await mkdir(join(module,'src/debug'),{recursive:true});

@@ -2,6 +2,7 @@ package dev.androidperformance.agent;
 
 import android.app.Activity;
 import android.util.Log;
+import android.view.View;
 import android.view.Window;
 
 import androidx.metrics.performance.FrameData;
@@ -21,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.WeakHashMap;
+import java.lang.ref.WeakReference;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,6 +34,8 @@ public final class ApwJankStatsAgent {
     private static final String FRAME_TAG = "APWJankFrame";
     private static final Object LOCK = new Object();
     private static final Map<Activity, JankStats> TRACKERS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<String, FragmentState> FRAGMENT_STATES = new ConcurrentHashMap<>();
+    private static final Map<PerformanceMetricsState, Map<String, Integer>> ACTIVE_FRAGMENTS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<String, Aggregate> PENDING = new LinkedHashMap<>();
     private static final ScheduledExecutorService FLUSHER = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "apw-jankstats-log-flush"); thread.setDaemon(true); return thread;
@@ -75,6 +80,64 @@ public final class ApwJankStatsAgent {
             if (stats != null) stats.setTrackingEnabled(false);
         }
         FLUSHER.execute(ApwJankStatsAgent::flush);
+    }
+
+    /** Optional AndroidX Fragment bridge; called only when the app already includes Fragment. */
+    public static void onFragmentResumed(View fragmentRoot, String fragmentName, String fragmentId) {
+        if (fragmentRoot == null || fragmentId == null || fragmentId.isEmpty()) return;
+        try {
+            PerformanceMetricsState state = PerformanceMetricsState.getHolderForHierarchy(fragmentRoot).getState();
+            if (state == null) return;
+            String name = clean(fragmentName, 80);
+            if (name.isEmpty()) return;
+            synchronized (ACTIVE_FRAGMENTS) {
+                Map<String, Integer> active = ACTIVE_FRAGMENTS.get(state);
+                if (active == null) { active = new TreeMap<>(); ACTIVE_FRAGMENTS.put(state, active); }
+                Integer count = active.get(name);
+                active.put(name, count == null ? 1 : count + 1);
+                state.putState("Fragment", fragmentLabel(active));
+                FRAGMENT_STATES.put(fragmentId, new FragmentState(state, name));
+            }
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Could not attach Fragment state to JankStats", error);
+        }
+    }
+
+    /** Called on pause and destroy so a later frame cannot inherit a stale Fragment label. */
+    public static void onFragmentPaused(String fragmentId) {
+        if (fragmentId == null) return;
+        FragmentState fragment = FRAGMENT_STATES.remove(fragmentId);
+        PerformanceMetricsState state = fragment == null ? null : fragment.state.get();
+        if (state != null) {
+            synchronized (ACTIVE_FRAGMENTS) {
+                Map<String, Integer> active = ACTIVE_FRAGMENTS.get(state);
+                if (active == null) return;
+                Integer found = active.get(fragment.name);
+                int count = found == null ? 0 : found;
+                if (count <= 1) active.remove(fragment.name); else active.put(fragment.name, count - 1);
+                try {
+                    if (active.isEmpty()) { ACTIVE_FRAGMENTS.remove(state); state.removeState("Fragment"); }
+                    else state.putState("Fragment", fragmentLabel(active));
+                } catch (RuntimeException error) { Log.w(TAG, "Could not clear Fragment state from JankStats", error); }
+            }
+        }
+    }
+
+    private static String fragmentLabel(Map<String, Integer> active) {
+        StringBuilder label = new StringBuilder();
+        for (Map.Entry<String, Integer> item : active.entrySet()) {
+            if (label.length() > 0) label.append(", ");
+            label.append(item.getKey());
+            if (item.getValue() > 1) label.append(" ×").append(item.getValue());
+            if (label.length() >= 160) break;
+        }
+        return clean(label.toString(), 160);
+    }
+
+    private static final class FragmentState {
+        final WeakReference<PerformanceMetricsState> state;
+        final String name;
+        FragmentState(PerformanceMetricsState state, String name) { this.state = new WeakReference<>(state); this.name = name; }
     }
 
     private static void record(Activity activity, Window window, FrameData frame) {

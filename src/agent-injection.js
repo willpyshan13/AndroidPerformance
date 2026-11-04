@@ -10,6 +10,7 @@ const agentSources=[
  ['src/main/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java'],
 ];
 const fragmentSource=['optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'];
+const jankStatsSource=['optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java','src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'];
 const manifestSource=join(agentRoot,'src/debug/AndroidManifest.xml');
 const ignoredDirs=new Set(['.git','.gradle','build','node_modules','.idea']);
 
@@ -40,9 +41,10 @@ async function ensureSafeDirectory(root,path){
 }
 
 /** Copy lifecycle Agent sources into a selected Android app module's debug source set. */
-export async function injectLeakCanaryDebugAgent({projectPath,modulePath=null,includeAndroidXFragments=false}){
+export async function injectLeakCanaryDebugAgent({projectPath,modulePath=null,includeAndroidXFragments=false,includeJankStats=false}){
  if(typeof projectPath!=='string'||!projectPath.trim()||projectPath.length>4096)throw new Error('请选择有效的 Android 工程目录');
  if(typeof includeAndroidXFragments!=='boolean')throw new Error('Fragment 注入选项无效');
+ if(typeof includeJankStats!=='boolean')throw new Error('JankStats 注入选项无效');
  let root;try{root=await realpath(projectPath);}catch{throw new Error('Android 工程目录不存在或不可访问');}
  const rootStat=await lstat(root);if(!rootStat.isDirectory())throw new Error('Android 工程路径不是目录');
  const modules=await findAndroidModules(root);let module;
@@ -54,14 +56,14 @@ export async function injectLeakCanaryDebugAgent({projectPath,modulePath=null,in
  else if(modules.length===0)throw new Error('没有找到包含 src/main/AndroidManifest.xml 的 Android app module');
  else {const choices=modules.map(path=>relative(root,path)||'.');throw Object.assign(new Error(`工程包含多个 Android app module，请将目录选择器定位到其中一个 app 模块目录：${choices.join('、')}`),{modules:choices});}
 
- const files=includeAndroidXFragments?[...agentSources,fragmentSource]:agentSources;
+ const files=[...agentSources,...(includeAndroidXFragments?[fragmentSource]:[]),...(includeJankStats?[jankStatsSource]:[])];
  const plans=[];
  for(const [source,destination] of files){const path=join(module,destination),data=await readFile(join(agentRoot,source));let existing=null;try{existing=await readFile(path);}catch(error){if(error.code!=='ENOENT')throw error;}if(existing&&!existing.equals(data))throw new Error(`目标文件已存在且内容不同，未修改工程：${relative(module,path)}`);plans.push({path,data,existing,kind:'source'});}
  const manifestPath=join(module,'src/debug/AndroidManifest.xml');let previousManifest=null;try{previousManifest=await readFile(manifestPath,'utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
  const template=await readFile(manifestSource,'utf8'),merged=mergeDebugManifest(previousManifest,template),manifestData=Buffer.from(merged);
  plans.push({path:manifestPath,data:manifestData,existing:previousManifest===null?null:Buffer.from(previousManifest),kind:'manifest'});
  const changes=plans.filter(plan=>!plan.existing||!plan.existing.equals(plan.data)),unchanged=plans.length-changes.length;
- if(changes.length===0)return {projectPath:root,modulePath:module,changed:[],unchanged:plans.map(plan=>relative(module,plan.path)),backups:[],includeAndroidXFragments};
+ if(changes.length===0)return {projectPath:root,modulePath:module,changed:[],unchanged:plans.map(plan=>relative(module,plan.path)),backups:[],includeAndroidXFragments,includeJankStats};
 
  const created=[],backups=[],temps=[];
  try{
@@ -73,5 +75,5 @@ export async function injectLeakCanaryDebugAgent({projectPath,modulePath=null,in
   for(const path of created)await unlink(path).catch(()=>{});
   throw error;
  }
- return {projectPath:root,modulePath:module,changed:changes.map(plan=>relative(module,plan.path)),unchanged:plans.filter(plan=>plan.existing?.equals(plan.data)).map(plan=>relative(module,plan.path)),backups:backups.map(path=>relative(module,path)),includeAndroidXFragments};
+ return {projectPath:root,modulePath:module,changed:changes.map(plan=>relative(module,plan.path)),unchanged:plans.filter(plan=>plan.existing?.equals(plan.data)).map(plan=>relative(module,plan.path)),backups:backups.map(path=>relative(module,path)),includeAndroidXFragments,includeJankStats};
 }

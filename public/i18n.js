@@ -335,6 +335,8 @@ const en={
  'Manifest 备份':'Manifest backup',
  '请选择 Android 工程或 app 模块目录':'Choose an Android project or app module directory',
  '如果工程有多个 Android 模块，请选择具体 app 模块目录。':'If the project has multiple Android modules, choose the specific app module directory.',
+ '配置 JankStats Agent':'Configure JankStats Agent',
+ '项目已添加 JankStats debug 依赖时启用帧记录':'Enable frame capture if the project already has the JankStats debug dependency',
  'Debug Agent 源码包已下载':'Debug Agent source package downloaded',
  'JankStats Debug Agent 源码包已下载':'JankStats Debug Agent source package downloaded',
  '导出 JankStats JSON':'Export JankStats JSON',

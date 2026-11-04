@@ -54,6 +54,13 @@ test('Debug Agent injection can add optional AndroidX Fragment source to debug o
  assert.ok(result.changed.includes('src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'));
 });
 
+test('Debug Agent injection can add optional JankStats bridge to debug source set',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'apw-agent-jankstats-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const module=await appModule(root),result=await injectLeakCanaryDebugAgent({projectPath:root,includeJankStats:true});
+ assert.equal(result.includeJankStats,true);
+ assert.ok(result.changed.includes('src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
+});
+
 test('Debug Agent injection expands self-closing debug application manifests',async t=>{
  const root=await mkdtemp(join(tmpdir(),'apw-agent-manifest-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const module=await appModule(root);await mkdir(join(module,'src/debug'),{recursive:true});
@@ -68,8 +75,8 @@ test('Debug Agent injection API requires the local workbench token and injects s
  const root=await mkdtemp(join(tmpdir(),'apw-agent-api-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const module=await appModule(root),{createApp}=await import('../src/server.js'),{once}=await import('node:events');
  const server=createApp({adb:{path:'fake'},dataDir:join(root,'data'),token:'local-test'});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
- const url=`http://127.0.0.1:${server.address().port}/api/heap/leakcanary-agent/inject`,body=JSON.stringify({projectPath:module});
+ const url=`http://127.0.0.1:${server.address().port}/api/heap/leakcanary-agent/inject`,body=JSON.stringify({projectPath:module,includeJankStats:true});
  assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body})).status,403);
  const response=await fetch(url,{method:'POST',headers:{'X-Workbench-Token':'local-test','Content-Type':'application/json'},body});
- assert.equal(response.status,200);const result=await response.json();assert.equal(result.changed.length,3);assert.ok(result.modulePath.includes('/app'));
+ assert.equal(response.status,200);const result=await response.json();assert.equal(result.changed.length,4);assert.equal(result.includeJankStats,true);assert.ok(result.modulePath.includes('/app'));
 });

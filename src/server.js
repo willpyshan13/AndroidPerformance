@@ -152,7 +152,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       if (req.method === 'POST') {
         if(path==='/api/heap/leakcanary-agent/inject'){
           const body=await readBody(req);
-          return json(await injectLeakCanaryDebugAgent({projectPath:body.projectPath,modulePath:body.modulePath,includeAndroidXFragments:body.includeAndroidXFragments??false}));
+          return json(await injectLeakCanaryDebugAgent({projectPath:body.projectPath,modulePath:body.modulePath,includeAndroidXFragments:body.includeAndroidXFragments??false,includeJankStats:body.includeJankStats??false}));
         }
         if(path==='/api/cpu-profile/archive'){
           if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在处理'},409);}

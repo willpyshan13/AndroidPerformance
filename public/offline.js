@@ -385,6 +385,16 @@ export function benchmarkSampleSummary(row){
  return {count:values.length,minimum:values[0],q1:quantile(values,.25),median:middle(values),q3:quantile(values,.75),maximum:values.at(-1),groups};
 }
 
+// Startup iteration percentiles and outliers are descriptive review signals, not significance tests.
+export function startupRunSummary(runs){
+ const values=(Array.isArray(runs)?runs:[]).map((row,index)=>({run:Number.isInteger(row?.run)&&row.run>0?row.run:index+1,value:row?.totalTimeMs})).filter(row=>typeof row.value==='number'&&Number.isFinite(row.value)&&row.value>=0).sort((a,b)=>a.value-b.value);
+ if(!values.length)return {count:0,mean:null,minimum:null,p50:null,p90:null,maximum:null,range:null,standardDeviation:null,coefficientOfVariationPercent:null,medianAbsoluteDeviation:null,outlierRuns:[]};
+ const samples=values.map(row=>row.value),middle=sorted=>sorted.length%2?sorted[Math.floor(sorted.length/2)]:sorted[sorted.length/2-1]/2+sorted[sorted.length/2]/2;
+ const mean=samples.reduce((sum,value)=>sum+value,0)/samples.length,median=middle(samples),deviations=samples.map(value=>Math.abs(value-median)).sort((a,b)=>a-b),mad=middle(deviations),variance=samples.reduce((sum,value)=>sum+(value-mean)**2,0)/samples.length,standardDeviation=Math.sqrt(variance);
+ const outlierThreshold=Math.max(3*1.4826*mad,Math.abs(median)*0.05),outlierRuns=samples.length>=5&&Number.isFinite(outlierThreshold)?values.filter(row=>Math.abs(row.value-median)>outlierThreshold).map(row=>row.run):[];
+ return {count:samples.length,mean,minimum:samples[0],p50:median,p90:samples[Math.max(0,Math.ceil(samples.length*.9)-1)],maximum:samples.at(-1),range:samples.at(-1)-samples[0],standardDeviation,coefficientOfVariationPercent:samples.length>1&&mean!==0?standardDeviation/Math.abs(mean)*100:null,medianAbsoluteDeviation:mad,outlierRuns};
+}
+
 export function compareBenchmarks(baseline, current) {
   const group=results=>{const map=new Map();for(const r of results){const list=map.get(r.key)||[];list.push(r);map.set(r.key,list);}return map;};
   const before=group(baseline.results),after=group(current.results),keys=new Set([...after.keys(),...before.keys()]);

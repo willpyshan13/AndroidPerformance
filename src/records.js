@@ -25,6 +25,8 @@ export function validateRecord(body) {
     if (!['cold', 'warm', 'hot'].includes(p.requestedMode) || !Array.isArray(p.results) || !p.results.length || p.results.length > 10) fail('启动实验格式错误');
     if (!p.results.every(row => row && validNumber(row.totalTimeMs) && validNumber(row.run))) fail('启动实验缺少 TotalTime');
     if (!validNumber(p.meanMs)) fail('缺少平均启动耗时');
+    if (p.compilationMode !== undefined && !['unchanged', 'speed-profile', 'speed'].includes(p.compilationMode)) fail('启动编译模式无效');
+    if (p.compilationAction !== undefined && (!p.compilationAction || !['unchanged', 'speed-profile', 'speed'].includes(p.compilationAction.mode) || typeof p.compilationAction.applied !== 'boolean' || (p.compilationAction.output !== undefined && p.compilationAction.output !== null && typeof p.compilationAction.output !== 'string') || (p.compilationMode !== undefined && p.compilationAction.mode !== p.compilationMode))) fail('启动编译操作记录无效');
     for(const snapshot of [p.compilationBefore,p.compilationAfter])if(snapshot!==undefined&&snapshot!==null){
       if(!snapshot||typeof snapshot.available!=='boolean'||!validNumber(snapshot.timestamp)||!Array.isArray(snapshot.entries)||snapshot.entries.length>1000||!snapshot.entries.every(e=>e&&typeof e.path==='string'&&typeof e.isa==='string'&&typeof e.status==='string'&&(e.reason===null||typeof e.reason==='string')))fail('编译状态格式错误');
       if(snapshot.source!==body.source||snapshot.packageName!==p.packageName||snapshot.serial!==p.serial)fail('编译状态来源不一致');

@@ -288,14 +288,19 @@ export class Adb {
     try{return {...parseCompilationState(await this.shell(serial,['dumpsys','package',packageName],{timeout:30000}),packageName),timestamp:Date.now(),source:'adb',serial,packageName};}
     catch(error){return {available:false,entries:[],reason:error.message,timestamp:Date.now(),source:'adb',serial,packageName};}
   }
-  async startup(serial, packageName, { mode = 'cold', runs = 3 } = {}) {
+  async startup(serial, packageName, { mode = 'cold', runs = 3, compilationMode = 'unchanged' } = {}) {
     validateTarget(serial, packageName);
-    if (!['cold', 'warm', 'hot'].includes(mode) || !Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('启动参数无效');
+    if (!['cold', 'warm', 'hot'].includes(mode) || !Number.isInteger(runs) || runs < 1 || runs > 10 || !['unchanged', 'speed-profile', 'speed'].includes(compilationMode)) throw new Error('启动参数无效');
     return this.exclusive(serial, async () => {
       const resolve = await this.shell(serial, ['cmd', 'package', 'resolve-activity', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', packageName]);
       const component = resolve.trim().split(/\r?\n/).find(s => /^[\w.]+\/[\w.$]+$/.test(s));
       if (!component || !component.startsWith(`${packageName}/`)) throw new Error('没有找到目标应用的可启动 Activity');
       const start = () => this.shell(serial, ['am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', '-n', component], { timeout: 45000 });
+      let compilationAction = { mode: compilationMode, applied: false, output: null };
+      if (compilationMode !== 'unchanged') {
+        compilationAction.output = await this.shell(serial, ['cmd', 'package', 'compile', '-f', '-m', compilationMode, packageName], { timeout: 120000 });
+        compilationAction.applied = true;
+      }
       const compilationBefore=await this.compilationSnapshot(serial,packageName);
       // Warm/hot experiments establish the Activity first; the device reports the observed mode where supported.
       if (mode !== 'cold') { await start(); await new Promise(r => setTimeout(r, 1000)); }
@@ -312,7 +317,7 @@ export class Adb {
       }
       const valid = results.filter(r => r.totalTimeMs !== null && r.status === 'ok');
       const compilationAfter=await this.compilationSnapshot(serial,packageName);
-      return { source: 'adb', timestamp: Date.now(), serial, packageName, requestedMode: mode, results, compilationBefore, compilationAfter,
+      return { source: 'adb', timestamp: Date.now(), serial, packageName, requestedMode: mode, compilationMode, compilationAction, results, compilationBefore, compilationAfter,
         meanMs: valid.length ? valid.reduce((s, r) => s + r.totalTimeMs, 0) / valid.length : null,
         note: 'TotalTime 来自 am start -W，不等同于 TTFD。warm/hot 是操作协议，实际状态以 LaunchState 为准。' };
     });

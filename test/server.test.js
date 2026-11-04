@@ -37,10 +37,10 @@ test('Macrobenchmark HTTP route forwards the selected Gradle project and prevent
  let releaseRun,calls=0;
  const dir=await mkdtemp(join(tmpdir(),'apw-macrobenchmark-api-'));
  const artifactPath=join(dir,'benchmark.trace');
- const macrobenchmarkRunner=async options=>{calls++;assert.equal(options.projectPath,'/tmp/demo-app');assert.equal(options.task,':macrobenchmark:connectedBenchmarkAndroidTest');assert.equal(options.serial,'DEVICE-1');await writeFile(artifactPath,'trace');const info=await stat(artifactPath);return new Promise(resolve=>{releaseRun=()=>resolve({status:'completed',task:options.task,report:null,artifacts:[{kind:'trace',path:artifactPath,name:'benchmark.trace',size:info.size,modifiedAt:info.mtimeMs}]});});};
+ const macrobenchmarkRunner=async options=>{calls++;assert.equal(options.projectPath,'/tmp/demo-app');assert.equal(options.task,':macrobenchmark:connectedBenchmarkAndroidTest');assert.equal(options.serial,'DEVICE-1');assert.deepEqual(options.experiment,{startupMode:'HOT',compilationMode:'FULL',scenario:'ANIMATION',warmups:1,iterations:4,baselineProfileState:'UNKNOWN'});await writeFile(artifactPath,'trace');const info=await stat(artifactPath);return new Promise(resolve=>{releaseRun=()=>resolve({status:'completed',task:options.task,report:null,artifacts:[{kind:'trace',path:artifactPath,name:'benchmark.trace',size:info.size,modifiedAt:info.mtimeMs}]});});};
  const app=createApp({adb:{},dataDir:dir,token:'macrobenchmark-api',macrobenchmarkRunner});app.listen(0,'127.0.0.1');await once(app,'listening');
  t.after(async()=>{releaseRun?.();await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
- const url=`http://127.0.0.1:${app.address().port}/api/benchmark/gradle/run`,headers={'Content-Type':'application/json','X-Workbench-Token':'macrobenchmark-api'},body=JSON.stringify({serial:'DEVICE-1',projectPath:'/tmp/demo-app',task:':macrobenchmark:connectedBenchmarkAndroidTest'});
+ const url=`http://127.0.0.1:${app.address().port}/api/benchmark/gradle/run`,headers={'Content-Type':'application/json','X-Workbench-Token':'macrobenchmark-api'},body=JSON.stringify({serial:'DEVICE-1',projectPath:'/tmp/demo-app',task:':macrobenchmark:connectedBenchmarkAndroidTest',experiment:{startupMode:'HOT',compilationMode:'FULL',scenario:'ANIMATION',warmups:1,iterations:4,baselineProfileState:'UNKNOWN'}});
  const first=fetch(url,{method:'POST',headers,body});
  for(let i=0;i<20&&!releaseRun;i++)await new Promise(resolve=>setTimeout(resolve,5));
  assert.equal(calls,1);

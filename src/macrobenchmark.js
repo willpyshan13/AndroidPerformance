@@ -1,11 +1,37 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat, readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const TASK_PATTERN = /^:?[A-Za-z0-9_][A-Za-z0-9_.:-]{0,179}$/;
 const MAX_OUTPUT = 1024 * 1024;
 const MAX_REPORT = 8 * 1024 * 1024;
 const MAX_FILES = 5000;
+const EXPERIMENT_OPTIONS = {
+  startupMode: ['COLD', 'WARM', 'HOT'],
+  compilationMode: ['NONE', 'PARTIAL', 'FULL', 'SPEED_PROFILE', 'SPEED'],
+  scenario: ['STARTUP', 'SCROLL', 'ANIMATION', 'PAGE_SWITCH'],
+  baselineProfileState: ['UNKNOWN', 'PRESENT', 'ABSENT'],
+};
+
+export function validateMacrobenchmarkExperiment(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Macrobenchmark 实验配置无效');
+  const result = {};
+  for (const [key, choices] of Object.entries(EXPERIMENT_OPTIONS)) {
+    const selected = value[key] ?? (key === 'startupMode' ? 'COLD' : key === 'compilationMode' ? 'NONE' : key === 'scenario' ? 'STARTUP' : 'UNKNOWN');
+    if (!choices.includes(selected)) throw new Error(`Macrobenchmark ${key} 参数无效`);
+    result[key] = selected;
+  }
+  for (const [key, fallback, min, max] of [['warmups', 0, 0, 20], ['iterations', 5, 1, 50]]) {
+    const count = value[key] ?? fallback;
+    if (!Number.isInteger(count) || count < min || count > max) throw new Error(`Macrobenchmark ${key} 必须为 ${min}–${max} 的整数`);
+    result[key] = count;
+  }
+  const profilePath=value.baselineProfilePath??'';
+  if(typeof profilePath!=='string'||profilePath.length>4096||(profilePath&&!isAbsolute(profilePath)))throw new Error('Baseline Profile 路径必须为空或绝对路径');
+  result.baselineProfilePath=profilePath;
+  return result;
+}
 
 function inside(root, path) {
   const rel = relative(root, path);
@@ -54,15 +80,39 @@ async function findFreshOutputs(projectRoot, startedAt) {
   return outputs.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 200);
 }
 
-export async function runMacrobenchmark({ javaPath, projectPath, task, serial = '', timeoutMs = 30 * 60 * 1000, onOutput = () => {} }) {
+export async function runMacrobenchmark({ javaPath, projectPath, task, serial = '', experiment = {}, timeoutMs = 30 * 60 * 1000, onOutput = () => {} }) {
   const project = await validateMacrobenchmarkProject(projectPath, task);
+  const selectedExperiment = validateMacrobenchmarkExperiment(experiment);
+  let baselineProfile = null;
+  if(selectedExperiment.baselineProfilePath){
+    const profilePath=await realpath(selectedExperiment.baselineProfilePath).catch(()=>null);
+    if(!profilePath)throw new Error('Baseline Profile 文件不存在或不可读取');
+    const info=await stat(profilePath);
+    if(!info.isFile()||info.size<1||info.size>10*1024*1024||![/\.txt$/i,/\.prof$/i,/\.profm$/i].some(pattern=>pattern.test(profilePath)))throw new Error('Baseline Profile 须为 1 字节至 10 MiB 的 .txt / .prof / .profm 文件');
+    const profileBytes=await readFile(profilePath);
+    baselineProfile={path:profilePath,fileName:basename(profilePath),bytes:profileBytes.length,sha256:createHash('sha256').update(profileBytes).digest('hex')};
+  }
   if (typeof javaPath !== 'string' || !javaPath) throw new Error('Java Runtime 不可用');
   if (serial && (typeof serial !== 'string' || !/^[\w.:[\]-]{1,200}$/.test(serial))) throw new Error('设备序列号无效');
   const startedAt = Date.now();
-  const args = ['-classpath', project.wrapperJar, 'org.gradle.wrapper.GradleWrapperMain', '--no-daemon', project.task];
+  const properties = [
+    ['startup-mode', selectedExperiment.startupMode], ['compilation-mode', selectedExperiment.compilationMode],
+    ['scenario', selectedExperiment.scenario], ['warmups', selectedExperiment.warmups],
+    ['iterations', selectedExperiment.iterations], ['baseline-profile-state', selectedExperiment.baselineProfileState],
+  ];
+  if(baselineProfile)properties.push(['baseline-profile-path',baselineProfile.path],['baseline-profile-sha256',baselineProfile.sha256]);
+  const args = ['-classpath', project.wrapperJar, 'org.gradle.wrapper.GradleWrapperMain', '--no-daemon', ...properties.map(([key, value]) => `-Paps.macrobenchmark.${key}=${value}`), project.task];
   const realJavaPath = await realpath(javaPath).catch(() => javaPath);
   const javaHome = basename(dirname(realJavaPath)) === 'bin' ? dirname(dirname(realJavaPath)) : null;
-  const env = { ...process.env, ...(javaHome ? { JAVA_HOME: javaHome } : {}), ...(serial ? { ANDROID_SERIAL: serial } : {}) };
+  const env = { ...process.env, ...(javaHome ? { JAVA_HOME: javaHome } : {}), ...(serial ? { ANDROID_SERIAL: serial } : {}),
+    APS_MACROBENCHMARK_STARTUP_MODE: selectedExperiment.startupMode,
+    APS_MACROBENCHMARK_COMPILATION_MODE: selectedExperiment.compilationMode,
+    APS_MACROBENCHMARK_SCENARIO: selectedExperiment.scenario,
+    APS_MACROBENCHMARK_WARMUPS: String(selectedExperiment.warmups),
+    APS_MACROBENCHMARK_ITERATIONS: String(selectedExperiment.iterations),
+    APS_MACROBENCHMARK_BASELINE_PROFILE_STATE: selectedExperiment.baselineProfileState,
+    ...(baselineProfile?{APS_MACROBENCHMARK_BASELINE_PROFILE_PATH:baselineProfile.path,APS_MACROBENCHMARK_BASELINE_PROFILE_SHA256:baselineProfile.sha256}:{}),
+  };
   const output = [];
   let outputBytes = 0, timedOut = false;
   const child = spawn(javaPath, args, { cwd: project.root, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -91,6 +141,7 @@ export async function runMacrobenchmark({ javaPath, projectPath, task, serial = 
   return {
     status: timedOut ? 'timeout' : exit.code === 0 ? 'completed' : 'failed',
     exitCode: exit.code, signal: exit.signal, task: project.task, projectPath: project.root,
+    experiment: selectedExperiment, baselineProfile,
     startedAt, finishedAt, output: output.join(''), outputTruncated: outputBytes >= MAX_OUTPUT,
     artifacts, report, reportPath, reportError,
   };

@@ -37,4 +37,7 @@ test('Electron restores the saved menu language and rebuilds the menu after lang
  assert.match(main,/nativeText\(appearanceLanguage,'选择 Android Platform Tools 中的 adb 程序','Select adb from Android Platform Tools'\)/);
  assert.match(main,/nativeText\(appearanceLanguage,'该程序未返回有效 ADB 版本','The selected program did not return a valid ADB version'\)/);
  assert.match(main,/nativeText\(appearanceLanguage,'选择本地源码目录','Select Local Source Directory'\)/);
+ assert.match(main,/nativeText\(appearanceLanguage,'选择 Baseline Profile','Select Baseline Profile'\)/);
+ assert.match(main,/workbench:baseline-profile-select/);
+ const preload=await readFile(new URL('../desktop/preload.cjs',import.meta.url),'utf8');assert.match(preload,/selectBaselineProfile: \(\) => ipcRenderer\.invoke\('workbench:baseline-profile-select'\)/);
 });

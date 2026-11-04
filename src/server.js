@@ -452,7 +452,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           try {
             const bundledJava = javaPath || sharkJavaPath || (desktop && process.resourcesPath ? join(process.resourcesPath, 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : join(root, 'tools', 'java-runtime', 'bin', process.platform === 'win32' ? 'java.exe' : 'java'));
             const runtimeJava = javaPath || await resolveGradleJavaPath({ fallbackJavaPath: bundledJava });
-            const result=await macrobenchmarkRunner({ javaPath: runtimeJava, projectPath: body.projectPath, task: body.task, serial: body.serial || '' });
+            const result=await macrobenchmarkRunner({ javaPath: runtimeJava, projectPath: body.projectPath, task: body.task, serial: body.serial || '', experiment: body.experiment || {} });
             const artifacts=[];
             for(const artifact of result.artifacts||[]){
               if(artifact.kind!=='trace'||artifact.size>256*1024*1024){artifacts.push(artifact);continue;}

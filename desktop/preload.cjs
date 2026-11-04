@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('desktop', {
   launchAgi: () => ipcRenderer.invoke('workbench:agi-launch'),
   openAgiArtifact: id => ipcRenderer.invoke('workbench:agi-open-artifact', id),
   selectSourceDir: () => ipcRenderer.invoke('workbench:source-select'),
+  selectBaselineProfile: () => ipcRenderer.invoke('workbench:baseline-profile-select'),
   onAdbUpdated(callback) {
     if (typeof callback !== 'function') return;
     const handler = () => callback();

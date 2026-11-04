@@ -1,7 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
+import {once} from 'node:events';
 import {Adb} from '../src/adb.js';
 import {parseNetworkAgentLog} from '../src/network-agent.js';
+import {openNetworkAgentSocket,pollNetworkAgentSocket} from '../src/network-agent-socket.js';
 import {summarizeHarHosts,mergeNetworkAgentSnapshot,networkRequestEmptyState} from '../public/offline.js';
 const record={v:1,scheme:'https',host:'example.com',port:443,method:'GET',status:200,startedAtMs:10,elapsedNs:2000000,responseBytes:12,dnsNs:0,connectNs:1000000,tlsNs:500000,failed:true};
 test('agent records are validated, normalized and cannot leak additional fields',()=>{
@@ -54,12 +57,53 @@ test('older Android falls back from unsupported UID Logcat filter to the package
  assert.equal(result.uid,10100);assert.equal(result.pid,4321);assert.equal(result.processScope,'main-process');assert.equal(result.rows.length,1);assert.ok(calls.some(args=>args.includes("'--pid=4321'")));
 });
 
+test('network socket protocol validates cursor batches and bounds responses',async t=>{
+ const event={...record,v:3,eventId:'12345678-1234-4234-8234-123456789abc',path:null},server=net.createServer(socket=>{let request='';socket.on('data',chunk=>{request+=chunk.toString();if(request.includes('\n')){const parsed=JSON.parse(request);assert.deepEqual(parsed,{v:1,action:'poll',token:'t'.repeat(48),cursor:0,limit:2});const payload=JSON.stringify({v:1,ok:true,cursor:1,latestCursor:1,dropped:0,events:[{cursor:1,event}]})+'\n';socket.write(payload.slice(0,17));socket.end(payload.slice(17));}});});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const response=await pollNetworkAgentSocket(server.address().port,'t'.repeat(48),0,2);assert.equal(response.cursor,1);assert.equal(response.events[0].cursor,1);
+ await assert.rejects(()=>pollNetworkAgentSocket(server.address().port,'short',0),/令牌/);
+ await assert.rejects(()=>pollNetworkAgentSocket(server.address().port,'t'.repeat(48),-1),/游标/);
+});
+
+test('network Agent starts an adb abstract-socket forward, reads incremental events, and removes it',async()=>{
+ const calls=[],socketName='apw-network-';let server;
+ server=net.createServer(socket=>{let request='';socket.on('data',chunk=>{request+=chunk.toString();if(request.includes('\n')){const parsed=JSON.parse(request);assert.equal(parsed.token,'s'.repeat(48));if(parsed.action==='open')socket.end(JSON.stringify({v:1,ok:true,cursor:7,latestCursor:7})+'\n');else{assert.equal(parsed.action,'poll');assert.equal(parsed.cursor,7);socket.end(JSON.stringify({v:1,ok:true,cursor:8,latestCursor:8,dropped:0,events:[{cursor:8,event:{...record,v:3,eventId:'22345678-1234-4234-8234-123456789abc',path:'/items'}}]})+'\n');}}});});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
+ const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.includes('--remove'))return {stdout:''};return {stdout:String(port)};});
+ const session=await adb.startNetworkAgent('device-1','com.example.app','s'.repeat(48));assert.equal(session.port,port);assert.equal(session.cursor,7);assert.equal(calls[0][2],'forward');assert.match(calls[0][4],/^localabstract:apw-network-/);assert.ok(calls[0][4].startsWith(`localabstract:${socketName}`));
+ const batch=await adb.pollNetworkAgent(session.sessionId,session.cursor);assert.equal(batch.source,'adb-local-socket');assert.equal(batch.cursor,8);assert.equal(batch.rows.length,1);assert.equal(batch.rows[0].path,'/items');
+ assert.deepEqual(await adb.stopNetworkAgent(session.sessionId),{stopped:true});assert.ok(calls.at(-1).includes('--remove'));assert.equal(adb.networkAgentSessions.size,0);await new Promise(resolve=>server.close(resolve));
+});
+
+test('network Agent removes its ADB forward when the app socket is unavailable',async()=>{
+ const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
+ const calls=[],adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:''+port};});
+ await assert.rejects(()=>adb.startNetworkAgent('device-1','com.example.app','s'.repeat(48)),/无法连接网络 Agent/);
+ assert.ok(calls.some(args=>args.includes('--remove')));assert.equal(adb.networkAgentSessions.size,0);
+});
+
+test('network Agent reports forward cleanup failure and retains the session for retry',async()=>{
+ const adb=new Adb('adb',async()=>{throw new Error('device offline');}),sessionId='32345678-1234-4234-8234-123456789abc';
+ adb.networkAgentSessions.set(sessionId,{serial:'device-1',packageName:'com.example.app',port:43210,token:'s'.repeat(48)});
+ await assert.rejects(()=>adb.stopNetworkAgent(sessionId),/无法移除网络 Agent 的 ADB 转发/);assert.equal(adb.networkAgentSessions.has(sessionId),true);
+});
+
 test('network agent HTTP endpoint returns the scoped snapshot',async t=>{
  const {createApp}=await import('../src/server.js');const {once}=await import('node:events');
  const app=createApp({adb:{path:'fake',networkAgentSnapshot:async(serial,packageName)=>({source:'adb',serial,packageName,...parseNetworkAgentLog(JSON.stringify(record))})},token:'test'});
  app.listen(0,'127.0.0.1');await once(app,'listening');t.after(()=>new Promise(resolve=>app.close(resolve)));
  const response=await fetch(`http://127.0.0.1:${app.address().port}/api/network/agent`,{method:'POST',headers:{'X-Workbench-Token':'test','Content-Type':'application/json'},body:JSON.stringify({serial:'abc',packageName:'com.example.app'})});
  assert.equal(response.status,200);const payload=await response.json();assert.equal(payload.packageName,'com.example.app');assert.equal(payload.rows[0].failed,true);
+});
+
+test('protected Network Agent session API forwards start, poll and stop lifecycle',async t=>{
+ const calls=[],app=(await import('../src/server.js')).createApp({adb:{path:'fake',startNetworkAgent:async(serial,packageName,token)=>{calls.push(['start',serial,packageName,token]);return {sessionId:'12345678-1234-4234-8234-123456789abc',source:'adb-local-socket'};},pollNetworkAgent:async(sessionId,cursor,limit)=>{calls.push(['poll',sessionId,cursor,limit]);return {sessionId,cursor:5,rows:[]};},stopNetworkAgent:async sessionId=>{calls.push(['stop',sessionId]);return {stopped:true};}},token:'test'});
+ app.listen(0,'127.0.0.1');await once(app,'listening');t.after(()=>new Promise(resolve=>app.close(resolve)));
+ const post=async(path,body)=>fetch(`http://127.0.0.1:${app.address().port}/api/network/agent/${path}`,{method:'POST',headers:{'X-Workbench-Token':'test','Content-Type':'application/json'},body:JSON.stringify(body)});
+ assert.equal((await post('start',{serial:'device-1',packageName:'com.example.app',token:'s'.repeat(48)})).status,200);
+ assert.equal((await post('poll',{sessionId:'12345678-1234-4234-8234-123456789abc',cursor:4,limit:200})).status,200);
+ assert.equal((await post('stop',{sessionId:'12345678-1234-4234-8234-123456789abc'})).status,200);assert.deepEqual(calls.map(x=>x[0]),['start','poll','stop']);
+ assert.equal((await fetch(`http://127.0.0.1:${app.address().port}/api/network/agent/poll`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
 });
 
 test('agent source package is downloadable and contains the actual documented sources',async t=>{
@@ -71,6 +115,7 @@ test('agent source package is downloadable and contains the actual documented so
  const sources={
   'README.md':'README.md',
   'src/debug/java/dev/androidperformance/agent/NetworkEvents.java':'src/main/java/dev/androidperformance/agent/NetworkEvents.java',
+  'src/debug/java/dev/androidperformance/agent/NetworkAgentServer.java':'src/main/java/dev/androidperformance/agent/NetworkAgentServer.java',
   'src/debug/java/dev/androidperformance/agent/LogcatSink.java':'src/main/java/dev/androidperformance/agent/LogcatSink.java',
  };
  assert.deepEqual(Object.keys(entries).sort(),Object.keys(sources).sort());assert.ok(Object.keys(entries).every(path=>path==='README.md'||path.startsWith('src/debug/java/')),'network agent source must stay in the debug source set');

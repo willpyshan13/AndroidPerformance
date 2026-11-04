@@ -5,6 +5,11 @@
 - 网络分析页新增“导出筛选 HAR”，导出当前已筛选的归一化请求记录，包含时间、耗时、状态、响应字节和可用阶段计时；不导出 URL 凭据、查询参数、请求头、Cookie、请求正文或响应正文。未知时间和阶段保留缺失标记，不填造数据；CSV 仍可用。
 - 自动化验证覆盖 HAR 1.2 结构、HAR 重新导入、凭据与 query 脱敏、请求头 / Cookie / 正文排除、缺失数据、无效 URL 与 50,000 条上限。网络摘要和 i18n 定向测试 42 项通过；全量 `npm test`：378 项，362 通过、0 失败、16 项因缺少可选官方样例跳过；`npm run check`、`git diff --check`、macOS ARM64 `npm run package:mac` 与桌面 smoke 通过。未操作 Android 设备。
 
+## OkHttp Agent 本机 socket 增量采集
+
+- 新增 debug-only `NetworkAgentServer`：使用 Android 本机抽象 socket 和共享调试令牌提供版本化 JSONL `open` / `poll` 协议；`open` 建立本次采集 cursor 基线，跳过之前缓冲的事件；轮询按 cursor 返回最多 500 条，Agent 内存环形缓冲保留最近 10,000 条，报告游标之后发生的丢失。Desktop 使用 ADB `forward tcp:0 localabstract:...`，结束、连接失败和服务关闭时移除转发；无令牌时保留旧版 Logcat Agent。
+- 自动化覆盖 socket JSON 协议、分段响应、cursor 校验、旧事件基线跳过、转发建立 / 移除、Agent 不可用时清理、清理失败保留重试会话、受保护的 start/poll/stop API、Agent ZIP 实际源码及 16 路由英文界面。全量 `npm test`：383 项，367 通过、0 失败、16 项因缺少可选官方样例跳过；`npm run check`、`git diff --check`、Android API 35 `javac` 编译、macOS ARM64 `npm run package:mac` 与桌面 smoke 通过。Java 编译有缺 Kotlin 元数据类的警告。没有在 Android 运行时或设备上验证 socket 端到端；本机协议模拟不等同真机验证。
+
 ## OkHttp Agent 脱敏路径详情
 
 - OkHttp Agent 新增可选 `PathSanitizer`：默认不采路径；启用后 callback 只接收 URL encoded path，不会接收 query、header 或 body。返回值限 2,048 UTF-8 字节，拒绝 query、fragment 与控制字符；Agent v3 带 event ID，桌面端保留 v1/v2 兼容并将有效 path 用于域名/接口统计、筛选和导出。路径脱敏由目标应用负责；没有可靠规则时应保持默认关闭。

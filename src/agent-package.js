@@ -6,6 +6,7 @@ const root=join(dirname(dirname(fileURLToPath(import.meta.url))),'android-agent'
 const networkPackageFiles=[
  {source:'README.md',path:'README.md'},
  {source:'src/main/java/dev/androidperformance/agent/NetworkEvents.java',path:'src/debug/java/dev/androidperformance/agent/NetworkEvents.java'},
+ {source:'src/main/java/dev/androidperformance/agent/NetworkAgentServer.java',path:'src/debug/java/dev/androidperformance/agent/NetworkAgentServer.java'},
  {source:'src/main/java/dev/androidperformance/agent/LogcatSink.java',path:'src/debug/java/dev/androidperformance/agent/LogcatSink.java'},
 ];
 const layoutPaths=['LAYOUT_AGENT_README.md','src/main/java/dev/androidperformance/agent/LayoutAgent.java','src/main/kotlin/dev/androidperformance/agent/ApwComposeRecompositionProbe.kt','src/main/kotlin/dev/androidperformance/agent/ApwComposeAutomaticProbe.kt','compose-compiler-plugin/settings.gradle.kts','compose-compiler-plugin/build.gradle.kts','compose-compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar','compose-compiler-plugin/src/main/java/dev/androidperformance/compiler/IrCalls.java','compose-compiler-plugin/src/main/kotlin/dev/androidperformance/compiler/ApwComposeInstrumentationRegistrar.kt'];

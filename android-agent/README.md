@@ -4,21 +4,39 @@
 
 应用须在需要采集的构建中创建 `NetworkEvents.factory(sink)` 并通过 `OkHttpClient.Builder.eventListenerFactory(...)` 接入。每次调用使用独立监听器；配置会替换已有 EventListener factory，已有监听器需要由应用自行组合。sink 与 `PathSanitizer` 都在 OkHttp 回调线程运行，应快速返回并自行保护并发；不要执行磁盘、网络或其他阻塞操作。采集结束依赖响应体关闭或读取完成；未结束的调用不会产生记录。建议只在调试构建启用。
 
-桌面端“开始 Agent 读取”每 3 秒通过 ADB 从当前用户的目标 UID 读取 `APWNetwork` 日志，取最近 10,000 条日志范围。新版记录带随机请求标识，桌面端在本次读取期间累积去重，最多保留 10,000 条；旧版记录没有标识，只显示最近快照。日志可能在读取前被覆盖或丢失，首次快照也可能包含启动前记录。共享 UID 的其他应用可能混入，设备需要允许 shell 读取目标日志并支持 `logcat --uid`。日志包含域名和方法等元数据，其他拥有日志读取权限的进程可能看到；不要在正式构建启用。
+桌面端优先通过版本化的本机抽象 socket 协议读取：cursor 单调递增，Agent 在内存中保留最近 10,000 条请求事件，桌面端以 ADB 临时转发增量轮询；缓冲区溢出会返回丢失数量。协议逐次请求使用共享调试令牌校验。旧版 `LogcatSink` 仍可用作兼容模式，每 3 秒读取当前 UID 的最近日志，可能丢失、混入共享 UID 应用或包含启动前记录。
 
-在桌面网络页面点击“下载 Agent 源码”，把 ZIP 解压到目标 Android 工程根目录。包内 Java 文件已放在 `src/debug/java/`，只参与 debug source set；确保 debug 构建依赖 OkHttp 4，然后在仅用于调试的客户端构造代码中接入：
+在桌面网络页面点击“生成令牌”，将生成值安全地配置到目标 app 的 debug 构建配置中；不要提交进源码仓库或用于 release。下载 Agent ZIP 并解压到 Android 工程根目录。Java 文件放在 `src/debug/java/`，只参与 debug source set；确保 debug 构建依赖 OkHttp 4。首选 socket 方式，在 debug Application 启动服务并在客户端构造代码中接入：
+
+```kotlin
+android {
+  buildFeatures { buildConfig = true }
+  buildTypes {
+    debug {
+      val token = providers.gradleProperty("apwNetworkToken").orElse("").get()
+      buildConfigField("String", "APW_NETWORK_TOKEN", "\"$token\"")
+    }
+  }
+}
+```
+
+通过本机安全的 Gradle 属性或环境注入 `apwNetworkToken`；不要把真实令牌写进 `gradle.properties` 并提交。
 
 ```java
+NetworkAgentServer.start(getApplicationContext(), BuildConfig.APW_NETWORK_TOKEN);
+
 OkHttpClient client = new OkHttpClient.Builder()
-    .eventListenerFactory(NetworkEvents.factory(new LogcatSink(), encodedPath -> {
+    .eventListenerFactory(NetworkEvents.factory(NetworkAgentServer.sink(), encodedPath -> {
       // Example: replace sensitive or dynamic segments using your API routes.
       return encodedPath.replaceAll("/users/[^/]+", "/users/{user}");
     }))
     .build();
 ```
 
+`NetworkAgentServer.stop()` 可在 debug 网络采集不再需要时停止 socket 服务。令牌必须与桌面页面当前令牌一致；桌面端只在本机绑定 ADB forward，并在停止采集或关闭程序时移除转发。若不能在目标应用配置令牌，仍可使用兼容的 Logcat 模式：将 sink 改成 `new LogcatSink()`，并在桌面页面留空共享令牌。
+
 若暂时没有可靠的路由脱敏规则，使用 `NetworkEvents.factory(new LogcatSink())` 保持默认不采集路径。不要原样返回可能含访问令牌、用户标识或其他敏感值的路径。
 
-使用已有客户端时，基于它的 `newBuilder()` 配置，并注意该设置替换原来的 listener factory。选择设备与应用包名后在桌面网络页面开始读取，操作应用发出请求并关闭响应体。页面显示全调用汇总；若启用了应用侧路径脱敏器，也会显示其返回的路径。单次重定向详情仍不提供。
+使用已有客户端时，基于它的 `newBuilder()` 配置，并注意该设置替换原来的 listener factory。选择设备与应用包名后在桌面网络页面开始读取，操作应用发出请求并关闭响应体。socket 模式会持续增量读取，请求没有 query/header/body；若启用了应用侧路径脱敏器，也会显示其返回路径。单次重定向详情仍不提供。
 
 组件目前以源码接入，尚未发布独立依赖包。API 25 / rk3399-all 真机使用临时 OkHttp 4.12 debug 应用验证了本机 HTTP 请求、Logcat Agent 记录、桌面端 PID 回退读取和路径脱敏；这只证明已接入该 Agent 的 OkHttp 客户端，不会捕获未配置的客户端、WebView、Cronet 或原生 socket。设备日志权限、Android 版本和应用接入方式会影响可用性。

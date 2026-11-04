@@ -94,7 +94,7 @@ async function smokeNetworkAgentPackageInRenderer() {
       if(method!==0||nameStart+nameLength+extraLength+size>bytes.length)return {ok:false,reason:'Agent ZIP entry uses unexpected compression or bounds'};
       paths.push(decoder.decode(bytes.subarray(nameStart,nameStart+nameLength)));offset=nameStart+nameLength+extraLength+size;
     }
-    const debugOnly=paths.length===3&&paths.includes('README.md')&&paths.includes('src/debug/java/dev/androidperformance/agent/NetworkEvents.java')&&paths.includes('src/debug/java/dev/androidperformance/agent/LogcatSink.java')&&paths.every(path=>path==='README.md'||path.startsWith('src/debug/java/'));
+    const debugOnly=paths.length===4&&paths.includes('README.md')&&paths.includes('src/debug/java/dev/androidperformance/agent/NetworkEvents.java')&&paths.includes('src/debug/java/dev/androidperformance/agent/NetworkAgentServer.java')&&paths.includes('src/debug/java/dev/androidperformance/agent/LogcatSink.java')&&paths.every(path=>path==='README.md'||path.startsWith('src/debug/java/'));
     return {ok:debugOnly,contentType:response.headers.get('content-type'),entryCount:paths.length,debugOnly,paths};
   })()`);
 }

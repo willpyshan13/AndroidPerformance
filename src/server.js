@@ -420,6 +420,9 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/battery/import')return json(parseBatteryStats(body.text,body.packageName));
         if(path==='/api/battery/compare')return json(compareBatteryStats(body.before,body.after));
         if(path==='/api/network/agent')return json(await adb.networkAgentSnapshot(body.serial,body.packageName));
+        if(path==='/api/network/agent/start')return json(await adb.startNetworkAgent(body.serial,body.packageName,body.token));
+        if(path==='/api/network/agent/poll')return json(await adb.pollNetworkAgent(body.sessionId,body.cursor,body.limit));
+        if(path==='/api/network/agent/stop')return json(await adb.stopNetworkAgent(body.sessionId));
         if(path==='/api/heap/leakcanary-live')return json(await adb.leakCanarySnapshot(body.serial,body.packageName));
         if(path==='/api/frames/jankstats-live')return json(await adb.jankStatsSnapshot(body.serial,body.packageName));
         if(path==='/api/gpu/capabilities')return json(await adb.gpuCapabilities(body.serial));
@@ -501,7 +504,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
       json({ error: '接口不存在' }, 404);
     } catch (error) { json({ error: error.message || '请求失败' }, error.status || 400); }
   });
-  server.on('close',()=>{closed=true;if(heapSession){const expired=heapSession;heapSession=null;expired.worker.terminate();expired.cleanup?.();}if(traceSession){try{traceSession.cleanupSync();}catch{}traceSession=null;}});
+  server.on('close',()=>{closed=true;Promise.resolve(adb.closeNetworkAgentSessions?.()).catch(()=>{});if(heapSession){const expired=heapSession;heapSession=null;expired.worker.terminate();expired.cleanup?.();}if(traceSession){try{traceSession.cleanupSync();}catch{}traceSession=null;}});
   server.requestTimeout = 180000;
   return server;
 }

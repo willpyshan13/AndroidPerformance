@@ -4,7 +4,7 @@ import { access, readFile, unlink, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { locateDeviceSimpleperf } from './simpleperf.js';
 import { parseBatteryStats } from './battery.js';
 import { parseNetworkAgentLog } from './network-agent.js';
@@ -14,6 +14,7 @@ import { parseComposeRecompositionLog } from './compose-runtime.js';
 import { parseSimpleperfDiagnostics } from './simpleperf-diagnostics.js';
 import { parseLeakCanaryLog } from './leakcanary-live.js';
 import { parseJankStatsLog } from './jankstats-agent.js';
+import { openNetworkAgentSocket, pollNetworkAgentSocket } from './network-agent-socket.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
 
 const exec = promisify(execFile);
@@ -40,7 +41,7 @@ export async function locateAdb() {
 }
 
 export class Adb {
-  constructor(path, runner = exec) { this.path = path; this.runner = runner; this.busy = new Set(); this.cpuSnapshots = new Map(); }
+  constructor(path, runner = exec) { this.path = path; this.runner = runner; this.busy = new Set(); this.cpuSnapshots = new Map(); this.networkAgentSessions = new Map(); }
   async run(args, options = {}) {
     try {
       const result = await this.runner(this.path, args, { timeout: 20000, maxBuffer: 24 * 1024 * 1024, encoding: 'utf8', windowsHide: true, ...options });
@@ -138,6 +139,33 @@ export class Adb {
     const parsed=parseNetworkAgentLog(raw);
     return {source:'adb',serial,packageName,uid,pid:pid?Number(pid):null,processScope,timestamp:Date.now(),...parsed,limit:10000};
   }
+  async startNetworkAgent(serial,packageName,token) {
+    validateTarget(serial,packageName);
+    if(typeof token!=='string'||token.length<32||token.length>256||/[\r\n]/.test(token))throw new Error('网络 Agent 令牌须为 32–256 个字符');
+    const socketName=`apw-network-${createHash('sha256').update(packageName).digest('hex').slice(0,24)}`;
+    const output=await this.run(['-s',serial,'forward','tcp:0',`localabstract:${socketName}`],{timeout:10000});
+    const match=String(output).trim().match(/(?:tcp:)?(\d{1,5})$/),port=match?Number(match[1]):NaN;
+    if(!Number.isInteger(port)||port<1||port>65535)throw new Error('ADB 没有返回有效的网络 Agent 转发端口');
+    let opened;try{opened=await openNetworkAgentSocket(port,token);}catch(error){try{await this.run(['-s',serial,'forward','--remove',`tcp:${port}`],{timeout:10000});}catch(cleanupError){throw new Error(`${error.message}；且无法清理 ADB 转发：${cleanupError.message}`);}throw error;}
+    const sessionId=randomUUID();this.networkAgentSessions.set(sessionId,{serial,packageName,port,token,createdAt:Date.now()});
+    return {sessionId,serial,packageName,port,cursor:opened.cursor,source:'adb-local-socket',timestamp:Date.now()};
+  }
+  async pollNetworkAgent(sessionId,cursor=0,limit=200) {
+    if(typeof sessionId!=='string'||!/^[-\da-f]{36}$/i.test(sessionId))throw new Error('网络 Agent 会话无效');
+    const session=this.networkAgentSessions.get(sessionId);if(!session)throw new Error('网络 Agent 会话已结束或不存在');
+    const response=await pollNetworkAgentSocket(session.port,session.token,cursor,limit),raw=response.events.map(item=>JSON.stringify(item.event)).join('\n'),parsed=parseNetworkAgentLog(raw);
+    if(parsed.invalid)throw new Error('网络 Agent 返回了无效的请求事件');
+    return {source:'adb-local-socket',serial:session.serial,packageName:session.packageName,sessionId,timestamp:Date.now(),cursor:response.cursor,latestCursor:response.latestCursor,dropped:response.dropped,...parsed,limit};
+  }
+  async stopNetworkAgent(sessionId) {
+    if(typeof sessionId!=='string'||!/^[-\da-f]{36}$/i.test(sessionId))throw new Error('网络 Agent 会话无效');
+    const session=this.networkAgentSessions.get(sessionId);if(!session)return {stopped:false};
+    try{await this.run(['-s',session.serial,'forward','--remove',`tcp:${session.port}`],{timeout:10000});}
+    catch(error){throw new Error(`无法移除网络 Agent 的 ADB 转发：${error.message}`);}
+    this.networkAgentSessions.delete(sessionId);
+    return {stopped:true};
+  }
+  async closeNetworkAgentSessions() {const ids=[...this.networkAgentSessions.keys()];await Promise.all(ids.map(id=>this.stopNetworkAgent(id)));}
   async leakCanarySnapshot(serial,packageName) {
     validateTarget(serial,packageName);
     const uid=await this.packageUid(serial,packageName);

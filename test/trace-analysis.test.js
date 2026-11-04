@@ -72,6 +72,30 @@ test('bundled Trace Processor supports power analysis on traces without power da
  const input=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));const path=`/tmp/apw-power-rail-${process.pid}.pftrace`;const {writeFile,unlink}=await import('node:fs/promises');await writeFile(path,input);
  try{const result=await queryPowerRailDiagnostics(path);assert.equal(result.available,true);assert.equal(result.batteryCounters.available,true);assert.deepEqual(result.rows,[]);assert.deepEqual(result.batteryCounters.rows,[]);assert.match(result.note,/µJ/);}finally{await unlink(path).catch(()=>{});}
 });
+test('bundled Trace Processor imports ODPM per-UID energy samples and interval deltas',async t=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const v=n=>{n=BigInt(n);const bytes=[];do{let byte=Number(n&127n);n>>=7n;if(n)byte|=128;bytes.push(byte);}while(n);return Buffer.from(bytes);};
+ const num=(field,n)=>Buffer.concat([v(field*8),v(n)]),msg=(field,bytes)=>Buffer.concat([v(field*8+2),v(bytes.length),bytes]),str=(field,value)=>msg(field,Buffer.from(value));
+ const consumer=Buffer.concat([num(1,1),num(2,0),str(3,'CPU'),str(4,'CPU')]),descriptor=msg(1,consumer);
+ const descriptorPacket=msg(1,msg(77,msg(1,descriptor)));
+ const energyPacket=(timestamp,energyUws)=>{
+  const uidBreakdown=msg(4,Buffer.concat([num(1,10123),num(2,energyUws-100)]));
+  const energy=Buffer.concat([num(2,1),num(3,energyUws),uidBreakdown]);
+  return msg(1,Buffer.concat([num(8,timestamp),num(10,1),msg(77,energy)]));
+ };
+ const dir=await mkdtemp(join(tmpdir(),'odpm-energy-trace-')),path=join(dir,'sample.trace');
+ try{
+  await writeFile(path,Buffer.concat([descriptorPacket,energyPacket(1_000_000_000,1000),energyPacket(1_250_000_000,1450)]));
+  const result=await queryPowerRailDiagnostics(path,{packageName:'com.example.app'});
+  assert.equal(result.uidEnergy.available,true,JSON.stringify(result.uidEnergy));
+  assert.deepEqual(result.uidEnergy.rows.map(({tsNs,uid,consumerId,consumerName,energyUws,deltaUws})=>({tsNs,uid,consumerId,consumerName,energyUws,deltaUws})),[
+   {tsNs:'1000000000',uid:10123,consumerId:1,consumerName:'CPU',energyUws:'900',deltaUws:null},
+   {tsNs:'1250000000',uid:10123,consumerId:1,consumerName:'CPU',energyUws:'1350',deltaUws:'450'}
+  ]);
+  assert.deepEqual(result.uidEnergy.targetUids,[]);assert.deepEqual(result.uidEnergy.targetRows,[]);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('heap allocation profile parser preserves signed samples and callsite metadata',async()=>{
  const {parseHeapProfileSummary,queryHeapProfile}=await import('../src/trace-analysis.js');
  const csv='"id","parent_id","name_hex","mapping_hex","source_hex","line_number","self_unreleased_bytes","cumulative_unreleased_bytes","self_allocated_bytes","cumulative_allocated_bytes"\n"1","","6D616C6C6F63","6C6962632E736F2E","","","-1024","-100","2048","4096"\n"2","1","6D7946756E63","6170702E736F","7372632F4D61696E2E637070","42","512","924","1024","2048"\n';

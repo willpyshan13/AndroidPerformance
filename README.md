@@ -20,7 +20,7 @@
 
 macOS ARM64 桌面版可在本机运行；安装包包含 Electron、ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
-GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检查、DMG 构建和打包启动 smoke；构建文件只留在 runner 中，不会创建 Release 或上传为可下载产物。
+GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检查和桌面启动 smoke；不会生成 DMG、创建 Release 或上传构建产物。
 
 ### 连接 Android 设备
 

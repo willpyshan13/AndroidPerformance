@@ -86,6 +86,6 @@ jobs:
         if: steps.prepared-tools.outputs.cache-hit != 'true'
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
         if: steps.prepared-tools.outputs.cache-hit != 'true'
-      - run: node scripts/run-npm-task.js package:dmg
+      - run: node scripts/run-npm-task.js package:mac
       - name: Launch packaged macOS app and verify desktop startup
         run: node scripts/mac-desktop-smoke.js

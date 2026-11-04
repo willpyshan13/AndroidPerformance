@@ -226,7 +226,7 @@ const BATTERY_COUNTERS_QUERY=`INCLUDE PERFETTO MODULE android.battery;
  COALESCE(CAST(current_avg_ua AS TEXT),'') AS current_avg_ua,COALESCE(CAST(voltage_uv AS TEXT),'') AS voltage_uv,
  COALESCE(CAST(energy_counter_uwh AS TEXT),'') AS energy_counter_uwh,COALESCE(CAST(power_mw AS TEXT),'') AS power_mw
  FROM android_battery_charge ORDER BY ts LIMIT 2001`;
-const UID_ENERGY_QUERY=`SELECT CAST(c.ts AS TEXT) AS ts_ns,CAST(c.value AS TEXT) AS energy_uws,
+const UID_ENERGY_QUERY=`SELECT CAST(c.ts AS TEXT) AS ts_ns,CAST(ROUND(c.value) AS INTEGER) AS energy_uws,
  CAST(EXTRACT_ARG(t.dimension_arg_set_id,'uid') AS TEXT) AS uid,
  CAST(EXTRACT_ARG(t.dimension_arg_set_id,'energy_consumer_id') AS TEXT) AS consumer_id,
  hex(CAST(COALESCE(t.name,'') AS BLOB)) AS consumer_name_hex

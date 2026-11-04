@@ -25,6 +25,13 @@ test('CPU library filtering keeps samples containing that library and aggregates
  const result=filterCpuProfileByLibrary(timeline,'/data/app/libsample.so');assert.equal(result.timeline.samples.length,2);assert.equal(result.profile.root.weight,17);assert.deepEqual(result.profile.symbols.map(row=>row.name).filter(name=>name.startsWith('lib ')),['lib call','lib leaf']);assert.ok(result.timeline.samples.every(sample=>sample.frames.length===sample.libraries.length&&sample.libraries.every(name=>name==='/data/app/libsample.so')));
  assert.equal(filterCpuProfileByLibrary(timeline,'/missing.so').profile,null);
 });
+test('CPU sample timelines preserve validated native addresses and Build IDs through library filters',()=>{
+ const dso='/data/app/libnative.so',timeline=buildSampleTimeline({buildIds:{[dso]:'AABBCCDD0011'},samples:[{timeNs:'1',period:'9',pid:1,tid:2,thread:'main',frames:['caller','native'],libraries:['/system/bin/app_process64',dso],vaddrs:[null,'0x1234']}]});
+ assert.equal(timeline.samples[0].vaddrs[1],'0x1234');assert.equal(timeline.buildIds[dso],'aabbccdd0011');
+ const filtered=filterCpuProfileByLibrary(timeline,dso).timeline;assert.deepEqual(filtered.samples[0].vaddrs,['0x1234']);assert.equal(filtered.samples[0].buildIds[dso],'aabbccdd0011');
+ const invalid=buildSampleTimeline({buildIds:{[dso]:'bad'},samples:[{timeNs:'1',period:'1',pid:1,tid:1,thread:'t',frames:['native'],libraries:[dso],vaddrs:['not-an-address']}]});
+ assert.equal(invalid.samples[0].vaddrs,null);assert.equal(invalid.buildIds[dso],undefined);
+});
 test('ART method trace capture starts sampling, stops, validates the file, and cleans remote and local copies',async()=>{
  const {writeFile,access}=await import('node:fs/promises');let local;const calls=[],trace=Buffer.from('SLOW\x03\x00\x20\x00');
  const adb=new Adb('adb',async(_path,args)=>{calls.push(args);const command=args.join(' ');if(command.includes("'wc'"))return {stdout:`${trace.length} /data/local/tmp/art.trace`};if(args.includes('pull')){local=args.at(-1);await writeFile(local,trace);}return {stdout:''};});

@@ -40,14 +40,16 @@
     "test:device": "node scripts/device-smoke.js",
     "build:hprof-load-fixture": "node scripts/build-hprof-load-fixture.js",
     "prepare:perfetto-ui": "node scripts/prepare-perfetto-ui.js",
-    "check": "node --check src/server.js && node --check src/macrobenchmark.js && node --check src/benchmark-cli.js && node --check src/adb.js && node --check src/simpleperf-diagnostics.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/menu.js && node --check desktop/locale.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/heap-export.js && node --check public/trace-export.js && node --check public/shark-export.js && node --check public/binder-export.js && node --check public/i18n.js && node --check public/offline.js && node --check public/art-trace-worker.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/shark.js && node --check src/java-runtime.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-linux-arm64-tools.js && node --check scripts/apk-tools-smoke.js && node --check scripts/linux-arm64-package-smoke.js && node --check scripts/floor-linux-arm64-deb-glibc.js && node --check scripts/prepare-sdk-tools.js && node --check scripts/diagnose-tests.js && node --check scripts/run-npm-task.js && node --check scripts/desktop-smoke.js && node --check scripts/mac-desktop-smoke.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-python-runtime.js && node --check scripts/prepare-inspector-runtime.js && node --check scripts/prepare-trace-processor.js && node --check src/trace-processor-artifacts.js && node --check scripts/prepare-perfetto-ui.js && node --check scripts/prepare-shark.js && node --check scripts/prepare-ui-inspector.js && node --check src/compose-inspector.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/network-agent-socket.js && node --check src/layout-agent.js && node --check src/agent-package.js && node --check src/agent-injection.js && node --check src/compose-runtime.js && node --check src/leakcanary-live.js && node --check src/jankstats-agent.js && node --check scripts/benchmark-cpu-visualization.js && node --check scripts/device-smoke.js && node --check scripts/build-hprof-load-fixture.js",
+    "check": "node --check src/native-symbolizer.js && node --check scripts/prepare-native-symbolizer.js && node --check scripts/native-symbolizer-smoke.js && node --check src/server.js && node --check src/macrobenchmark.js && node --check src/benchmark-cli.js && node --check src/adb.js && node --check src/simpleperf-diagnostics.js && node --check src/parsers.js && node --check src/records.js && node --check desktop/main.js && node --check desktop/menu.js && node --check desktop/locale.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/heap-export.js && node --check public/trace-export.js && node --check public/shark-export.js && node --check public/binder-export.js && node --check public/i18n.js && node --check public/offline.js && node --check public/art-trace-worker.js && node --check public/demo.js && node --check src/apk.js && node --check src/apk-signatures.js && node --check src/apk-upload.js && node --check src/perf-upload.js && node --check src/simpleperf.js && node --check src/hprof.js && node --check src/hprof-upload.js && node --check src/shark.js && node --check src/java-runtime.js && node --check scripts/prepare-apk-tools.js && node --check scripts/prepare-linux-arm64-tools.js && node --check scripts/apk-tools-smoke.js && node --check scripts/linux-arm64-package-smoke.js && node --check scripts/floor-linux-arm64-deb-glibc.js && node --check scripts/prepare-sdk-tools.js && node --check scripts/diagnose-tests.js && node --check scripts/run-npm-task.js && node --check scripts/desktop-smoke.js && node --check scripts/mac-desktop-smoke.js && node --check scripts/prepare-simpleperf.js && node --check scripts/prepare-python-runtime.js && node --check scripts/prepare-inspector-runtime.js && node --check scripts/prepare-trace-processor.js && node --check src/trace-processor-artifacts.js && node --check scripts/prepare-perfetto-ui.js && node --check scripts/prepare-shark.js && node --check scripts/prepare-ui-inspector.js && node --check src/compose-inspector.js && node --check src/trace-analysis.js && node --check src/battery.js && node --check src/gpu.js && node --check src/dominators.js && node --check src/preferences.js && node --check src/source-workspace.js && node --check src/source-symbols.js && node --check src/source-git.js && node --check src/network-agent.js && node --check src/network-agent-socket.js && node --check src/layout-agent.js && node --check src/agent-package.js && node --check src/agent-injection.js && node --check src/compose-runtime.js && node --check src/leakcanary-live.js && node --check src/jankstats-agent.js && node --check scripts/benchmark-cpu-visualization.js && node --check scripts/device-smoke.js && node --check scripts/build-hprof-load-fixture.js",
     "prepare:adb": "bash scripts/prepare-adb.sh",
     "prepare:apk-tools": "node scripts/prepare-apk-tools.js",
     "prepare:simpleperf": "node scripts/prepare-simpleperf.js && node scripts/prepare-python-runtime.js",
     "prepare:trace-processor": "node scripts/prepare-trace-processor.js",
     "prepare:shark": "node scripts/prepare-shark.js",
     "prepare:inspector-runtime": "node scripts/prepare-inspector-runtime.js",
-    "prepare:ui-inspector": "node scripts/prepare-ui-inspector.js"
+    "prepare:ui-inspector": "node scripts/prepare-ui-inspector.js",
+    "prepare:native-symbolizer": "node scripts/prepare-native-symbolizer.js",
+    "smoke:native-symbolizer": "node scripts/native-symbolizer-smoke.js"
   },
   "build": {
     "appId": "dev.androidperformance.workbench",
@@ -57,17 +59,32 @@
       {
         "from": "tools/perfetto-ui",
         "to": "perfetto-ui",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "tools/shark-cli",
         "to": "shark-cli",
-        "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"]
+        "filter": [
+          "**/*.jar",
+          "licenses/**",
+          "NOTICE.txt",
+          "source.json"
+        ]
       },
       {
         "from": "tools/ui-inspector",
         "to": "ui-inspector",
-        "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"]
+        "filter": [
+          "classpath.json",
+          "lib/**",
+          "licenses/**",
+          "DEPENDENCIES.md",
+          "LICENSE-2.0.txt",
+          "NOTICE.txt",
+          "source.json"
+        ]
       }
     ],
     "directories": {
@@ -99,8 +116,14 @@
       "icon": "desktop/resources/icon.png",
       "identity": "-",
       "extraResources": [
-        { "from": "tools/java-runtime", "to": "java-runtime" },
-        { "from": "tools/java25-runtime", "to": "java25-runtime" },
+        {
+          "from": "tools/java-runtime",
+          "to": "java-runtime"
+        },
+        {
+          "from": "tools/java25-runtime",
+          "to": "java25-runtime"
+        },
         {
           "from": "tools/platform-tools",
           "to": "platform-tools",
@@ -131,6 +154,16 @@
         {
           "from": "tools/trace-processor",
           "to": "trace-processor"
+        },
+        {
+          "from": "tools/native-symbolizer",
+          "to": "native-symbolizer",
+          "filter": [
+            "llvm-symbolizer",
+            "NOTICE*",
+            "MODULE_LICENSE_*",
+            "source.json"
+          ]
         }
       ]
     },
@@ -138,14 +171,79 @@
       "icon": "desktop/resources/icon.png",
       "target": "nsis",
       "extraResources": [
-        { "from": "tools/perfetto-ui", "to": "perfetto-ui", "filter": ["**/*"] },
-        { "from": "tools/shark-cli", "to": "shark-cli", "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"] },
-        { "from": "tools/java-runtime.tar.gz", "to": "java-runtime.tar.gz" },
-        { "from": "tools/simpleperf", "to": "simpleperf", "filter": ["**/*", "!bin/darwin/**", "!bin/linux/**", "!**/__pycache__/**", "!**/*.pyc"] },
-        { "from": "tools/ui-inspector", "to": "ui-inspector", "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"] },
-        { "from": "tools/platform-tools", "to": "platform-tools", "filter": ["adb.exe", "AdbWin*.dll", "NOTICE.txt", "source.properties"] },
-        { "from": "tools/apk-tools", "to": "apk-tools", "filter": ["aapt2.exe", "NOTICE.txt", "source.properties"] },
-        { "from": "tools/trace-processor", "to": "trace-processor", "filter": ["trace_processor_shell.exe", "LICENSE", "source.json"] }
+        {
+          "from": "tools/perfetto-ui",
+          "to": "perfetto-ui",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "tools/shark-cli",
+          "to": "shark-cli",
+          "filter": [
+            "**/*.jar",
+            "licenses/**",
+            "NOTICE.txt",
+            "source.json"
+          ]
+        },
+        {
+          "from": "tools/java-runtime.tar.gz",
+          "to": "java-runtime.tar.gz"
+        },
+        {
+          "from": "tools/simpleperf",
+          "to": "simpleperf",
+          "filter": [
+            "**/*",
+            "!bin/darwin/**",
+            "!bin/linux/**",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "tools/ui-inspector",
+          "to": "ui-inspector",
+          "filter": [
+            "classpath.json",
+            "lib/**",
+            "licenses/**",
+            "DEPENDENCIES.md",
+            "LICENSE-2.0.txt",
+            "NOTICE.txt",
+            "source.json"
+          ]
+        },
+        {
+          "from": "tools/platform-tools",
+          "to": "platform-tools",
+          "filter": [
+            "adb.exe",
+            "AdbWin*.dll",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        },
+        {
+          "from": "tools/apk-tools",
+          "to": "apk-tools",
+          "filter": [
+            "aapt2.exe",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        },
+        {
+          "from": "tools/trace-processor",
+          "to": "trace-processor",
+          "filter": [
+            "trace_processor_shell.exe",
+            "LICENSE",
+            "source.json"
+          ]
+        }
       ]
     },
     "linux": {
@@ -153,14 +251,84 @@
       "category": "Development",
       "target": "AppImage",
       "extraResources": [
-        { "from": "tools/perfetto-ui", "to": "perfetto-ui", "filter": ["**/*"] },
-        { "from": "tools/shark-cli", "to": "shark-cli", "filter": ["**/*.jar", "licenses/**", "NOTICE.txt", "source.json"] },
-        { "from": "tools/java-runtime", "to": "java-runtime" },
-        { "from": "tools/simpleperf", "to": "simpleperf", "filter": ["**/*", "!bin/darwin/**", "!bin/windows/**", "!**/__pycache__/**", "!**/*.pyc"] },
-        { "from": "tools/ui-inspector", "to": "ui-inspector", "filter": ["classpath.json", "lib/**", "licenses/**", "DEPENDENCIES.md", "LICENSE-2.0.txt", "NOTICE.txt", "source.json"] },
-        { "from": "tools/platform-tools", "to": "platform-tools", "filter": ["adb", "adb.bin", "lib/**", "licenses/**", "NOTICE.txt", "source.properties"] },
-        { "from": "tools/apk-tools", "to": "apk-tools", "filter": ["aapt2", "aapt2.bin", "lib/**", "licenses/**", "NOTICE.txt", "source.properties"] },
-        { "from": "tools/trace-processor", "to": "trace-processor", "filter": ["trace_processor_shell", "LICENSE", "source.json"] }
+        {
+          "from": "tools/perfetto-ui",
+          "to": "perfetto-ui",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "tools/shark-cli",
+          "to": "shark-cli",
+          "filter": [
+            "**/*.jar",
+            "licenses/**",
+            "NOTICE.txt",
+            "source.json"
+          ]
+        },
+        {
+          "from": "tools/java-runtime",
+          "to": "java-runtime"
+        },
+        {
+          "from": "tools/simpleperf",
+          "to": "simpleperf",
+          "filter": [
+            "**/*",
+            "!bin/darwin/**",
+            "!bin/windows/**",
+            "!**/__pycache__/**",
+            "!**/*.pyc"
+          ]
+        },
+        {
+          "from": "tools/ui-inspector",
+          "to": "ui-inspector",
+          "filter": [
+            "classpath.json",
+            "lib/**",
+            "licenses/**",
+            "DEPENDENCIES.md",
+            "LICENSE-2.0.txt",
+            "NOTICE.txt",
+            "source.json"
+          ]
+        },
+        {
+          "from": "tools/platform-tools",
+          "to": "platform-tools",
+          "filter": [
+            "adb",
+            "adb.bin",
+            "lib/**",
+            "licenses/**",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        },
+        {
+          "from": "tools/apk-tools",
+          "to": "apk-tools",
+          "filter": [
+            "aapt2",
+            "aapt2.bin",
+            "lib/**",
+            "licenses/**",
+            "NOTICE.txt",
+            "source.properties"
+          ]
+        },
+        {
+          "from": "tools/trace-processor",
+          "to": "trace-processor",
+          "filter": [
+            "trace_processor_shell",
+            "LICENSE",
+            "source.json"
+          ]
+        }
       ]
     },
     "nsis": {

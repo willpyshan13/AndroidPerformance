@@ -692,6 +692,7 @@ export function layoutFlame(root,{maxDepth=40,maxNodes=3000}={}) {
 
 export function buildSampleTimeline(input, bins=60) {
   if(!input||!Array.isArray(input.samples)||!Number.isInteger(bins)||bins<1||bins>200)throw new Error('时间线数据无效');
+  const buildIds=Object.create(null);if(input.buildIds&&typeof input.buildIds==='object'&&!Array.isArray(input.buildIds))for(const [name,id] of Object.entries(input.buildIds).slice(0,200))if(typeof name==='string'&&name.length<=4096&&typeof id==='string'&&/^[0-9a-f]{8,128}$/i.test(id))buildIds[name]=id.toLowerCase();
   let origin=null,last=null,skipped=0;const valid=[];
   for(const s of input.samples){
     try{
@@ -699,8 +700,9 @@ export function buildSampleTimeline(input, bins=60) {
       const time=BigInt(s.timeNs),weight=Number(s.period);if(time===0n||!Number.isSafeInteger(weight)||weight<=0)throw Error();
       if(s.frames.some(f=>typeof f!=='string'||!f||f.length>1000||/[;\r\n]/.test(f))||typeof s.thread!=='string'||/[;\r\n]/.test(s.thread))throw Error();
       const libraries=Array.isArray(s.libraries)&&s.libraries.length===s.frames.length&&s.libraries.every(name=>typeof name==='string'&&name.length>0&&name.length<=4096&&!/[\x00-\x1f\x7f]/.test(name))?s.libraries:null;
+      const vaddrs=Array.isArray(s.vaddrs)&&s.vaddrs.length===s.frames.length&&s.vaddrs.every(address=>address===null||typeof address==='string'&&/^(?:0x)?[0-9a-f]{1,16}$/i.test(address))?s.vaddrs:null;
       if(origin===null||time<origin)origin=time;if(last===null||time>last)last=time;
-      valid.push({time,timeNs:s.timeNs,weight,frames:s.frames,libraries,threadName:s.thread,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
+      valid.push({time,timeNs:s.timeNs,weight,frames:s.frames,libraries,vaddrs,buildIds,threadName:s.thread,thread:`${s.thread}-${s.pid}/${s.tid}`,pid:s.pid,tid:s.tid});
     }catch{skipped++;}
   }
   if(!valid.length)return {available:false,skipped,truncated:!!input.truncated,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null};
@@ -711,7 +713,7 @@ export function buildSampleTimeline(input, bins=60) {
     g.counts[s.bin]++;g.weights[s.bin]+=s.weight;g.total+=s.weight;if(!Number.isSafeInteger(g.total))throw new Error('时间线权重超出安全范围');
   }
   const samplesByTime=[...valid].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
-  return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,samplesByBin,samplesByTime,skipped,truncated:!!input.truncated};
+  return {available:true,event:input.event||'未知事件',clockId:typeof input.clockId==='string'?input.clockId:null,durationMs:Number(span)/1e6,bins,groups:[...groups.values()].sort((a,b)=>b.total-a.total),samples:valid,samplesByBin,samplesByTime,buildIds,addressesTruncated:!!input.addressesTruncated,skipped,truncated:!!input.truncated};
 }
 export function cpuLibraryOptions(timeline,limit=500){
  if(!timeline?.available||!Array.isArray(timeline.samples)||!Number.isInteger(limit)||limit<1||limit>2000)return [];
@@ -720,9 +722,9 @@ export function cpuLibraryOptions(timeline,limit=500){
 }
 export function filterCpuProfileByLibrary(timeline,library){
  if(!timeline?.available||!Array.isArray(timeline.samples)||typeof library!=='string'||!library||library.length>4096)throw new Error('CPU 库筛选参数无效');
- const samples=[];for(const sample of timeline.samples){if(!Array.isArray(sample.libraries)||sample.libraries.length!==sample.frames.length)continue;const frames=[],libraries=[];for(let i=0;i<sample.frames.length;i++)if(sample.libraries[i]===library){frames.push(sample.frames[i]);libraries.push(library);}if(frames.length)samples.push({timeNs:sample.timeNs,period:String(sample.weight),pid:sample.pid,tid:sample.tid,thread:sample.threadName||sample.thread.replace(/-\d+\/\d+$/,''),frames,libraries});}
+ const samples=[];for(const sample of timeline.samples){if(!Array.isArray(sample.libraries)||sample.libraries.length!==sample.frames.length)continue;const frames=[],libraries=[],vaddrs=[];for(let i=0;i<sample.frames.length;i++)if(sample.libraries[i]===library){frames.push(sample.frames[i]);libraries.push(library);vaddrs.push(sample.vaddrs?.[i]??null);}if(frames.length)samples.push({timeNs:sample.timeNs,period:String(sample.weight),pid:sample.pid,tid:sample.tid,thread:sample.threadName||sample.thread.replace(/-\d+\/\d+$/,''),frames,libraries,vaddrs});}
  if(!samples.length)return {timeline:{available:false,event:timeline.event,clockId:timeline.clockId,skipped:0,truncated:timeline.truncated},profile:null};
- const filteredTimeline=buildSampleTimeline({event:timeline.event,clockId:timeline.clockId,truncated:timeline.truncated,samples},timeline.bins);
+ const filteredTimeline=buildSampleTimeline({event:timeline.event,clockId:timeline.clockId,truncated:timeline.truncated,samples,buildIds:timeline.buildIds,addressesTruncated:timeline.addressesTruncated},timeline.bins);
  const folded=filteredTimeline.samples.map(sample=>`${[sample.thread,...sample.frames].join(';')} ${sample.weight}`).join('\n');
  return {timeline:filteredTimeline,profile:parseFoldedStacks(folded)};
 }

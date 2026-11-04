@@ -1,7 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const routes = new Set(['overview', 'monitor', 'cpu-profile', 'heap', 'battery', 'gpu', 'frames', 'startup', 'layout', 'trace', 'network', 'benchmark', 'apk', 'source', 'sessions', 'settings']);
+const smokeErrors=[];
+if(process.env.APW_SMOKE_READY_FILE){
+  window.addEventListener('error',event=>smokeErrors.push(`${event.error?.stack||event.message||'Unspecified renderer error'} (${event.filename||'unknown'}:${event.lineno||0}:${event.colno||0})`),true);
+  window.addEventListener('unhandledrejection',event=>smokeErrors.push(`Unhandled rejection: ${String(event.reason?.stack||event.reason)}`),true);
+}
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
+  smokeDiagnostics: () => smokeErrors.slice(-50),
   getAppearance: () => ipcRenderer.invoke('workbench:get-appearance'),
   saveAppearance: appearance => ipcRenderer.invoke('workbench:save-appearance', appearance),
   agiStatus: () => ipcRenderer.invoke('workbench:agi-status'),

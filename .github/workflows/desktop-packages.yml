@@ -41,7 +41,8 @@ jobs:
             tools/java-runtime
             tools/java-runtime.tar.gz
             tools/java25-runtime
-          key: macos-arm64-tools-v1-${{ hashFiles('scripts/prepare-adb.sh', 'scripts/prepare-sdk-tools.js', 'scripts/prepare-simpleperf.js', 'scripts/prepare-python-runtime.js', 'scripts/prepare-trace-processor.js', 'scripts/prepare-shark.js', 'scripts/prepare-inspector-runtime.js', 'scripts/prepare-perfetto-ui.js', 'src/trace-processor-artifacts.js', 'tools/simpleperf-legacy/**', 'package-lock.json') }}
+            tools/native-symbolizer
+          key: macos-arm64-tools-v2-${{ hashFiles('scripts/prepare-adb.sh', 'scripts/prepare-sdk-tools.js', 'scripts/prepare-simpleperf.js', 'scripts/prepare-python-runtime.js', 'scripts/prepare-trace-processor.js', 'scripts/prepare-shark.js', 'scripts/prepare-inspector-runtime.js', 'scripts/prepare-perfetto-ui.js', 'scripts/prepare-native-symbolizer.js', 'src/trace-processor-artifacts.js', 'tools/simpleperf-legacy/**', 'package-lock.json') }}
       - name: Prepare Trace Processor
         if: steps.prepared-tools.outputs.cache-hit != 'true'
         run: node scripts/run-npm-task.js prepare:trace-processor
@@ -72,6 +73,8 @@ jobs:
           node scripts/run-npm-task.js prepare:adb
           node scripts/run-npm-task.js prepare:apk-tools
           node scripts/run-npm-task.js prepare:simpleperf
+          node scripts/run-npm-task.js prepare:native-symbolizer
+          node scripts/native-symbolizer-smoke.js
       - name: Analyze a generated APK with the SDK AAPT2
         env:
           APK_SMOKE_LOG_PATH: ${{ github.workspace }}/dist/apw-apk-smoke.log

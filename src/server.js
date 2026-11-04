@@ -13,6 +13,7 @@ import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
+import { symbolizeNativeAddress } from './native-symbolizer.js';
 import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
@@ -77,7 +78,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           }catch{return json({error:'Perfetto UI 尚未准备，请运行 npm run prepare:perfetto-ui'},404);}
         }
         if(path==='/perfetto-ui'||path==='/perfetto-ui/') {res.writeHead(302,{Location:'/perfetto-ui/index.html#!/?mode=embedded'});return res.end();}
-        const files = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/demo.js': 'demo.js', '/offline.js': 'offline.js', '/heap-export.js': 'heap-export.js', '/trace-export.js': 'trace-export.js', '/i18n.js': 'i18n.js', '/favicon.svg': 'favicon.svg' };
+        const files = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/demo.js': 'demo.js', '/offline.js': 'offline.js', '/heap-export.js': 'heap-export.js', '/shark-export.js': 'shark-export.js', '/binder-export.js': 'binder-export.js', '/trace-export.js': 'trace-export.js', '/i18n.js': 'i18n.js', '/favicon.svg': 'favicon.svg' };
         if (!files[path]) return json({ error: '页面不存在' }, 404);
         let content = await readFile(join(root, 'public', files[path]));
         if (path === '/') content = Buffer.from(content.toString().replace('__API_TOKEN__', token));
@@ -188,6 +189,10 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if (path === '/api/cpu-profile/analyze') {
           if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在分析，请等待完成'},409);}
           perfBusy=true;try{return json(await analyzePerfUpload(req));}finally{perfBusy=false;}
+        }
+        if(path==='/api/cpu-profile/symbolize-native'){
+          const body=await readBody(req);
+          return json(await symbolizeNativeAddress({symfs:body.symfs,dso:body.dso,address:body.address,expectedBuildId:body.expectedBuildId}));
         }
         if (path === '/api/heap/analyze') {
           if(heapBusy||mappingBusy||sharkBusy){req.resume();return json({error:'已有堆文件或 Shark 分析正在运行，请等待完成'},409);}

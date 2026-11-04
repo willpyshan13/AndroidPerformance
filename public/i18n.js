@@ -93,7 +93,7 @@ const en={
  '95% 区间：':'95% interval: ',
  '次重抽样':' bootstrap resamples',
  'APK 分析':'APK Analysis',
- '源码工作区':'Source Workspaces',
+ '源码工作区':'Source Workspaces','C/C++ DWARF 源码定位':'C/C++ DWARF source lookup','查 DWARF 源码行':'Resolve DWARF source line','该栈帧缺少地址或 Build ID':'This stack frame has no address or Build ID','已打开 DWARF 源码位置；请核对源码版本':'Opened the DWARF source location; verify the source revision','已搜索同名源码文件，请核对 Build ID 与源码版本':'Searched for files with the same name; verify the Build ID and source revision','函数 / 符号':'Function / symbol','内联函数':'Inline function','源码位置':'Source location','无 DWARF 行信息':'No DWARF line information','没有可显示的符号帧':'No symbol frames to display','在源码工作区查看':'View in Source Workspaces',
  '采集记录':'Saved Sessions',
  '设置与帮助':'Settings & Help',
  '工作空间':'Workspace',

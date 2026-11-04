@@ -11,6 +11,7 @@ record = sys.argv[2]
 lib = ReportLib()
 samples = []
 frames_total = 0
+frame_addresses_total = 0
 first_event = None
 clock_id = None
 selected_event = sys.argv[3] if len(sys.argv) > 3 else None
@@ -18,6 +19,16 @@ symfs = sys.argv[4] if len(sys.argv) > 4 else None
 event_counts = {}
 events_truncated = False
 truncated = False
+addresses_truncated = False
+build_ids = {}
+
+def native_address(symbol):
+    value = getattr(symbol, 'vaddr_in_file', None)
+    try:
+        value = int(value)
+        return format(value, 'x') if value >= 0 else None
+    except (TypeError, ValueError):
+        return None
 try:
     if symfs:
         lib.SetSymfs(symfs)
@@ -50,15 +61,38 @@ try:
         symbols = [chain.entries[i].symbol for i in range(chain.nr)]
         frames = [encode_frame(symbol.symbol_name) for symbol in symbols]
         libraries = [symbol.dso_name or 'unknown' for symbol in symbols]
+        addresses = [native_address(symbol) for symbol in symbols]
         frames.reverse()
         libraries.reverse()
+        addresses.reverse()
         leaf = lib.GetSymbolOfCurrentSample()
         frames.append(encode_frame(leaf.symbol_name))
         libraries.append(leaf.dso_name or 'unknown')
+        addresses.append(native_address(leaf))
+        if frame_addresses_total + len(addresses) <= 200000:
+            frame_addresses_total += len(addresses)
+        else:
+            addresses = [None] * len(addresses)
+            addresses_truncated = True
+        for dso in set(libraries):
+            if dso == 'unknown' or dso in build_ids or len(build_ids) >= 200:
+                continue
+            try:
+                build_id = lib.GetBuildIdForPath(dso)
+                if isinstance(build_id, bytes):
+                    build_id = build_id.hex()
+                if isinstance(build_id, str):
+                    build_id = build_id.removeprefix('0x')
+                    while len(build_id) > 8 and build_id.endswith('00000000'):
+                        build_id = build_id[:-8]
+                    if 8 <= len(build_id) <= 128 and all(c in '0123456789abcdefABCDEF' for c in build_id):
+                        build_ids[dso] = build_id.lower()
+            except Exception:
+                pass
         frames_total += len(frames)
         samples.append({'timeNs': str(sample.time), 'pid': sample.pid, 'tid': sample.tid,
                         'thread': encode_frame(sample.thread_comm), 'period': str(sample.period), 'frames': frames,
-                        'libraries': libraries})
+                        'libraries': libraries, 'vaddrs': addresses})
 finally:
     lib.Close()
-print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'traceOffCpu': trace_offcpu, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'truncated': truncated}, ensure_ascii=False))
+print(json.dumps({'event': selected_event or first_event, 'clockId': clock_id, 'traceOffCpu': trace_offcpu, 'events': [{'name': name, 'count': count} for name, count in event_counts.items()], 'eventsTruncated': events_truncated, 'samples': samples, 'buildIds': build_ids, 'addressesTruncated': addresses_truncated, 'truncated': truncated}, ensure_ascii=False))

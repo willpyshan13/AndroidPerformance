@@ -2,6 +2,8 @@
 
 目标：对齐 AndroidPerformanceStudio 公布的用户功能，同时保留现有 APK 分析。以下状态按本项目实际能力记录；实现后须附上验证结果及设备限制。内存分析现可轮询读取目标应用 UID 范围内的 LeakCanary 生命周期日志；此 Logcat 视图依赖应用已集成 LeakCanary，不能替代 Shark 对 HPROF 的泄漏分析。
 
+Native C/C++ DWARF 定位（2026-11-04）：simpleperf 时间线为最多 200,000 个栈帧保留 ELF 文件地址，并按 DSO 记录最多 200 个 Build ID；桌面端要求用户提供符号目录，以 ELF GNU Build ID 校验未剥离符号文件后调用 macOS ARM64 包内 LLVM symbolizer，展示 DWARF 源码行和内联帧，并可跳转到匹配的本机源码快照候选。`scripts/native-symbolizer-smoke.js` 使用 Android NDK 编译带 DWARF 的 AArch64 C++ ELF，已验证 Build ID 读取、错误 Build ID 拒绝和 `apw::smoke(int)` 行号解析。macOS ARM64 打包 smoke 覆盖 LLVM 工具启动、16 路由和 APK 分析 UI；同时发现并修复本地服务静态模块白名单遗漏 Shark / Binder 导出模块的问题。全量 416 项中 400 通过、16 项因未配置可选官方样本跳过、0 失败；`npm run check` 通过。实际 APK 与其对应符号仓库的端到端匹配仍需用户提供同构建符号文件后验证；若 perf.data 不含 Build ID/地址，或符号 ELF 没有 DWARF 行表，不能给出源码行。
+
 Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`，复用桌面端 Gradle 执行器，可配置设备、启动模式、ART 编译模式、场景、预热 / 迭代数、Baseline Profile 身份、trace 输出目录和超时；输出 JSON 摘要、可选完整结果文件和适用于 CI 的退出码。结果文件默认拒绝覆盖。目标 Gradle 测试仍须显式读取 APS properties / 环境变量并负责生成 trace。本轮 CLI / runner 集成测试通过；不连接设备运行任务。macOS arm64 `.app` 打包和桌面 smoke 通过，`app.asar` 中确认包含 CLI 模块。
 
 布局线索补强（2026-11-04）：对当前层级明确提供的 `visibility=invisible/gone`、或 `visibility=visible` 且 `alpha=0` 增加 `UIA_INVISIBLE_NODE` 信息线索；缺失字段不推断。单测覆盖不可见、gone、透明、半透明和字段缺失，打包 macOS arm64 smoke 已导入含不可见 View 的 XML 并验证 UI 规则 ID、严重级别、置信度与证据；全套 404 项中 388 通过、16 项可选样本跳过，0 失败。该规则依赖采集源明确导出可见性字段，不声称覆盖 Compose 绘制、窗口遮挡或硬件合成。
@@ -22,7 +24,7 @@ UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信�
 
 Compose Inspector 运行时修复（2026-11-03）：AOSP CLI 含 Java 25 字节码，之前桌面传入的 Java 17 会导致 `UnsupportedClassVersionError`。现在 macOS ARM64 包内单独携带 SHA-256 固定的 Temurin JRE 25，并通过打包资源路径在 API 35 模拟器 Compose fixture 上完整采集树、参数、语义、边界和截图；run `41604882683` 又验证了 clean runner 下载、DMG 构建与打包启动 smoke。本轮验证使用模拟器及本地打包资源；不要求连接真实设备，也没有覆盖各厂商实体设备行为。
 
-源码定位补强（2026-11-03）：C++ 文本候选支持 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明及定义，并能解码常见 Itanium ABI 嵌套方法、全局函数及其简单模板实参。模板专用名会保留在显示符号中，模板类与全局函数候选按基础声明名匹配。函数参数、完整 ABI substitution 和 ELF/DWARF 仍未解析，复杂模板编码会提示文本搜索；模板实例仍是源码候选，不证明源码对应当前安装 APK 的精确构建。
+源码定位补强（2026-11-03）：C++ 文本候选支持 `operator<<`、`operator[]`、`operator()` 和 `operator bool` 的声明及定义，并能解码常见 Itanium ABI 嵌套方法、全局函数及其简单模板实参。模板专用名会保留在显示符号中，模板类与全局函数候选按基础声明名匹配。函数参数和完整 ABI substitution 尚未解码，复杂模板编码会提示文本搜索；native DWARF 行定位的验证与符号版本限制见上方记录。
 
 真机 smoke（2026-11-03）：设备 `X3315A41621110053` / rk3399-all（Android 7.1.2、API 25、arm64-v8a）。对 system launcher `com.xmotion` 的无应用控制检查为 15 项通过、2 项设备不支持、1 项跳过、0 项失败；报告 `/tmp/apw-device-smoke-20261103/report.json`。随后对已安装 debug 包 `com.xmotion.sui.debug` 启用脚本授权的应用控制检查，最新结果 22 项通过、2 项设备不支持、0 项失败；报告 `/tmp/apw-device-smoke-perfparse-final-20261103/report.json`。目标 Activity 先启动后，3 秒 simpleperf 生成有效 `PERFILE2` 文件；新增真实 perf.data 导入与分析 smoke，上传本机解析接口后发现目标应用短采样窗口内无可解析调用栈，按无样本标记 unsupported（不代表解析成功）。实时监控、112 节点布局树、截图、约 62.6 MB HPROF 导入分析和 Shark 2.14 分析均通过（解析 186,928 个对象、3,544 个类分组；Shark 成功用时约 0.76 秒）。帧统计仅 2 帧，样本不足以代表应用稳定帧表现。冷/温/热启动各 2 次均返回 TotalTime，但设备未提供 LaunchState，故不确认实际启动类别。Perfetto 二进制不存在；Vulkan 未报告；system launcher 的电池 UID 1000 由 21 个包共享，41.6 mAh 系统估计不能归属单个应用。受控检查重置了目标 gfxinfo 计数并启动/停止目标应用，没有清除数据或卸载应用。
 

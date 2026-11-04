@@ -54,6 +54,11 @@ test('v5 agent preserves exact Android monotonic timestamps without mixing wall-
  assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,clockDomain:'host-wall'})).invalid,1);
  const old=parseNetworkAgentLog(JSON.stringify({...record,v:4,eventId,path:null,protocol:'h2',connectionReused:false})).rows[0];assert.equal(old.deviceMonotonicNs,null);assert.equal(old.clockDomain,null);
 });
+test('v6 agent adds a validated process identity for same-process trace matching',()=>{
+ const event={...record,v:6,eventId:'62345678-1234-4234-8234-123456789abc',path:null,protocol:'h2',connectionReused:true,deviceMonotonicNs:'515000000',clockDomain:'android-monotonic',pid:4242};
+ const [row]=parseNetworkAgentLog(JSON.stringify(event)).rows;assert.equal(row.pid,4242);assert.equal(row.elapsedNs,String(record.elapsedNs));
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...event,pid:0})).invalid,1);assert.equal(parseNetworkAgentLog(JSON.stringify({...event,pid:10000001})).invalid,1);
+});
 test('network request empty state distinguishes agent wait, missing events, filters and empty imports',()=>{
  const state=(overrides={})=>networkRequestEmptyState({hasSnapshot:true,source:'adb',agentActive:false,totalRows:0,filteredRows:0,...overrides});
  assert.equal(networkRequestEmptyState({hasSnapshot:false,source:null,agentActive:false,totalRows:0,filteredRows:0}),'import');

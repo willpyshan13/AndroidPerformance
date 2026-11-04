@@ -417,6 +417,45 @@ export async function queryLayoutFrameCorrelation(path,{captureStartUptimeNs,cap
  return {available:true,frames,clockSnapshots:snapshots.length,traceStartNs,traceEndNs,matchedFrameCount:frames.length,overlapPairs,truncated:timeline.truncated,note:'将应用内 Debug Agent 的 System.nanoTime 采集区间经追踪 CLOCK_MONOTONIC 快照映射到 FrameTimeline；仅表示布局采集区间与帧时间重叠，不证明该布局状态导致帧表现或 Jank。'};
 }
 
+export async function queryNetworkFrameCorrelation(path,{requests,packageName,locator=locateTraceProcessor,runner=exec}={}){
+ if(!Array.isArray(requests)||requests.length>2000)throw new Error('网络请求帧关联最多支持 2,000 条');
+ if(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName))throw new Error('网络请求帧关联需要有效目标包名');
+ const selected=requests.map(request=>{
+  if(!request||!Number.isSafeInteger(request.id)||request.id<1||!Number.isSafeInteger(request.pid)||request.pid<1||request.pid>10000000||typeof request.startNs!=='string'||!/^\d{1,19}$/.test(request.startNs)||typeof request.durationNs!=='string'||!/^[1-9]\d{0,18}$/.test(request.durationNs)||BigInt(request.durationNs)>9223372036854775807n||BigInt(request.startNs)>9223372036854775807n)throw new Error('网络 Agent 请求时间或 PID 无效');
+  return {id:request.id,pid:request.pid,startNs:request.startNs,durationNs:request.durationNs};
+ });
+ const [timeline,snapshots]=await Promise.all([
+  queryFrameTimeline(path,{packageName,locator,runner}),
+  (async()=>{const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,MONOTONIC_CLOCK_QUERY],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Monotonic 时钟查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseMonotonicClockSnapshots(result.stdout);})()
+ ]);
+ const unavailable=(reason,extra={})=>({available:false,reason,clockSnapshots:snapshots.length,mappedRequests:0,unmappedRequests:selected.length,requestsWithoutFrames:0,frameOverlapPairs:0,requests:[],truncated:timeline.truncated,...extra});
+ if(snapshots.length<2)return unavailable('追踪没有足够的 CLOCK_MONOTONIC 快照，不能映射网络请求时间。');
+ const framesByPid=new Map();
+ for(const [frameIndex,frame] of timeline.frames.entries()){
+  if(!Number.isSafeInteger(frame.pid)||frame.pid<1||!/^\-?\d{1,19}$/.test(frame.tsNs)||!/^[1-9]\d{0,18}$/.test(frame.durationNs)||BigInt(frame.durationNs)>9223372036854775807n)continue;
+  const start=BigInt(frame.tsNs),end=start+BigInt(frame.durationNs),entry={frameIndex,start,end,frame},list=framesByPid.get(frame.pid)||[];list.push(entry);framesByPid.set(frame.pid,list);
+ }
+ for(const list of framesByPid.values())list.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:a.frameIndex-b.frameIndex);
+ const results=[];let mappedRequests=0,unmappedRequests=0,requestsWithoutFrames=0,frameOverlapPairs=0,truncated=timeline.truncated;const MAX_PAIRS=50000;
+ for(const request of selected){
+  const startNs=mapMonotonicToTraceNs(request.startNs,snapshots),endNs=mapMonotonicToTraceNs((BigInt(request.startNs)+BigInt(request.durationNs)).toString(),snapshots);
+  if(startNs===null||endNs===null||BigInt(endNs)<BigInt(startNs)){unmappedRequests++;continue;}
+  mappedRequests++;const start=BigInt(startNs),end=BigInt(endNs),frames=framesByPid.get(request.pid)||[];let low=0,high=frames.length;
+  while(low<high){const mid=(low+high)>>1;if(frames[mid].end<=start)low=mid+1;else high=mid;}
+  const candidates=[];
+  for(let i=low;i<frames.length&&frames[i].start<end;i++){
+   const candidate=frames[i],overlapStart=candidate.start>start?candidate.start:start,overlapEnd=candidate.end<end?candidate.end:end;
+   if(overlapEnd<=overlapStart)continue;
+   if(frameOverlapPairs>=MAX_PAIRS){truncated=true;break;}
+   frameOverlapPairs++;candidates.push({frameIndex:candidate.frameIndex,process:candidate.frame.process,layer:candidate.frame.layer,tsNs:candidate.frame.tsNs,durationNs:candidate.frame.durationNs,jankType:candidate.frame.jankType,presentType:candidate.frame.presentType,overlapNs:(overlapEnd-overlapStart).toString()});
+  }
+  candidates.sort((a,b)=>BigInt(a.overlapNs)>BigInt(b.overlapNs)?-1:BigInt(a.overlapNs)<BigInt(b.overlapNs)?1:a.frameIndex-b.frameIndex);
+  if(!candidates.length)requestsWithoutFrames++;results.push({id:request.id,pid:request.pid,traceStartNs:startNs,traceEndNs:endNs,frameOverlapCount:candidates.length,frames:candidates.slice(0,20)});
+  if(truncated&&frameOverlapPairs>=MAX_PAIRS)break;
+ }
+ return {available:true,clockSnapshots:snapshots.length,requestCount:selected.length,mappedRequests,unmappedRequests,requestsWithoutFrames,frameOverlapPairs,truncated,requests:results,note:'网络请求的设备 System.nanoTime 区间经同一 Perfetto 追踪内 CLOCK_MONOTONIC 快照映射，并按目标包名、进程 PID 和实际 FrameTimeline 区间匹配。仅表示时间重叠，不证明请求导致该帧或卡顿；需人工确认 Agent 记录与追踪来自同设备、同一运行时段。'};
+}
+
 export async function queryCpuFrameCorrelation(path,{samples,clockId,packageName=null,locator=locateTraceProcessor,runner=exec}={}){
  if(!Array.isArray(samples)||samples.length>20000)throw new Error('CPU 关联最多支持 20,000 个采样点');
  if(clockId!=='monotonic')return {available:false,reason:'perf.data 未证明采样时间使用 CLOCK_MONOTONIC；当前时钟不能安全映射到 Perfetto。',clockId:typeof clockId==='string'?clockId:null};

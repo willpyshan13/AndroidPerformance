@@ -14,7 +14,7 @@ import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
 import { symbolizeNativeAddress } from './native-symbolizer.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryNetworkFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -395,6 +395,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
           traceBusy=true;try{return json(await queryLayoutFrameCorrelation(traceSession.path,{captureStartUptimeNs:body.captureStartUptimeNs,captureEndUptimeNs:body.captureEndUptimeNs,packageName:body.packageName}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/network-frame-correlation'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryNetworkFrameCorrelation(traceSession.path,{requests:body.requests,packageName:body.packageName}));}finally{traceBusy=false;}
         }
         if(path==='/api/trace/cpu-frame-correlation'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

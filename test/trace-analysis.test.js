@@ -36,6 +36,16 @@ test('JankStats query maps frame timestamps through trace clock snapshots before
  assert.equal(result.available,true);assert.equal(result.clockSnapshots,2);assert.equal(result.mappedFrames,1);assert.equal(result.matchedFrames,1);assert.equal(result.frames[0].traceStartNs,'1015000000');assert.equal(result.frames[0].candidates[0].process,'com.example.app');
  await assert.rejects(queryJankStatsFrameCorrelation('/tmp/fake.trace',{packageName:'bad',frames:[]} ),/包名/);
 });
+test('network request intervals map through trace clock snapshots and match only the same PID',async()=>{
+ const {queryNetworkFrameCorrelation}=await import('../src/trace-analysis.js');
+ const frameHeader='ts,dur,process_hex,layer_hex,jank_hex,present_hex,process_pid,surface_token,display_token,on_time_finish,expected_ts,expected_dur,expected_matches,actual_matches,process_id,track_id';
+ const appHex=Buffer.from('com.example.app').toString('hex').toUpperCase(),frameCsv=`${frameHeader}\n1015000000,16000000,${appHex},617070,41707020446561646c696e65204d6973736564,,4242,10,11,1,1015000000,16000000,1,1,77,8\n1015000000,16000000,${appHex},617070,41707020446561646c696e65204d6973736564,,9999,12,13,1,1015000000,16000000,1,1,78,9\n`;
+ const clockCsv='machine_id,snapshot_id,clock_name_hex,clock_value,trace_ts\n1,1,4d4f4e4f544f4e4943,500000000,1000000000\n1,2,4d4f4e4f544f4e4943,600000000,1100000000\n';
+ const result=await queryNetworkFrameCorrelation('/tmp/fake.trace',{packageName:'com.example.app',requests:[{id:7,pid:4242,startNs:'515000000',durationNs:'15000000'}],locator:async()=>'/trace-processor',runner:async(_binary,args)=>({stdout:args.at(-1).includes('clock_snapshot')?clockCsv:frameCsv})});
+ assert.equal(result.available,true);assert.equal(result.mappedRequests,1);assert.equal(result.unmappedRequests,0);assert.equal(result.frameOverlapPairs,1);assert.equal(result.requests[0].id,7);assert.equal(result.requests[0].traceStartNs,'1015000000');assert.equal(result.requests[0].traceEndNs,'1030000000');assert.equal(result.requests[0].frames[0].overlapNs,'15000000');assert.match(result.note,/不证明请求导致/);
+ const outside=await queryNetworkFrameCorrelation('/tmp/fake.trace',{packageName:'com.example.app',requests:[{id:8,pid:4242,startNs:'499999999',durationNs:'1'}],locator:async()=>'/trace-processor',runner:async(_binary,args)=>({stdout:args.at(-1).includes('clock_snapshot')?clockCsv:frameCsv})});assert.equal(outside.unmappedRequests,1);assert.equal(outside.frameOverlapPairs,0);
+ await assert.rejects(queryNetworkFrameCorrelation('/tmp/fake.trace',{packageName:'com.example.app',requests:[{id:1,pid:0,startNs:'515000000',durationNs:'1'}],locator:async()=>'/trace-processor',runner:async()=>({stdout:''})}),/请求时间或 PID/);
+});
 test('GPU trace diagnostics parse render stages, frequency and per-process memory without assuming absent sources',async()=>{
  const result=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async(_bin,args)=>{
   const sql=args[4];

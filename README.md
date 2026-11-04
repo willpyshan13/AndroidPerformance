@@ -177,6 +177,20 @@ Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围�
 
 在“基准对比”页可以选择 Macrobenchmark 工程目录，Android Gradle Plugin 常见任务为 `:macrobenchmark:connectedBenchmarkAndroidTest`，也可按项目修改为实际的模块和变体任务。工程需包含 `gradle/wrapper` 下的 Wrapper 文件及 Android Benchmark 模块，设备需已连接并可被 Android Gradle Plugin 识别；应用优先使用 `JAVA_HOME` 或 Android Studio 的完整 JDK 调用 Wrapper，并在未找到时回退到内置 Java Runtime，不经 Shell。Gradle 按工程配置构建、安装测试 APK 并执行测试，首次运行可能下载 Gradle 和项目依赖。运行结束后会自动读取本次更新的 `connected_android_test_additional_output` 中 AndroidX 生成的 `*benchmarkData*.json`；发现 trace 文件后，可从结果区选择并安全导入追踪分析。若工程使用自定义报告目录或输出名称，请手动导入 JSON。运行前请确认所选工程及 Gradle 脚本可信，因为 Gradle 构建会执行工程代码。
 
+同一套 Macrobenchmark 实验也可从命令行执行：
+
+```sh
+npm run benchmark:cli -- macro-run \
+  --project /path/to/android-project \
+  --task :macrobenchmark:connectedBenchmarkAndroidTest \
+  --serial emulator-5554 \
+  --startup-mode WARM --compilation-mode SPEED_PROFILE \
+  --scenario SCROLL --warmups 2 --iterations 5 \
+  --trace-dir /tmp/apw-traces --result /tmp/apw-benchmark-run.json
+```
+
+命令会把实验配置通过 `aps.macrobenchmark.*` Gradle 属性和 `APS_MACROBENCHMARK_*` 环境变量传入目标工程，JSON 结果文件默认拒绝覆盖；需要重用路径时显式加 `--overwrite`。目标测试必须读取这些参数并自行将追踪写入所选目录；仅传入参数不证明测试采用了它们。CLI 退出码可供脚本判断运行结果，Gradle 脚本会执行目标工程代码。
+
 电池页面在系统提供 `pwi` UID 数据时展示累计 mAh 估计及原始精度；该值可能包含共享 UID，依赖系统模型和取整，不作为两次快照之间的精确实验耗电。
 
 电池页面可以从已保存的实验中选取当前或基线快照，再分别设为新的基线与结束快照；仅可比较来自同一设备、应用、UID 和统计窗口的数据。

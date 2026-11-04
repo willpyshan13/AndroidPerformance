@@ -2,6 +2,8 @@
 
 目标：对齐 AndroidPerformanceStudio 公布的用户功能，同时保留现有 APK 分析。以下状态按本项目实际能力记录；实现后须附上验证结果及设备限制。内存分析现可轮询读取目标应用 UID 范围内的 LeakCanary 生命周期日志；此 Logcat 视图依赖应用已集成 LeakCanary，不能替代 Shark 对 HPROF 的泄漏分析。
 
+Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`，复用桌面端 Gradle 执行器，可配置设备、启动模式、ART 编译模式、场景、预热 / 迭代数、Baseline Profile 身份、trace 输出目录和超时；输出 JSON 摘要、可选完整结果文件和适用于 CI 的退出码。结果文件默认拒绝覆盖。目标 Gradle 测试仍须显式读取 APS properties / 环境变量并负责生成 trace。本轮 CLI / runner 集成测试通过；不连接设备运行任务。macOS arm64 `.app` 打包和桌面 smoke 通过，`app.asar` 中确认包含 CLI 模块。
+
 内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。
 
 UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信度、节点 ID 和可审阅证据；触控区域线索仍只依据可见节点边界，不代表系统实际命中区域。

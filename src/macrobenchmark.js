@@ -30,6 +30,9 @@ export function validateMacrobenchmarkExperiment(value = {}) {
   const profilePath=value.baselineProfilePath??'';
   if(typeof profilePath!=='string'||profilePath.length>4096||(profilePath&&!isAbsolute(profilePath)))throw new Error('Baseline Profile 路径必须为空或绝对路径');
   result.baselineProfilePath=profilePath;
+  const traceDir=value.traceDir??'';
+  if(typeof traceDir!=='string'||traceDir.length>4096||(traceDir&&!isAbsolute(traceDir)))throw new Error('Macrobenchmark trace 输出目录必须为空或绝对路径');
+  result.traceDir=traceDir;
   return result;
 }
 
@@ -101,6 +104,7 @@ export async function runMacrobenchmark({ javaPath, projectPath, task, serial = 
     ['iterations', selectedExperiment.iterations], ['baseline-profile-state', selectedExperiment.baselineProfileState],
   ];
   if(baselineProfile)properties.push(['baseline-profile-path',baselineProfile.path],['baseline-profile-sha256',baselineProfile.sha256]);
+  if(selectedExperiment.traceDir)properties.push(['trace-dir',selectedExperiment.traceDir]);
   const args = ['-classpath', project.wrapperJar, 'org.gradle.wrapper.GradleWrapperMain', '--no-daemon', ...properties.map(([key, value]) => `-Paps.macrobenchmark.${key}=${value}`), project.task];
   const realJavaPath = await realpath(javaPath).catch(() => javaPath);
   const javaHome = basename(dirname(realJavaPath)) === 'bin' ? dirname(dirname(realJavaPath)) : null;
@@ -111,6 +115,7 @@ export async function runMacrobenchmark({ javaPath, projectPath, task, serial = 
     APS_MACROBENCHMARK_WARMUPS: String(selectedExperiment.warmups),
     APS_MACROBENCHMARK_ITERATIONS: String(selectedExperiment.iterations),
     APS_MACROBENCHMARK_BASELINE_PROFILE_STATE: selectedExperiment.baselineProfileState,
+    ...(selectedExperiment.traceDir?{APS_MACROBENCHMARK_TRACE_DIR:selectedExperiment.traceDir}:{}),
     ...(baselineProfile?{APS_MACROBENCHMARK_BASELINE_PROFILE_PATH:baselineProfile.path,APS_MACROBENCHMARK_BASELINE_PROFILE_SHA256:baselineProfile.sha256}:{}),
   };
   const output = [];

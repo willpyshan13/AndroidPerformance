@@ -6,7 +6,7 @@ Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`
 
 布局线索补强（2026-11-04）：对当前层级明确提供的 `visibility=invisible/gone`、或 `visibility=visible` 且 `alpha=0` 增加 `UIA_INVISIBLE_NODE` 信息线索；缺失字段不推断。单测覆盖不可见、gone、透明、半透明和字段缺失，打包 macOS arm64 smoke 已导入含不可见 View 的 XML 并验证 UI 规则 ID、严重级别、置信度与证据；全套 404 项中 388 通过、16 项可选样本跳过，0 失败。该规则依赖采集源明确导出可见性字段，不声称覆盖 Compose 绘制、窗口遮挡或硬件合成。
 
-内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV / Markdown；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。Markdown 已加入 macOS ARM 打包 smoke；本轮桌面 smoke 遇到 Electron 启动 SIGABRT，尚未确认该项通过。
+内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV / Markdown / JSON；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。Markdown 与 JSON 已加入 macOS ARM 打包 smoke；桌面 smoke 曾因 Electron 启动 SIGABRT 中断，新增两种格式的打包验证尚待成功运行。
 
 UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信度、节点 ID 和可审阅证据；触控区域线索仍只依据可见节点边界，不代表系统实际命中区域。
 

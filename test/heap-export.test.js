@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatHeapCsv, formatHeapMarkdown} from '../public/heap-export.js';
+import {formatHeapCsv, formatHeapMarkdown, formatHeapJson} from '../public/heap-export.js';
 
 test('heap class CSV includes UTF-8 BOM and byte-size caveat',()=>{
   const csv=formatHeapCsv('classes',[['com.example.Foo',12,345]]);
@@ -30,4 +30,15 @@ test('heap comparison Markdown escapes table cells and preserves ambiguity marke
   const markdown=formatHeapMarkdown('comparison',[[ 'Foo|Bar\nBaz',null,null,null,null,null,null,'no' ]]);
   assert.match(markdown,/\| Foo\\\|Bar<br>Baz \| — \| — \| — \| — \| — \| — \| no \|/);
   assert.match(markdown,/ambiguous rows are marked not comparable/);
+});
+
+test('heap JSON uses stable column keys and explicit comparison ambiguity',()=>{
+  const classes=JSON.parse(formatHeapJson('classes',[['com.example.Foo',12,345]]));
+  assert.equal(classes.schemaVersion,1);
+  assert.deepEqual(classes.rows[0],{className:'com.example.Foo',objectCount:12,fieldElementPayloadBytes:345});
+  const comparison=JSON.parse(formatHeapJson('comparison',[[ 'Foo', '', '', '', '', '', '', 'no' ],[ 'Bar', 1, 3, 2, 200, 64, 100, 'yes' ]]));
+  assert.deepEqual(comparison.rows[0],{className:'Foo',baselineObjectCount:null,currentObjectCount:null,objectCountDelta:null,objectCountDeltaPercent:null,fieldElementBytesDelta:null,fieldElementBytesDeltaPercent:null,comparable:false});
+  assert.equal(comparison.rows[1].objectCountDelta,2);
+  assert.equal(comparison.rows[1].comparable,true);
+  assert.match(comparison.notes.join(' '),/not shallow or retained size/);
 });

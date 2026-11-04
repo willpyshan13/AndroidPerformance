@@ -5,10 +5,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {injectLeakCanaryDebugAgent} from '../src/agent-injection.js';
 
-async function appModule(root,name='app'){
+async function appModule(root,name='app',gradle="plugins { id 'com.android.application' }\n"){
  const module=join(root,name);
  await mkdir(join(module,'src/main'),{recursive:true});
- await writeFile(join(module,'build.gradle'),"plugins { id 'com.android.application' }\n");
+ await writeFile(join(module,'build.gradle'),gradle);
  await writeFile(join(module,'src/main/AndroidManifest.xml'),'<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application /></manifest>');
  return module;
 }
@@ -44,6 +44,17 @@ test('Debug Agent injection requires an explicit app module when project contain
  await assert.rejects(()=>injectLeakCanaryDebugAgent({projectPath:root}),/多个 Android app module/);
  const result=await injectLeakCanaryDebugAgent({projectPath:first});assert.equal(result.modulePath,await realpath(first));
  assert.ok((await readdir(join(second,'src'))).includes('main'));
+});
+
+test('Debug Agent injection selects the application plugin and ignores Android library modules',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'apw-agent-app-module-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const app=await appModule(root,'app','plugins { alias(libs.plugins.android.application) }'),library=join(root,'library');
+ await mkdir(join(library,'src/main'),{recursive:true});
+ await writeFile(join(library,'build.gradle.kts'),'plugins { id("com.android.library") }');
+ await writeFile(join(library,'src/main/AndroidManifest.xml'),'<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application /></manifest>');
+ const result=await injectLeakCanaryDebugAgent({projectPath:root});
+ assert.equal(result.modulePath,await realpath(app));
+ await assert.rejects(()=>readFile(join(library,'src/debug/AndroidManifest.xml')),{code:'ENOENT'});
 });
 
 test('Debug Agent injection can add optional AndroidX Fragment source to debug only',async t=>{

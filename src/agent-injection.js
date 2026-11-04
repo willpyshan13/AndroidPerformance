@@ -17,9 +17,9 @@ const ignoredDirs=new Set(['.git','.gradle','build','node_modules','.idea']);
 function inside(root,path){const rel=relative(root,path);return rel===''||(!isAbsolute(rel)&&!rel.startsWith(`..${sep}`)&&rel!=='..');}
 async function isFile(path){try{return (await lstat(path)).isFile();}catch{return false;}}
 async function findAndroidModules(root){
- const found=[],queue=[{path:root,depth:0}];let visited=0;
- while(queue.length&&visited++<5000){const {path,depth}=queue.shift();if(await isFile(join(path,'src','main','AndroidManifest.xml')))found.push(path);if(depth>=5)continue;let entries;try{entries=await readdir(path,{withFileTypes:true});}catch{continue;}for(const entry of entries){if(entry.isDirectory()&&!entry.isSymbolicLink()&&!ignoredDirs.has(entry.name))queue.push({path:join(path,entry.name),depth:depth+1});}}
- return found;
+ const found=[],applications=[],queue=[{path:root,depth:0}];let visited=0;
+ while(queue.length&&visited++<5000){const {path,depth}=queue.shift();if(await isFile(join(path,'src','main','AndroidManifest.xml'))){found.push(path);let scripts='';for(const name of ['build.gradle','build.gradle.kts'])try{scripts+=`\n${await readFile(join(path,name),'utf8')}`;}catch{}scripts=scripts.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|\s)\/\/.*$/gm,'');if(/com\.android\.application|libs\.plugins\.[\w.-]*application|(?:id|apply\s+plugin)\s*\(?\s*['"][\w.-]*application/i.test(scripts))applications.push(path);}if(depth>=5)continue;let entries;try{entries=await readdir(path,{withFileTypes:true});}catch{continue;}for(const entry of entries){if(entry.isDirectory()&&!entry.isSymbolicLink()&&!ignoredDirs.has(entry.name))queue.push({path:join(path,entry.name),depth:depth+1});}}
+ return applications.length?applications:found;
 }
 function mergeDebugManifest(existing,template){
  if(existing===null)return template;

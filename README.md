@@ -45,7 +45,7 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；布局检查线索附有规则 ID、严重级别、置信度和节点证据，并在层级明确报告不可见或完全透明节点时提示复核；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
 | 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
-| 网络分析 | 查看请求活动时间线、筛选后的峰值并发和域名连接阶段；支持 OkHttp Agent 的本机抽象 socket 增量采集与旧版 Logcat 兼容；可将筛选结果导出为脱敏 HAR 或 CSV；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
+| 网络分析 | 查看请求活动时间线、筛选后的峰值并发、HTTP 协议、OkHttp Agent 明确记录的连接复用状态和域名连接阶段；支持本机抽象 socket 增量采集与旧版 Logcat 兼容；可将筛选结果导出为脱敏 HAR、CSV 或 JSON；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并提示环境差异；逐项设置优化方向和回归阈值，导出 JSON、CSV、Markdown 与 CI JSON；可运行已安装的 instrumentation，或配置启动方式、ART 编译模式、启动/滚动/动画/页面切换场景、预热/迭代次数和 Baseline Profile 输入，再运行带 Gradle Wrapper 的 Macrobenchmark 工程；配置以 APS Gradle properties 和环境变量传入，目标测试需要显式读取；载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看并导出逐指标的报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
 | 源码工作区 | 创建本地或 GitHub/AOSP 源码快照、文本检索和查看，从 CPU 函数及布局类名定位 Java/Kotlin/C/C++ 声明候选 | 本机目录或公开 Git 仓库 |
 | APK 分析 | 查看包信息、权限、组件、文件大小、DEX、原生库、证书和 Manifest | 本地 APK、AAPT2 |

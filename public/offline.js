@@ -184,7 +184,9 @@ export function parseHar(document) {
       const n = entry.timings?.[key]; timings[key] = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
     }
     const connectionId=typeof entry.connection==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(entry.connection)?entry.connection:null;
-    return { id: i + 1, method: String(entry.request?.method || 'GET'), host: url.host, path: url.pathname, connectionId,
+    const httpVersion=String(entry.response?.httpVersion||entry.request?.httpVersion||'').trim().toLowerCase();
+    const protocol=httpVersion==='h2'||/^http\/2(?:\.0)?$/.test(httpVersion)?'h2':httpVersion==='h2_prior_knowledge'||/^http\/1\.[01]$/.test(httpVersion)||httpVersion==='quic'?httpVersion:null;
+    return { id: i + 1, method: String(entry.request?.method || 'GET'), host: url.host, path: url.pathname, connectionId, protocol, connectionReused: typeof entry._apw?.connectionReused==='boolean'?entry._apw.connectionReused:null,
       // Discard queries, URL credentials, headers, cookies and bodies on import.
       url: `${url.protocol}//${url.host}${url.pathname}`, status: Number(entry.response?.status || 0),
       timeMs: typeof entry.time === 'number' && Number.isFinite(entry.time) && entry.time >= 0 ? entry.time : null,
@@ -213,7 +215,7 @@ export function filterNetworkRequests(rows,{query='',method='all',status='all',c
 
 export function networkRequestsCsv(rows){
  if(!Array.isArray(rows)||rows.length>50000)throw new Error('网络导出记录无效或超过 50,000 条');
- const columns=[['开始时间',r=>r.startedAt!==null&&r.startedAt!==undefined&&Number.isFinite(new Date(r.startedAt).getTime())?new Date(r.startedAt).toISOString():''],['方法',r=>r.method],['URL',r=>r.url],['状态',r=>r.status],['调用失败',r=>r.failed===true?'是':r.failed===false?'否':''],['连接 ID',r=>r.connectionId],['总耗时 ms',r=>r.timeMs],['响应内容字节',r=>r.bytes],['DNS ms',r=>r.timings?.dns],['连接 ms',r=>r.timings?.connect],['TLS ms',r=>r.timings?.ssl],['等待 ms',r=>r.timings?.wait],['接收 ms',r=>r.timings?.receive]];
+ const columns=[['开始时间',r=>r.startedAt!==null&&r.startedAt!==undefined&&Number.isFinite(new Date(r.startedAt).getTime())?new Date(r.startedAt).toISOString():''],['方法',r=>r.method],['URL',r=>r.url],['协议',r=>r.protocol],['状态',r=>r.status],['连接复用',r=>r.connectionReused===true?'是':r.connectionReused===false?'否':''],['调用失败',r=>r.failed===true?'是':r.failed===false?'否':''],['连接 ID',r=>r.connectionId],['总耗时 ms',r=>r.timeMs],['响应内容字节',r=>r.bytes],['DNS ms',r=>r.timings?.dns],['连接 ms',r=>r.timings?.connect],['TLS ms',r=>r.timings?.ssl],['等待 ms',r=>r.timings?.wait],['接收 ms',r=>r.timings?.receive]];
  const cell=value=>{let text=value===null||value===undefined?'':String(value);if(typeof value==='string'&&/^[\t\r ]*[=+\-@]/.test(value))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;};
  return [columns.map(([name])=>cell(name)).join(','),...rows.map(row=>columns.map(([,get])=>cell(get(row))).join(','))].join('\r\n')+'\r\n';
 }
@@ -233,8 +235,10 @@ export function networkRequestsJson(rows){
   startedAt:finite(row.startedAt)===null||!Number.isFinite(new Date(row.startedAt).getTime())?null:new Date(row.startedAt).toISOString(),
   method:typeof row.method==='string'?row.method:'GET',
   url:networkExportUrl(row.url),
+  protocol:typeof row.protocol==='string'&&row.protocol.length<=32?row.protocol:null,
   status:Number.isInteger(row.status)&&row.status>=0?row.status:null,
   failed:typeof row.failed==='boolean'?row.failed:null,
+  connectionReused:typeof row.connectionReused==='boolean'?row.connectionReused:null,
   connectionId:typeof row.connectionId==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(row.connectionId)?row.connectionId:null,
   timeMs:finite(row.timeMs),
   responseBytes:finite(row.bytes),
@@ -250,17 +254,18 @@ export function networkRequestsHar(rows){
  const finite=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;
  const entries=rows.map(row=>{
   const url=new URL(networkExportUrl(row.url));
+  const protocol=typeof row.protocol==='string'&&row.protocol.length<=32?row.protocol:null,httpVersion=protocol==='h2'||protocol==='h2_prior_knowledge'?'HTTP/2':protocol==='quic'?'HTTP/3':protocol?.toUpperCase()||'';
   const startedAt=finite(row.startedAt),date=startedAt===null?null:new Date(startedAt),startedDateTime=date&&Number.isFinite(date.getTime())?date.toISOString():null;
   const timing=value=>finite(value)??-1;
   return {
    startedDateTime,
    time:finite(row.timeMs)??-1,
-   request:{method:typeof row.method==='string'?row.method:'GET',url:url.toString(),httpVersion:'',cookies:[],headers:[],queryString:[],headersSize:-1,bodySize:-1},
+   request:{method:typeof row.method==='string'?row.method:'GET',url:url.toString(),httpVersion,cookies:[],headers:[],queryString:[],headersSize:-1,bodySize:-1},
    response:{status:Number.isInteger(row.status)&&row.status>=0?row.status:0,statusText:'',httpVersion:'',cookies:[],headers:[],content:{size:finite(row.bytes)??-1,mimeType:''},redirectURL:'',headersSize:-1,bodySize:finite(row.bytes)??-1},
    cache:{},
    timings:{blocked:-1,dns:timing(row.timings?.dns),connect:timing(row.timings?.connect),send:-1,wait:timing(row.timings?.wait),receive:timing(row.timings?.receive),ssl:timing(row.timings?.ssl)},
    ...(typeof row.connectionId==='string'&&/^[A-Za-z0-9._:-]{1,128}$/.test(row.connectionId)?{connection:row.connectionId}:{}),
-   _apw:{failed:row.failed===true,timeUnavailable:finite(row.timeMs)===null,startTimeUnavailable:startedDateTime===null,redacted:true}
+   _apw:{failed:row.failed===true,connectionReused:typeof row.connectionReused==='boolean'?row.connectionReused:null,timeUnavailable:finite(row.timeMs)===null,startTimeUnavailable:startedDateTime===null,redacted:true}
   };
  });
  return {log:{version:'1.2',creator:{name:'Android Performance Workbench',version:'0.2.0'},entries}};

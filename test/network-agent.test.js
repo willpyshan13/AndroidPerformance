@@ -36,6 +36,13 @@ test('v3 agent path detail is optional, query-free and rejected when malformed',
  for(const path of ['/user/alice?token=secret','/path#fragment','/control\nvalue','x'.repeat(2049),'é'.repeat(1025)])assert.equal(parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:id,path})).invalid,1);
  assert.equal(parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId:'invalid',path:'/safe'})).invalid,1);
 });
+test('v4 agent reports explicit protocol and connection reuse without inferring missing phases',()=>{
+ const eventId='42345678-1234-4234-8234-123456789abc',v4={...record,v:4,eventId,path:null,protocol:'h2',connectionReused:true};
+ const [row]=parseNetworkAgentLog(JSON.stringify(v4)).rows;assert.equal(row.protocol,'h2');assert.equal(row.connectionReused,true);assert.equal(row.path,'（未采集）');
+ const unknown=parseNetworkAgentLog(JSON.stringify({...v4,protocol:null,connectionReused:null,connectNs:null}));assert.equal(unknown.rows[0].connectionReused,null);assert.equal(unknown.invalid,0);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v4,connectionReused:'yes'})).invalid,1);assert.equal(parseNetworkAgentLog(JSON.stringify({...v4,protocol:'secret/1'})).invalid,1);
+ const old=parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId,path:null})).rows[0];assert.equal(old.protocol,null);assert.equal(old.connectionReused,null);
+});
 test('network request empty state distinguishes agent wait, missing events, filters and empty imports',()=>{
  const state=(overrides={})=>networkRequestEmptyState({hasSnapshot:true,source:'adb',agentActive:false,totalRows:0,filteredRows:0,...overrides});
  assert.equal(networkRequestEmptyState({hasSnapshot:false,source:null,agentActive:false,totalRows:0,filteredRows:0}),'import');

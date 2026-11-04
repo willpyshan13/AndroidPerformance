@@ -24,10 +24,11 @@ public class NetworkEventsTest {
       check(first.status==200&&!first.failed&&first.responseBytes==5,"response evidence");
       check(first.path==null,"path is absent by default");
       check(first.host.equals("127.0.0.1")&&first.method.equals("GET")&&first.elapsedNs>0,"request metadata");
+      check("http/1.1".equals(first.protocol)&&Boolean.FALSE.equals(first.connectionReused),"new connection and protocol evidence");
       check(first.connectNs!=null&&first.tlsNs==null,"connection phases");
       check(first.waitNs!=null&&first.waitNs>=0&&first.receiveNs!=null&&first.receiveNs>=0,"waiting and body reading phases");
       try(Response response=client.newCall(new Request.Builder().url(base+"/secret").build()).execute()) {response.body().string();}
-      check(records.size()==2&&records.get(1).connectNs==null,"connection reuse has absent connection duration");
+      check(records.size()==2&&records.get(1).connectNs==null&&Boolean.TRUE.equals(records.get(1).connectionReused),"pooled connection reuse is explicit");
       try(Response response=client.newCall(new Request.Builder().url(base+"/redirect").build()).execute()) {response.body().string();}
       check(records.size()==3&&records.get(2).waitNs==null&&records.get(2).receiveNs==null,"redirect phases remain unknown");
       List<NetworkEvents.Record> detailed=new ArrayList<>();

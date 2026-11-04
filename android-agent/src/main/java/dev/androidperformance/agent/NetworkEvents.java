@@ -7,6 +7,7 @@ import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import okhttp3.Call;
+import okhttp3.Connection;
 import okhttp3.EventListener;
 import okhttp3.Handshake;
 import okhttp3.Protocol;
@@ -19,15 +20,16 @@ public final class NetworkEvents extends EventListener {
   /** Receives only the encoded URL path; query, headers and body are never passed to this callback. */
   public interface PathSanitizer { String sanitize(String encodedPath); }
   public static final class Record {
-    public final String scheme, host, method, path;
+    public final String scheme, host, method, path, protocol;
+    public final Boolean connectionReused;
     public final int port, status;
     public final long startedAtMs, elapsedNs;
     public final Long responseBytes, dnsNs, connectNs, tlsNs, waitNs, receiveNs;
     public final boolean failed;
-    Record(String scheme, String host, String method, String path, int port, int status,
+    Record(String scheme, String host, String method, String path, String protocol, Boolean connectionReused, int port, int status,
         long startedAtMs, long elapsedNs, Long responseBytes, Long dnsNs,
         Long connectNs, Long tlsNs, Long waitNs, Long receiveNs, boolean failed) {
-      this.scheme=scheme; this.host=host; this.port=port; this.method=method; this.path=path; this.status=status;
+      this.scheme=scheme; this.host=host; this.port=port; this.method=method; this.path=path; this.protocol=protocol; this.connectionReused=connectionReused; this.status=status;
       this.startedAtMs=startedAtMs; this.elapsedNs=elapsedNs; this.responseBytes=responseBytes;
       this.dnsNs=dnsNs; this.connectNs=connectNs; this.tlsNs=tlsNs; this.waitNs=waitNs; this.receiveNs=receiveNs; this.failed=failed;
     }
@@ -44,6 +46,9 @@ public final class NetworkEvents extends EventListener {
   private final PathSanitizer pathSanitizer;
   private long start, startedAt, dnsStart, connectStart, tlsStart, bytes;
   private long dns, connect, tls;
+  private int connectionAcquisitions, reusedConnections;
+  private int pendingConnections;
+  private String protocol;
   private boolean hasDns, hasConnect, hasTls, hasBytes, emitted;
   private int status, requestHeadersCount, requestBodyStarts, requestBodyEnds, responseHeadersCount, responseBodyStarts, responseBodyEnds;
   private long requestHeadersEnd, requestBodyEnd, responseHeadersStart, responseBodyStart, responseBodyEnd;
@@ -53,20 +58,21 @@ public final class NetworkEvents extends EventListener {
   @Override public synchronized void dnsEnd(Call call, String domainName, List<InetAddress> addresses) {
     if (dnsStart != 0) { dns+=System.nanoTime()-dnsStart; hasDns=true; dnsStart=0; }
   }
-  @Override public synchronized void connectStart(Call call, InetSocketAddress address, Proxy proxy) { connectStart=System.nanoTime(); }
+  @Override public synchronized void connectStart(Call call, InetSocketAddress address, Proxy proxy) { connectStart=System.nanoTime();pendingConnections++; }
   @Override public synchronized void secureConnectStart(Call call) { tlsStart=System.nanoTime(); }
   @Override public synchronized void secureConnectEnd(Call call, Handshake handshake) {
     if (tlsStart != 0) { tls+=System.nanoTime()-tlsStart; hasTls=true; tlsStart=0; }
   }
   @Override public synchronized void connectEnd(Call call, InetSocketAddress address, Proxy proxy, Protocol protocol) { finishConnect(); }
-  @Override public synchronized void connectFailed(Call call, InetSocketAddress address, Proxy proxy, Protocol protocol, IOException failure) { finishConnect(); tlsStart=0; }
+  @Override public synchronized void connectFailed(Call call, InetSocketAddress address, Proxy proxy, Protocol protocol, IOException failure) { finishConnect(); tlsStart=0;if(pendingConnections>0)pendingConnections--; }
   private void finishConnect() { if(connectStart!=0) { connect+=System.nanoTime()-connectStart; hasConnect=true; connectStart=0; } }
+  @Override public synchronized void connectionAcquired(Call call, Connection connection) { connectionAcquisitions++;if(pendingConnections>0)pendingConnections--;else reusedConnections++; }
   @Override public synchronized void requestHeadersEnd(Call call, Request request) { requestHeadersCount++; requestHeadersEnd=System.nanoTime(); }
   @Override public synchronized void requestBodyStart(Call call) { requestBodyStarts++; }
   @Override public synchronized void requestBodyEnd(Call call, long byteCount) { requestBodyEnds++; requestBodyEnd=System.nanoTime(); }
   @Override public synchronized void responseHeadersStart(Call call) { responseHeadersCount++; responseHeadersStart=System.nanoTime(); }
   @Override public synchronized void responseBodyStart(Call call) { responseBodyStarts++; responseBodyStart=System.nanoTime(); }
-  @Override public synchronized void responseHeadersEnd(Call call, Response response) { status=response.code(); }
+  @Override public synchronized void responseHeadersEnd(Call call, Response response) { status=response.code();protocol=response.protocol().toString(); }
   @Override public synchronized void responseBodyEnd(Call call, long byteCount) { responseBodyEnds++; responseBodyEnd=System.nanoTime(); if(byteCount>=0 && bytes<=Long.MAX_VALUE-byteCount) { bytes+=byteCount; hasBytes=true; } }
   @Override public void callEnd(Call call) { emit(call,false); }
   @Override public void callFailed(Call call, IOException failure) { emit(call,true); }
@@ -81,7 +87,8 @@ public final class NetworkEvents extends EventListener {
           && responseHeadersCount==1 && requestEnd!=0 && responseHeadersStart>=requestEnd ? responseHeadersStart-requestEnd : null;
       Long receiveNs=!failed && requestHeadersCount==1 && responseHeadersCount==1 && responseBodyStarts==1 && responseBodyEnds==1 && responseBodyEnd>=responseBodyStart
           ? responseBodyEnd-responseBodyStart : null;
-      record=new Record(request.url().scheme(),request.url().host(),request.method(),path,request.url().port(),status,
+      Boolean connectionReused=connectionAcquisitions==0?null:reusedConnections>0;
+      record=new Record(request.url().scheme(),request.url().host(),request.method(),path,protocol,connectionReused,request.url().port(),status,
         startedAt,Math.max(0,System.nanoTime()-start),hasBytes?bytes:null,hasDns?dns:null,hasConnect?connect:null,hasTls?tls:null,waitNs,receiveNs,failed);
     }
     // Instrumentation must not break the application's HTTP calls.

@@ -420,6 +420,47 @@ export function compareBenchmarks(baseline, current) {
   });
 }
 
+export function classifyBenchmarkDelta(row,{direction='unset',thresholdPercent=5}={}){
+ if(typeof thresholdPercent!=='number'||!Number.isFinite(thresholdPercent)||thresholdPercent<0||thresholdPercent>100)throw new Error('回归阈值必须为 0–100%');
+ if(!['unset','lower-is-better','higher-is-better'].includes(direction))throw new Error('指标方向无效');
+ if(row?.ambiguous||row?.missing||typeof row?.delta!=='number'||!Number.isFinite(row.delta))return {status:'incomparable',direction,thresholdPercent,adverseChangePercent:null};
+ if(direction==='unset')return {status:'unconfigured',direction,thresholdPercent,adverseChangePercent:null};
+ const adverseChangePercent=direction==='lower-is-better'?row.delta:-row.delta;
+ const status=adverseChangePercent>thresholdPercent?'regression':adverseChangePercent< -thresholdPercent?'improvement':'within-threshold';
+ return {status,direction,thresholdPercent,adverseChangePercent};
+}
+
+// Only explicitly configured metrics participate in the CI-style summary.
+export function benchmarkRegressionSummary(rows,{thresholdPercent=5,directions={}}={}){
+ if(!Array.isArray(rows)||!directions||typeof directions!=='object'||Array.isArray(directions))throw new Error('Benchmark 回归汇总参数无效');
+ const classified=rows.map(row=>({...row,...classifyBenchmarkDelta(row,{direction:directions[row.key]||'unset',thresholdPercent})}));
+ const configured=classified.filter(row=>row.direction!=='unset'),comparable=configured.filter(row=>row.status!=='incomparable'),regressions=comparable.filter(row=>row.status==='regression'),incomparableCount=configured.length-comparable.length;
+ const status=regressions.length?'regression':!configured.length?'not-configured':incomparableCount?'inconclusive':'no-configured-regressions';
+ return {thresholdPercent,status,configuredMetrics:configured.length,classifiedMetrics:comparable.length,regressionCount:regressions.length,improvementCount:comparable.filter(row=>row.status==='improvement').length,withinThresholdCount:comparable.filter(row=>row.status==='within-threshold').length,incomparableCount,unconfiguredCount:classified.filter(row=>row.status==='unconfigured').length,rows:classified};
+}
+
+export function buildBenchmarkRegressionReport(baseline,current,{thresholdPercent=5,directions={}}={}){
+ const rows=compareBenchmarks(baseline,current),summary=benchmarkRegressionSummary(rows,{thresholdPercent,directions});
+ return {schemaVersion:1,kind:'benchmark-regression-report',timestamp:Date.now(),thresholdPercent,directions:{...directions},baseline:{fileName:baseline?.fileName||null,context:baseline?.context||{}},current:{fileName:current?.fileName||null,context:current?.context||{}},contextWarnings:benchmarkContextWarnings(baseline||{},current||{}),summary,rows:summary.rows,note:'Threshold labels use only the explicitly selected metric direction. Unconfigured and incomparable metrics do not affect the CI-style status. This rule is not a significance test or causal conclusion.'};
+}
+
+export function benchmarkRegressionCsv(report){
+ if(report?.kind!=='benchmark-regression-report'||!Array.isArray(report.rows))throw new Error('Benchmark 回归报告无效');
+ const esc=value=>`"${String(value??'').replaceAll('"','""')}"`,header=['class','benchmark','metricType','metric','params','baseline','current','deltaPercent','direction','thresholdPercent','status'];
+ return [header,...report.rows.map(row=>[row.className,row.name,row.metricType,row.metric,JSON.stringify(row.params||{}),row.baseline,row.median,row.delta,row.direction,row.thresholdPercent,row.status])].map(row=>row.map(esc).join(',')).join('\r\n')+'\r\n';
+}
+
+export function benchmarkRegressionMarkdown(report){
+ if(report?.kind!=='benchmark-regression-report'||!Array.isArray(report.rows))throw new Error('Benchmark 回归报告无效');
+ const cell=value=>String(value??'—').replaceAll('|','\\|').replace(/[\r\n]+/g,' '),headers=['Benchmark','Metric','Baseline','Current','Change %','Direction','Threshold %','Status'];
+ return [`# Benchmark regression report`,'',`Status: ${report.summary.status} · threshold: ${report.thresholdPercent}%`,'',`| ${headers.join(' | ')} |`,`| ${headers.map(()=> '---').join(' | ')} |`,...report.rows.map(row=>`| ${[`${row.className||''} ${row.name||''}`.trim(),`${row.metricType||''} ${row.metric||''}`.trim(),row.baseline,row.median,row.delta,row.direction,row.thresholdPercent,row.status].map(cell).join(' | ')} |`),'',`Context warnings: ${report.contextWarnings.join('; ')||'none'}`,'',report.note].join('\n');
+}
+
+export function benchmarkRegressionCi(report){
+ if(report?.kind!=='benchmark-regression-report'||!report.summary)throw new Error('Benchmark 回归报告无效');
+ return {schemaVersion:1,kind:'benchmark-ci-result',status:report.summary.status,thresholdPercent:report.thresholdPercent,configuredMetrics:report.summary.configuredMetrics,classifiedMetrics:report.summary.classifiedMetrics,regressionCount:report.summary.regressionCount,improvementCount:report.summary.improvementCount,withinThresholdCount:report.summary.withinThresholdCount,incomparableCount:report.summary.incomparableCount,unconfiguredCount:report.summary.unconfiguredCount,regressions:report.rows.filter(row=>row.status==='regression').map(row=>({key:row.key,name:row.name,metric:row.metric,deltaPercent:row.delta,direction:row.direction,thresholdPercent:row.thresholdPercent})),contextWarnings:report.contextWarnings};
+}
+
 export function benchmarkContextWarnings(baseline,current) {
   const fields=[['设备型号',x=>x.build?.model],['设备代号',x=>x.build?.device],['系统版本',x=>x.build?.version?.sdk],['构建指纹',x=>x.build?.fingerprint],['编译模式',x=>x.compilationMode],['CPU 锁频',x=>x.cpuLocked],['CPU 核数',x=>x.cpuCoreCount],['CPU 最大频率',x=>x.cpuMaxFreqHz],['持续性能模式',x=>x.sustainedPerformanceModeEnabled],['ART 版本',x=>x.artMainlineVersion]];
   return fields.flatMap(([label,get])=>{const a=get(baseline.context||{}),b=get(current.context||{});return a===undefined||a===null||b===undefined||b===null?[`${label}缺失`]:a!==b?[`${label}不一致`]:[];});

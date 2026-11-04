@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary,benchmarkExperimentUncertainty,buildBenchmarkExperimentComparisonReport} from '../public/offline.js';
+import {parseBenchmark,compareBenchmarks,benchmarkContextWarnings,benchmarkSampleSummary,benchmarkExperimentUncertainty,buildBenchmarkExperimentComparisonReport,classifyBenchmarkDelta,benchmarkRegressionSummary,buildBenchmarkRegressionReport,benchmarkRegressionCsv,benchmarkRegressionMarkdown,benchmarkRegressionCi} from '../public/offline.js';
 import {validateRecord} from '../src/records.js';
 const benchmark=(params,metrics={time:{runs:[1,3]}})=>({name:'test',className:'Example',params,metrics});
 const parse=(benchmarks,context={})=>parseBenchmark({context,benchmarks});
@@ -73,4 +73,19 @@ test('independent Benchmark metric report exports evidence, context warnings and
  const output=buildBenchmarkExperimentComparisonReport(baseline,current,key);
  assert.equal(output.schemaVersion,1);assert.equal(output.kind,'benchmark-experiment-comparison');assert.equal(output.metric.name,'startup');assert.equal(output.baseline[0].sessionId,'baseline-0');assert.equal(output.baseline[0].median,99);assert.equal(output.estimate.available,true);assert.ok(output.contextWarnings.includes('设备型号不一致'));assert.equal(output.limitations.length,2);
  assert.throws(()=>buildBenchmarkExperimentComparisonReport(baseline.slice(0,4),current,key),/参数无效/);
+});
+
+test('Benchmark regression classification requires explicit direction and applies a configurable threshold',()=>{
+ const row={delta:6};assert.equal(classifyBenchmarkDelta(row).status,'unconfigured');assert.equal(classifyBenchmarkDelta(row,{direction:'lower-is-better',thresholdPercent:5}).status,'regression');assert.equal(classifyBenchmarkDelta(row,{direction:'higher-is-better',thresholdPercent:5}).status,'improvement');assert.equal(classifyBenchmarkDelta({delta:-4},{direction:'lower-is-better',thresholdPercent:5}).status,'within-threshold');assert.equal(classifyBenchmarkDelta({delta:null},{direction:'lower-is-better'}).status,'incomparable');
+ assert.throws(()=>classifyBenchmarkDelta(row,{thresholdPercent:101}),/0–100/);
+ const summary=benchmarkRegressionSummary([{key:'time',delta:7},{key:'count',delta:8},{key:'missing',delta:null}],{thresholdPercent:5,directions:{time:'lower-is-better',count:'higher-is-better',missing:'lower-is-better'}});assert.equal(summary.status,'regression');assert.equal(summary.regressionCount,1);assert.equal(summary.improvementCount,1);assert.equal(summary.incomparableCount,1);
+ const empty=benchmarkRegressionSummary([{key:'time',delta:7}]);assert.equal(empty.status,'not-configured');assert.equal(empty.unconfiguredCount,1);
+ const inconclusive=benchmarkRegressionSummary([{key:'time',delta:null}],{directions:{time:'lower-is-better'}});assert.equal(inconclusive.status,'inconclusive');assert.equal(inconclusive.configuredMetrics,1);assert.equal(inconclusive.classifiedMetrics,0);
+});
+
+test('Benchmark regression report exports CSV, Markdown, and CI result without guessing metric direction',()=>{
+ const before=parse([benchmark({}, {time:{runs:[100,100]}})],{build:{model:'device'}}),after=parse([benchmark({}, {time:{runs:[110,110]}})],{build:{model:'device'}}),key=before.results[0].key;
+ const report=buildBenchmarkRegressionReport(before,after,{thresholdPercent:5,directions:{[key]:'lower-is-better'}}),ci=benchmarkRegressionCi(report),csv=benchmarkRegressionCsv(report),markdown=benchmarkRegressionMarkdown(report);
+ assert.equal(report.summary.status,'regression');assert.equal(report.rows[0].status,'regression');assert.equal(ci.kind,'benchmark-ci-result');assert.equal(ci.regressionCount,1);assert.match(csv,/"deltaPercent","direction","thresholdPercent","status"/);assert.match(markdown,/\| regression \|/);
+ const unconfigured=buildBenchmarkRegressionReport(before,after);assert.equal(benchmarkRegressionCi(unconfigured).status,'not-configured');assert.throws(()=>benchmarkRegressionCsv({}),/报告无效/);
 });

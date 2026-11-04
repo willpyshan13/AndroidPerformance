@@ -114,6 +114,22 @@ async function smokeLeakCanaryAgentPackageInRenderer() {
     return {ok:complete,contentType:response.headers.get('content-type'),entryCount:paths.length,complete,paths};
   })()`);
 }
+async function smokeJankStatsAgentPackageInRenderer() {
+  return window.webContents.executeJavaScript(`(async()=>{
+    const response=await fetch('/api/frames/jankstats-agent-package',{headers:{'X-Workbench-Token':document.querySelector('meta[name="api-token"]')?.content||''}});
+    if(!response.ok)return {ok:false,reason:'JankStats Agent package returned HTTP '+response.status};
+    if(response.headers.get('content-type')!=='application/zip')return {ok:false,reason:'JankStats Agent package did not return a ZIP'};
+    const bytes=new Uint8Array(await response.arrayBuffer()),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),decoder=new TextDecoder(),paths=[];let offset=0;
+    while(offset+30<=bytes.length&&view.getUint32(offset,true)===0x04034b50){
+      const method=view.getUint16(offset+8,true),size=view.getUint32(offset+18,true),nameLength=view.getUint16(offset+26,true),extraLength=view.getUint16(offset+28,true),nameStart=offset+30;
+      if(method!==0||nameStart+nameLength+extraLength+size>bytes.length)return {ok:false,reason:'JankStats Agent ZIP entry uses unexpected compression or bounds'};
+      paths.push(decoder.decode(bytes.subarray(nameStart,nameStart+nameLength)));offset=nameStart+nameLength+extraLength+size;
+    }
+    const required=['JANKSTATS_AGENT_README.md','src/debug/AndroidManifest.xml','src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'];
+    const complete=required.every(path=>paths.includes(path))&&!paths.includes('LEAKCANARY_AGENT_README.md');
+    return {ok:complete,contentType:response.headers.get('content-type'),entryCount:paths.length,complete,paths};
+  })()`);
+}
 async function smokeNetworkAgentDeviceInRenderer(serial, packageName) {
   const expectedSerial=JSON.stringify(serial),expectedPackage=JSON.stringify(packageName);
   return window.webContents.executeJavaScript(`(async(serial,packageName)=>{
@@ -236,12 +252,13 @@ function createWindow() {
       smokeStep='source workspace';rendererState.sourceWorkspaceSmoke=await smokeSourceWorkspaceInRenderer();
       smokeStep='network agent package';rendererState.networkAgentPackage=await smokeNetworkAgentPackageInRenderer();
       smokeStep='LeakCanary Debug Agent package';rendererState.leakCanaryAgentPackage=await smokeLeakCanaryAgentPackageInRenderer();
+      smokeStep='JankStats Debug Agent package';rendererState.jankStatsAgentPackage=await smokeJankStatsAgentPackageInRenderer();
       if(process.env.APW_SMOKE_NETWORK_SERIAL&&process.env.APW_SMOKE_NETWORK_PACKAGE)rendererState.networkAgentDeviceSmoke=await smokeNetworkAgentDeviceInRenderer(process.env.APW_SMOKE_NETWORK_SERIAL,process.env.APW_SMOKE_NETWORK_PACKAGE);
       if(process.env.APW_SMOKE_APK_PATH)rendererState.apkAnalysisSmoke=await smokeApkAnalyzerInRenderer(process.env.APW_SMOKE_APK_PATH);
       smokeStep='trace-only layout evidence';rendererState.layoutTraceOnlySmoke=await smokeTraceOnlyLayoutEvidence();
       const checksValid=results=>Array.isArray(results)&&results.length===rendererState.navItems&&results.every((result,index)=>result.active&&result.heading&&result.hasContent&&(index===0||result.changed));
       const demoCpuRoute=routeChecks.demo.find(result=>result.route==='#cpu-profile');
-      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&rendererState.leakCanaryAgentPackage?.ok&&rendererState.layoutTraceOnlySmoke?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok)&&(!process.env.APW_SMOKE_NETWORK_SERIAL||rendererState.networkAgentDeviceSmoke?.ok);
+      const routesReady=routeChecks.demoActive&&checksValid(routeChecks.empty)&&checksValid(routeChecks.demo)&&demoCpuRoute?.stackTimeline&&rendererState.cpuPngExport?.ok&&rendererState.cpuLargeTimeline?.ok&&rendererState.heapCsvExport?.ok&&rendererState.heapCsvExport?.dominatorGraph?.ok&&rendererState.layoutFindings?.ok&&rendererState.homeArtifactChecks.section&&rendererState.homeArtifactChecks.emptyState&&rendererState.networkAgentPackage?.ok&&rendererState.leakCanaryAgentPackage?.ok&&rendererState.jankStatsAgentPackage?.ok&&rendererState.layoutTraceOnlySmoke?.ok&&(!process.env.APW_SMOKE_SOURCE_DIR||rendererState.sourceWorkspaceSmoke?.ok)&&(!process.env.APW_SMOKE_APK_PATH||rendererState.apkAnalysisSmoke?.ok)&&(!process.env.APW_SMOKE_NETWORK_SERIAL||rendererState.networkAgentDeviceSmoke?.ok);
       const rendererReady = rendererState.navItems > 0 && rendererState.mainPresent && rendererState.quickActionRoutes.length >= 13 && routesReady;
       const menuLabels=Menu.getApplicationMenu()?.items.map(item=>item.label)||[];
       await writeFile(process.env.APW_SMOKE_READY_FILE, JSON.stringify({ origin, rendererReady, rendererState, menuLabels }), { mode: 0o600 });

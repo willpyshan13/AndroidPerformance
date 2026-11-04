@@ -27,3 +27,19 @@ export function binderTransactionsJson(result,{traceFileName=null}={}){
  const transactions=boundedTransactions(result.transactions);
  return `${JSON.stringify({schemaVersion:1,kind:'perfetto-binder-transactions',traceFileName:text(traceFileName),packageName:text(result.packageName),direction:result.direction??'both',limit:MAX_BINDER_TRANSACTIONS,truncated:result.truncated===true,generatedAt:new Date().toISOString(),count:transactions.length,transactions},null,2)}\n`;
 }
+
+export function binderBreakdownCsv(result){
+ if(!result||!Array.isArray(result.summary)||result.summary.length>100||!Array.isArray(result.intervals)||result.intervals.length>1000)throw new Error('Binder 阶段分解结果无效或超过导出限制');
+ const columns=['record_type','side','reason','timestamp_ns','duration_ns','count'];
+ const rows=[...result.summary.map(row=>['summary',text(row.side),text(row.reason),null,optionalId(row.durationNs),Number.isSafeInteger(row.count)&&row.count>=0?String(row.count):'']),...result.intervals.map(row=>['interval',text(row.side),text(row.reason),optionalId(row.tsNs),optionalId(row.durationNs),null])];
+ if(rows.some(row=>row[4]===null||(row[0]==='interval'&&row[3]===null)))throw new Error('Binder 阶段时间无效');
+ return formatTraceQueryCsv(columns,rows,{maxRows:1100});
+}
+
+export function binderBreakdownJson(result,{traceFileName=null,transactionId=null}={}){
+ if(!result||!Array.isArray(result.summary)||result.summary.length>100||!Array.isArray(result.intervals)||result.intervals.length>1000)throw new Error('Binder 阶段分解结果无效或超过导出限制');
+ const summary=result.summary.map(row=>({side:text(row.side),reason:text(row.reason),durationNs:optionalId(row.durationNs),count:Number.isSafeInteger(row.count)&&row.count>=0?row.count:null}));
+ const intervals=result.intervals.map(row=>({side:text(row.side),reason:text(row.reason),tsNs:optionalId(row.tsNs),durationNs:optionalId(row.durationNs)}));
+ if(summary.some(row=>row.durationNs===null)||intervals.some(row=>row.tsNs===null||row.durationNs===null))throw new Error('Binder 阶段时间无效');
+ return `${JSON.stringify({schemaVersion:1,kind:'perfetto-binder-transaction-breakdown',traceFileName:text(traceFileName),transactionId:optionalId(transactionId),summaryTruncated:result.summaryTruncated===true,intervalsTruncated:result.intervalsTruncated===true,generatedAt:new Date().toISOString(),summary,intervals},null,2)}\n`;
+}

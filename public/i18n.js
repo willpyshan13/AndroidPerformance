@@ -356,6 +356,7 @@ const tableEn={
 };
 
 const uiEn={
+ '界面显示前 100 个时间区间，导出保留最多 1,000 个。':'The UI shows the first 100 intervals; exports retain up to 1,000.',
  '导出 CSV':'Export CSV','导出 JSON':'Export JSON',
  '当前没有可导出的 Shark 报告':'There is no Shark report available to export',
  '导出原始报告 TXT':'Export raw report as TXT','导出报告 JSON':'Export report as JSON','界面只显示报告前 2 MiB；导出文件保留完整已捕获输出。':'The UI shows only the first 2 MiB; exported files retain all captured output.','Shark 输出可能超过采集限制或被中断。':'Shark output may have exceeded the capture limit or been interrupted.','报告已截断':'Report truncated',
@@ -433,6 +434,7 @@ const uiEn={
 };
 
 const toastEn={
+ 'Binder 阶段分解 CSV 已导出':'Binder stage breakdown CSV exported','Binder 阶段分解 JSON 已导出':'Binder stage breakdown JSON exported',
  'Binder 事务 CSV 已导出':'Binder transactions CSV exported','Binder 事务 JSON 已导出':'Binder transactions JSON exported',
  'Shark 原始报告已导出':'Shark raw report exported','Shark 报告 JSON 已导出':'Shark report JSON exported',
  '内存分析 JSON 已导出':'Memory analysis JSON exported',

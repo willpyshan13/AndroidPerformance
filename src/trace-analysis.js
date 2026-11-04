@@ -551,6 +551,51 @@ export async function queryStartupArtAttribution(path,{startup,locator=locateTra
  const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`ART 启动归因查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseStartupArtAttribution(result.stdout);
 }
 
+export function parseArtRuntimeDiagnostics(csv){
+ const rows=parseCsv(csv),header=rows.shift(),expected='kind,category_hex,name_hex,process_hex,thread_hex,ts_ns,dur_ns,reclaimed_mb,gc_type_hex,min_heap_mb,max_heap_mb,running_ns,runnable_ns,unint_io_ns,unint_non_io_ns,int_ns';
+ if(!header||header.join(',')!==expected)throw new Error('ART 运行时诊断返回列无效');
+ const decode=value=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(value))throw new Error('ART 运行时文本编码无效');return Buffer.from(value,'hex').toString('utf8');};
+ const numeric=(value,{signed=false,decimal=false}={})=>{if(value===''||value==='[NULL]')return null;if(decimal?!/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value):!(signed?/^-?\d{1,19}$/:/^\d{1,19}$/.test(value)))throw new Error('ART 运行时数值无效');const n=Number(value);if(!Number.isFinite(n))throw new Error('ART 运行时数值超出范围');return value;};
+ const groups=new Map(),gcEvents=[];let gcCount=0,reclaimedTotal=0,reclaimedCount=0,truncated=false;
+ for(const row of rows){
+  if(row.length!==16)throw new Error('ART 运行时记录不完整');
+  const kind=row[0],category=decode(row[1]);
+  if(kind==='activity'){
+   if(!['jit','class_loading','class_verification','class_initialization','dex2oat'].includes(category))throw new Error('ART 活动分类无效');
+   const name=decode(row[2]),process=decode(row[3]),thread=decode(row[4]),tsNs=numeric(row[5],{signed:true}),durationNs=numeric(row[6]);
+   if(tsNs===null||durationNs===null)throw new Error('ART 活动时间缺失');
+   const key=category,group=groups.get(key)||{category,count:0,totalDurationNs:0n,names:[],processes:[],events:[]};
+   group.count++;group.totalDurationNs+=BigInt(durationNs);if(name&&!group.names.includes(name)&&group.names.length<8)group.names.push(name);if(process&&!group.processes.includes(process)&&group.processes.length<8)group.processes.push(process);
+   if(group.events.length<300)group.events.push({name,process,thread,tsNs,durationNs});else truncated=true;groups.set(key,group);
+  }else if(kind==='gc'){
+   if(category!=='gc')throw new Error('GC 活动分类无效');
+   const reclaimedMb=numeric(row[7],{decimal:true}),gcType=decode(row[8]),minHeapMb=numeric(row[9],{decimal:true}),maxHeapMb=numeric(row[10],{decimal:true});
+   const event={process:decode(row[3]),thread:decode(row[4]),tsNs:numeric(row[5],{signed:true}),durationNs:numeric(row[6]),reclaimedMb,gcType,minHeapMb,maxHeapMb,runningNs:numeric(row[11]),runnableNs:numeric(row[12]),uninterruptibleIoNs:numeric(row[13]),uninterruptibleNonIoNs:numeric(row[14]),interruptibleNs:numeric(row[15])};
+   if(event.tsNs===null||event.durationNs===null)throw new Error('GC 事件时间缺失');gcCount++;if(event.reclaimedMb!==null){reclaimedTotal+=Number(event.reclaimedMb);reclaimedCount++;}if(gcEvents.length<1000)gcEvents.push(event);else truncated=true;
+  }else throw new Error('ART 运行时诊断类型无效');
+ }
+ return {available:gcCount>0||groups.size>0,gcEvents,gcCount,gcReclaimedMb:reclaimedCount?reclaimedTotal:null,activities:[...groups.values()].map(group=>({...group,totalDurationNs:group.totalDurationNs.toString()})).sort((a,b)=>a.category.localeCompare(b.category)),truncated,limitations:['GC 指标依赖追踪中可解析的 Android GC 事件。','运行时切片按名称分类；切片时长可能包含等待或与其他事件重叠，不等于 CPU 时间，也不证明根因。','没有记录表示不可用，不表示耗时或回收量为零。']};
+}
+export async function queryArtRuntimeDiagnostics(path,{locator=locateTraceProcessor,runner=exec}={}){
+ const query=`INCLUDE PERFETTO MODULE android.garbage_collection;
+ WITH classified AS (
+  SELECT s.ts,s.dur,s.name,t.name AS thread_name,p.name AS process_name,
+   CASE WHEN lower(p.name) GLOB '*dex2oat*' THEN 'dex2oat'
+    WHEN s.name GLOB 'JIT compiling*' THEN 'jit'
+    WHEN s.name GLOB 'VerifyClass*' OR s.name GLOB '*Class verification*' THEN 'class_verification'
+    WHEN s.name GLOB '*InitializeClass*' OR s.name GLOB '*Class initialization*' THEN 'class_initialization'
+    WHEN s.name GLOB 'ClassLinker*' OR s.name GLOB 'OpenDexFilesFromOat*' OR s.name GLOB '*LoadClass*' THEN 'class_loading' END AS category
+  FROM slice s JOIN thread_track tt ON s.track_id=tt.id JOIN thread t ON tt.utid=t.utid LEFT JOIN process p ON t.upid=p.upid WHERE s.dur>0
+ ), activity_rows AS (
+  SELECT 'activity' AS kind,hex(CAST(category AS BLOB)) AS category_hex,hex(CAST(name AS BLOB)) AS name_hex,hex(CAST(COALESCE(process_name,'') AS BLOB)) AS process_hex,hex(CAST(COALESCE(thread_name,'') AS BLOB)) AS thread_hex,CAST(ts AS TEXT) AS ts_ns,CAST(dur AS TEXT) AS dur_ns,'' AS reclaimed_mb,'' AS gc_type_hex,'' AS min_heap_mb,'' AS max_heap_mb,'' AS running_ns,'' AS runnable_ns,'' AS unint_io_ns,'' AS unint_non_io_ns,'' AS int_ns
+  FROM classified WHERE category IS NOT NULL
+ ), gc_rows AS (
+  SELECT 'gc' AS kind,hex(CAST('gc' AS BLOB)) AS category_hex,hex(CAST('Garbage collection' AS BLOB)) AS name_hex,hex(CAST(COALESCE(process_name,'') AS BLOB)) AS process_hex,hex(CAST(COALESCE(thread_name,'') AS BLOB)) AS thread_hex,CAST(gc_ts AS TEXT) AS ts_ns,CAST(gc_dur AS TEXT) AS dur_ns,COALESCE(CAST(reclaimed_mb AS TEXT),'[NULL]') AS reclaimed_mb,hex(CAST(COALESCE(gc_type,'') AS BLOB)) AS gc_type_hex,COALESCE(CAST(min_heap_mb AS TEXT),'[NULL]') AS min_heap_mb,COALESCE(CAST(max_heap_mb AS TEXT),'[NULL]') AS max_heap_mb,COALESCE(CAST(gc_running_dur AS TEXT),'[NULL]') AS running_ns,COALESCE(CAST(gc_runnable_dur AS TEXT),'[NULL]') AS runnable_ns,COALESCE(CAST(gc_unint_io_dur AS TEXT),'[NULL]') AS unint_io_ns,COALESCE(CAST(gc_unint_non_io_dur AS TEXT),'[NULL]') AS unint_non_io_ns,COALESCE(CAST(gc_int_dur AS TEXT),'[NULL]') AS int_ns
+  FROM android_garbage_collection_events
+ ) SELECT * FROM (SELECT * FROM gc_rows UNION ALL SELECT * FROM activity_rows) ORDER BY CAST(ts_ns AS INT) LIMIT 5001`;
+ const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:8*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`ART 运行时诊断查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}const diagnostics=parseArtRuntimeDiagnostics(result.stdout);diagnostics.allocationProfile=await queryHeapProfile(path,{mode:'art',locator,runner});diagnostics.available||=diagnostics.allocationProfile.available;return diagnostics;
+}
+
 export function parseThreadStates(csv){
  const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='kind,utid,tid,pid,thread_hex,process_hex,state_hex,ts,dur,count')throw new Error('线程状态返回列无效');
  const summary=[],intervals=[];let summaryTruncated=false,intervalsTruncated=false;

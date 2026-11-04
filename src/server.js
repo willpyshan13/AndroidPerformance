@@ -13,7 +13,7 @@ import { analyzeApkUpload } from './apk-upload.js';
 import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -350,6 +350,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           const startup=body.startup,start=startup?.tsNs,ttfd=startup?.ttfdNs;
           if(typeof start!=='string'||!/^-?\d{1,19}$/.test(start)||typeof ttfd!=='string'||!/^\d{1,19}$/.test(ttfd)||BigInt(start)<BigInt(traceSession.bounds.startNs)||BigInt(start)+BigInt(ttfd)>BigInt(traceSession.bounds.endNs))throw new Error('启动里程碑超出追踪范围');
           traceBusy=true;try{return json(await queryStartupArtAttribution(traceSession.path,{startup}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/art-runtime-diagnostics'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json({...await queryArtRuntimeDiagnostics(traceSession.path),sessionId:traceSession.sessionId});}finally{traceBusy=false;}
         }
         if(path==='/api/trace/startups'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

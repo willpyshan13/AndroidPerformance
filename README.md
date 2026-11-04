@@ -38,7 +38,7 @@ CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查�
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
 | CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
-| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd |
+| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配；分析已导入追踪中的 ART GC 回收量、运行 / 等待时间，以及 JIT、类加载、验证和初始化切片 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd 与 Trace Processor |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间；可选接入 Jetpack JankStats Debug Agent，按 Activity、Window 和应用 UI 状态汇总应用侧帧耗时，并按同 PID、±5 ms 窗口关联 FrameTimeline 候选 | `dumpsys gfxinfo framestats`、Perfetto、AndroidX JankStats |
 | 启动测试 | 重复冷、温、热启动，查看耗时、观察到的启动模式及实验前后编译状态 | `am start -W`、`dumpsys package` |
@@ -152,6 +152,8 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 在布局页下载 Agent 源码包，按包内指南接入目标应用的 debug 构建，再使用相同的临时令牌采集。Agent 只在应用进程内读取 View 与可兼容的 Compose Semantics 树，不增加 Android 权限；正式 release 不应包含 Agent 或令牌。可选的 Compose probe 需在目标函数中显式调用并受 debug 构建保护，统计 SideEffect 提交与实例；可选编译器插件自动统计本次编译模块的函数体执行与 Composer 跳过，但需要匹配 Kotlin 2.2.21 编译器。Agent 还可读取组合组树及按 RecomposeScope 统计的 State 关联数（不读取 State 值）；调用树中的匹配 Group key 可定位对应 Runtime 组，多实例会列出候选供选择。布局页还集成完整 Compose Inspector，可读取实例级 Compose 树、运行时参数与 Modifier、源码位置、merged / unmerged Semantics 和 View 属性，并支持大参数续读、JSON 导出、截图边界高亮，以及定位到已有源码快照中的文件候选。它要求 Android 10（API 29）或更高版本及可注入的目标应用；连接的 API 25 设备会在注入前被门控拒绝。资源解析栈为可选项，首次使用可能修改 `debug_view_attributes_application_package` 并重启 Activity。参数可能含应用展示的数据，只在本机处理。截图在检查器响应后采集，动画期间边界可能错位；快照不提供 State Reads 因果或帧关联，安全窗口和部分硬件合成内容也无法保证完整显示。
 
 启动页面可对已导入的 Perfetto 追踪查询启动区间和 TTID/TTFD，也可按里程碑窗口分别查看已记录的 GC、JIT、类加载、类验证、类初始化及 dex2oat 切片重叠；需要追踪包含相关 Android 事件，TTFD 还依赖应用的 fully drawn 报告。ART 切片时长不是线程 CPU 时间，事件间可能重叠，缺失不代表耗时为零。启动数据不会自动与启动实验逐次配对，已用 Perfetto 官方 Android 12 冷启动样本验证；本机设备采集仍待验证。
+
+内存页的 ART 运行时诊断可扫描当前已导入或采集的完整 Perfetto 追踪，读取 `android.garbage_collection` 标准模块中的 GC 类型、回收量、堆范围和运行 / 等待时长，并按切片名称汇总 JIT、类加载、验证、初始化及 dex2oat 活动。追踪包含 ART heapprofd 样本时，还会展示累计分配字节和调用点。GC 与分配数据都要求追踪实际记录对应事件；ART 切片按名称识别，可能包含等待且会彼此重叠，不表示 CPU 时间或因果关系。该检查不采集设备，也不替代 HPROF 存活对象分析。
 
 系统追踪录制可选择包含当前应用的 ATrace 标记；目标应用需要实际提供标记，勾选本身不保证 TTID/TTFD 可计算。导入或录制的追踪可以保存到本机档案、重新载入或导出原始文件；档案载入前会校验 SHA-256。
 

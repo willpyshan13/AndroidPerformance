@@ -261,6 +261,19 @@ test('startup ART attribution clips observed GC, JIT, class loading and dex2oat 
  await assert.rejects(queryStartupArtAttribution(path,{startup:{...startup,upid:'1 OR 1=1'}}),/参数无效/);
  await assert.rejects(queryStartupArtAttribution(path,{startup:{...startup,ttfdNs:'100'}}),/参数无效/);
 });
+test('ART runtime diagnostics reads GC metrics and categorized ART slices from a trace',async t=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const path=new URL('../fixtures/trace-startup-art.json',import.meta.url).pathname,{queryArtRuntimeDiagnostics,parseArtRuntimeDiagnostics}=await import('../src/trace-analysis.js');
+ const result=await queryArtRuntimeDiagnostics(path);
+ assert.equal(result.available,true);assert.equal(result.gcCount,0);assert.equal(result.gcReclaimedMb,null);
+ assert.deepEqual(result.activities.map(x=>[x.category,x.count,x.totalDurationNs]),[
+  ['class_initialization',1,'1000000'],['class_loading',1,'1000000'],['class_verification',1,'2000000'],['dex2oat',1,'3000000'],['jit',1,'2000000'],
+ ]);
+ const hex=value=>Buffer.from(value).toString('hex'),header='kind,category_hex,name_hex,process_hex,thread_hex,ts_ns,dur_ns,reclaimed_mb,gc_type_hex,min_heap_mb,max_heap_mb,running_ns,runnable_ns,unint_io_ns,unint_non_io_ns,int_ns';
+ const parsed=parseArtRuntimeDiagnostics(`${header}\n"gc","${hex('gc')}","${hex('Garbage collection')}","${hex('com.example')}","${hex('main')}","100","200","1.5","${hex('Concurrent')}","4","8","100","20","0","0","10"\n`);
+ assert.equal(parsed.gcCount,1);assert.equal(parsed.gcReclaimedMb,1.5);assert.equal(parsed.gcEvents[0].gcType,'Concurrent');assert.equal(parsed.gcEvents[0].runnableNs,'20');
+ assert.throws(()=>parseArtRuntimeDiagnostics(`${header}\n"activity","${hex('unknown')}","","","","0","1","","","","","","","","",""\n`),/分类无效/);
+});
 test('real Android startup breakdown exposes observed Perfetto classifications',async t=>{
  const path=process.env.APW_STARTUP_TRACE;if(!path){t.skip('设置 APW_STARTUP_TRACE 指向 Perfetto 官方 Android 样本');return;}
  const {queryStartupBreakdown}=await import('../src/trace-analysis.js');const result=await queryStartupBreakdown(path,{startupId:'0'});

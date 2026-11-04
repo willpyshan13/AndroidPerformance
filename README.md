@@ -12,15 +12,15 @@
 
 ### 安装桌面版
 
-GitHub Actions 目前只构建 macOS Apple Silicon 版本，上传 DMG 安装包（artifact 保留 14 天）：
+项目不发布安装包，也不上传构建产物。需要本机生成 macOS Apple Silicon DMG 时运行：
 
-| 平台 | 安装包 | CI 产物 |
-| --- | --- | --- |
-| macOS Apple Silicon (arm64) | DMG | `android-performance-macos-arm64` |
+| 平台 | 安装包 |
+| --- | --- |
+| macOS Apple Silicon (arm64) | DMG |
 
 macOS ARM64 桌面版可在本机运行；安装包包含 Electron、ADB/AAPT2 与分析所需工具，无需另外安装 Node.js 或启动浏览器。也可以通过菜单 **文件 → 选择 ADB 程序…** 使用自己的 ADB；显式设置的 `ADB_PATH` 优先于自动检测。
 
-CI 在单个 macOS arm64 runner 上执行完整自动测试、APK 工具检查、DMG 构建和打包启动 smoke。
+GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检查、DMG 构建和打包启动 smoke；构建文件只留在 runner 中，不会创建 Release 或上传为可下载产物。
 
 ### 连接 Android 设备
 
@@ -88,7 +88,7 @@ npm test              # 自动测试
 npm run package:dmg      # macOS arm64 DMG
 ```
 
-GitHub Actions 只生成并上传 macOS arm64 DMG。`package:*` 中保留的其他平台脚本不属于当前 CI 发布流程。
+`npm run package:dmg` 只在本机生成 macOS arm64 DMG，不会发布。GitHub Actions 只做验证，结束后丢弃构建文件。
 
 ## 数据与隐私
 

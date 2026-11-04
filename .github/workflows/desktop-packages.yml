@@ -1,4 +1,4 @@
-name: Desktop packages
+name: macOS ARM checks
 
 on:
   pull_request:
@@ -89,20 +89,3 @@ jobs:
       - run: node scripts/run-npm-task.js package:dmg
       - name: Launch packaged macOS app and verify desktop startup
         run: node scripts/mac-desktop-smoke.js
-      - name: Upload failed smoke diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: android-performance-smoke-diagnostics-macos-arm64-${{ steps.apk-smoke-sdk.outputs.failure_code || 'unknown' }}
-          path: |
-            dist/apw-apk-smoke.log
-            dist/resource-preparation.log
-          if-no-files-found: ignore
-          retention-days: 14
-      - uses: actions/upload-artifact@v7
-        with:
-          name: android-performance-macos-arm64
-          path: |
-            dist/v*/*.dmg
-          if-no-files-found: error
-          retention-days: 14

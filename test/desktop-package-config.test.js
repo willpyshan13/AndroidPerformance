@@ -8,6 +8,8 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  for(const text of ['导出原始报告 TXT','导出报告 JSON','界面只显示报告前 2 MiB；导出文件保留完整已捕获输出。','Shark 原始报告已导出','Shark 报告 JSON 已导出'])assert.ok(locales.includes(text),`missing Shark localization: ${text}`);
  assert.match(app,/trace-binder-export-csv/);assert.match(app,/trace-binder-export-json/);
  assert.match(app,/trace-binder-breakdown-export-csv/);assert.match(app,/trace-binder-breakdown-export-json/);
+ assert.match(app,/export-trace-report/);assert.match(app,/formatTraceAnalysisReport/);
+ for(const text of ['导出分析报告 JSON','追踪分析报告已导出'])assert.ok(locales.includes(text),`missing trace report localization: ${text}`);
  for(const text of ['导出 CSV','导出 JSON','Binder 事务 CSV 已导出','Binder 事务 JSON 已导出','Binder 阶段分解 CSV 已导出','Binder 阶段分解 JSON 已导出','界面显示前 100 个时间区间，导出保留最多 1,000 个。'])assert.ok(locales.includes(text),`missing Binder localization: ${text}`);
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
  assert.equal(pkg.scripts['prepare:native-symbolizer'],'node scripts/prepare-native-symbolizer.js');assert.equal(pkg.scripts['smoke:native-symbolizer'],'node scripts/native-symbolizer-smoke.js');assert.ok(pkg.build.mac.extraResources.some(resource=>resource.from==='tools/native-symbolizer'&&resource.to==='native-symbolizer'));

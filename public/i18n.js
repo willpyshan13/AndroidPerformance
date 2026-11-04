@@ -346,6 +346,8 @@ const en={
  '导出 JankStats JSON':'Export JankStats JSON',
  'JankStats JSON 已导出':'JankStats JSON exported',
  '请先读取应用 JankStats':'Read app JankStats first',
+ '导出分析报告 JSON':'Export analysis report JSON',
+ '追踪分析报告已导出':'Trace analysis report exported',
  '读取目标应用 UID（旧设备回退到主进程）中的 LeakCanary 或 Android Performance Debug Agent 事件。将 Debug Agent 接入 debug 构建后，可观察已销毁 Activity 的弱引用候选；已有 AndroidX Fragment 依赖的应用还可选接入 Fragment 回调。该功能不做对象图分析，候选不等于确认泄漏。':'Reads LeakCanary or Android Performance Debug Agent events from the target app UID (falling back to the main process on older devices). Add the Debug Agent to a debug build to observe weak-reference candidates for destroyed Activities; apps with an existing AndroidX Fragment dependency can optionally add the Fragment callback. This feature does not inspect the object graph, and a candidate does not confirm a leak.'
 };
 
@@ -628,7 +630,7 @@ const stateEn={
  '测试运行完成；报告未确认更新，请核对后手动读取':'Test run completed; report update was not confirmed. Verify it, then read it manually.',
  '运行结束，请检查 instrumentation 输出':'Run completed; check the instrumentation output',
  '内存分配剖析已采集并分析':'Memory allocation profile captured and analyzed',
- '请先导入或采集 Perfetto 追踪':'Import or capture a Perfetto trace first','追踪已更换，旧分析结果已丢弃':'The trace changed; the stale analysis result was discarded',
+ '请先导入或采集 Perfetto 追踪':'Import or capture a Perfetto trace first','追踪已更换，旧分析结果已丢弃':'The trace changed; the stale analysis result was discarded','追踪已更换，旧诊断结果已丢弃':'The trace changed; the stale diagnostic result was discarded',
  '追踪已下载，但没有内存分配样本':'Trace downloaded, but it contains no memory allocation samples',
  '基线':'Baseline',
  '当前运行':'Current run',

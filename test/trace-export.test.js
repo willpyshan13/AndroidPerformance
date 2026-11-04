@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatTraceQueryCsv} from '../public/trace-export.js';
+import {formatTraceQueryCsv,createTraceAnalysisReport,formatTraceAnalysisReport} from '../public/trace-export.js';
 
 test('trace SQL CSV exports headers, exact string values and embedded line breaks',()=>{
   const csv=formatTraceQueryCsv(['name','count'],[['render, frame',2],['line one\nline two',0]]);
@@ -20,4 +20,28 @@ test('trace SQL CSV rejects malformed or over-limit results',()=>{
   assert.throws(()=>formatTraceQueryCsv(Array(51).fill('column'),[]),/bounds/);
   assert.throws(()=>formatTraceQueryCsv(['value'],Array(501).fill(['x'])),/bounds/);
   assert.throws(()=>formatTraceQueryCsv(['a','b'],[['only one']]),/do not match/);
+});
+
+test('trace analysis report includes matching SQL and trace evidence while excluding stale sessions',()=>{
+  const trace={sessionId:'trace-a',fileName:'capture.perfetto-trace',fileBytes:123,bounds:{startNs:'9007199254740993',endNs:'9007199254741993'},slices:[{name:'Frame',count:2,totalMs:3}],threads:[],binder:[],errors:[]};
+  const report=createTraceAnalysisReport({trace,sql:'SELECT ts FROM slice',sqlResult:{sessionId:'trace-a',columns:['ts'],rows:[['9007199254740993']],truncated:false},frameTimeline:{sessionId:'trace-a',frames:[{tsNs:'9007199254740993'}]},binderResult:{sessionId:'trace-old',transactions:[{id:1}]}});
+  assert.equal(report.schema,'android-performance.trace-analysis-report');
+  assert.equal(report.trace.bounds.startNs,'9007199254740993');
+  assert.deepEqual(report.customSql,{query:'SELECT ts FROM slice',columns:['ts'],rows:[['9007199254740993']],truncated:false});
+  assert.equal(report.evidence.frameTimeline.frames[0].tsNs,'9007199254740993');
+  assert.equal(report.evidence.binderResult,undefined);
+  const parsed=JSON.parse(formatTraceAnalysisReport({trace,sqlResult:{sessionId:'trace-old',columns:['x'],rows:[]}}));
+  assert.equal(parsed.customSql,null);
+});
+
+test('trace analysis report rejects missing sessions and malformed SQL bounds',()=>{
+  assert.throws(()=>createTraceAnalysisReport({trace:{fileName:'missing-id'}}),/active trace session/);
+  const trace={sessionId:'trace-a'};
+  assert.throws(()=>createTraceAnalysisReport({trace,sqlResult:{sessionId:'trace-a',columns:['a','b'],rows:[['one']],truncated:false}}),/malformed/);
+  assert.throws(()=>formatTraceAnalysisReport({trace,sqlResult:{sessionId:'trace-a',columns:['a'],rows:Array(501).fill(['x']),truncated:true}}),/malformed/);
+});
+
+test('trace analysis report enforces its exported JSON size limit',()=>{
+  const trace={sessionId:'trace-a'};
+  assert.throws(()=>formatTraceAnalysisReport({trace,frameTimeline:{sessionId:'trace-a',payload:'x'.repeat(17*1024*1024)}}),/16 MiB/);
 });

@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {once} from 'node:events';
 import {createApp} from '../src/server.js';
 import {resolveSharkResources,analyzeWithShark} from '../src/shark.js';
+import {sharkReportJson} from '../public/shark-export.js';
 
 const jars=['shark-cli-2.14.jar','shark-android-2.14.jar','clikt-2.3.0.jar','jline-2.14.6.jar','shark-2.14.jar','shark-graph-2.14.jar','okio-2.2.2.jar','shark-hprof-2.14.jar','shark-log-2.14.jar','kotlin-stdlib-1.3.72.jar'];
 const n4=n=>{const b=Buffer.alloc(4);b.writeUInt32BE(n);return b;};
@@ -35,6 +36,15 @@ test('Shark invocation passes HPROF and mapping paths as separate arguments',asy
  const result=await analyzeWithShark(hprof,f.resources,{mappingPath:mapping});
  assert.equal(result.success,true);assert.match(result.report,/HEAP ANALYSIS RESULT/);assert.match(result.report,new RegExp(hprof.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));assert.match(result.report,new RegExp(mapping.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
  await assert.rejects(()=>analyzeWithShark(hprof,f.resources,{mappingPath:'x'.repeat(4097)}),/映射路径无效/);
+});
+
+test('Shark retains the full report for export while limiting the on-screen excerpt',async t=>{
+ if(process.platform==='win32'){t.skip('POSIX fake Java executable is used by this test');return;}
+ const f=await fixture(t),hprof=join(f.root,'large report.hprof');await writeFile(hprof,heap);
+ await writeFile(f.java,"#!/usr/bin/env node\nprocess.stdout.write('HEAP ANALYSIS RESULT\\n');process.stdout.write('x'.repeat(2*1024*1024+64));process.stdout.write('\\nEND OF REPORT\\n');\n");await chmod(f.java,0o700);
+ const result=await analyzeWithShark(hprof,f.resources);assert.equal(result.success,true);assert.ok(result.reportTruncated);assert.equal(result.reportComplete,true);assert.ok(result.report.length>result.displayLimit);assert.ok(result.report.endsWith('END OF REPORT\n'));
+ const json=JSON.parse(sharkReportJson(result,{sourceFileName:'sample.hprof',mappingFileName:'mapping.txt'}));assert.equal(json.type,'android-performance-shark-report');assert.equal(json.sourceFileName,'sample.hprof');assert.equal(json.mappingFileName,'mapping.txt');assert.equal(json.report,result.report);assert.equal(json.reportComplete,true);
+ assert.throws(()=>sharkReportJson({report:'x'.repeat(12*1024*1024+1)}),/超过导出限制/);
 });
 
 test('HTTP Shark analysis is bound to the current retained HPROF session',async t=>{

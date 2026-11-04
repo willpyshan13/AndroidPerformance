@@ -22,13 +22,17 @@ export async function analyzeWithShark(filePath,resources,{mappingPath=null}={})
   const info=await stat(filePath);if(!info.isFile()||info.size<=0||info.size>256*1024*1024)throw new Error('Shark 输入 HPROF 无效或超过 256 MiB');
   const args=['-cp',resources.classpath,'shark.MainKt','-h',filePath];if(mappingPath)args.push('-m',mappingPath);args.push('analyze');
   const start=Date.now();
+  const toResult=(raw,{reason=null,exitCode=null,complete=true}={})=>{
+    const report=raw.length>MAX_REPORT?raw.slice(0,MAX_REPORT):raw;
+    const reportComplete=complete&&raw.length<=MAX_REPORT;
+    return {available:true,success:reportComplete&&report.includes('HEAP ANALYSIS RESULT')&&!report.includes('HEAP ANALYSIS FAILED'),version:resources.version,durationMs:Date.now()-start,...(reason?{reason}:{}),...(exitCode!==null?{exitCode}:{}),report,displayLimit:DISPLAY_REPORT,reportTruncated:report.length>DISPLAY_REPORT,reportComplete};
+  };
   try{
     const {stdout,stderr}=await run(resources.javaPath,args,{cwd:tmpdir(),timeout:TIMEOUT,maxBuffer:MAX_REPORT,windowsHide:true,encoding:'utf8'});
-    const report=`${stdout||''}${stderr?`\n${stderr}`:''}`;
-    return {available:true,success:report.includes('HEAP ANALYSIS RESULT')&&!report.includes('HEAP ANALYSIS FAILED'),version:resources.version,durationMs:Date.now()-start,report:report.slice(0,DISPLAY_REPORT),reportTruncated:report.length>DISPLAY_REPORT};
+    return toResult(`${stdout||''}${stderr?`\n${stderr}`:''}`);
   }catch(error){
     if(error.code==='ENOENT')return {available:false,success:false,reason:`未找到 Java runtime：${resources.javaPath}`,report:null};
-    const report=`${error.stdout||''}${error.stderr?`\n${error.stderr}`:''}`.slice(0,MAX_REPORT);
-    return {available:true,success:report.includes('HEAP ANALYSIS RESULT')&&!report.includes('HEAP ANALYSIS FAILED'),version:resources.version,durationMs:Date.now()-start,exitCode:Number.isInteger(error.code)?error.code:null,reason:error.killed?'Shark 分析超时':'Shark 分析进程返回错误',report:report.slice(0,DISPLAY_REPORT),reportTruncated:report.length>DISPLAY_REPORT};
+    const raw=`${error.stdout||''}${error.stderr?`\n${error.stderr}`:''}`;
+    return toResult(raw,{reason:error.killed?'Shark 分析超时':'Shark 分析进程返回错误',exitCode:Number.isInteger(error.code)?error.code:null,complete:!error.killed&&error.code!=='ERR_CHILD_PROCESS_STDIO_MAXBUFFER'});
   }
 }

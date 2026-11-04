@@ -379,7 +379,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/trace/power-rails'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
-          traceBusy=true;try{return json(await queryPowerRailDiagnostics(traceSession.path));}finally{traceBusy=false;}
+          traceBusy=true;try{return json(await queryPowerRailDiagnostics(traceSession.path,{packageName:body.packageName??null}));}finally{traceBusy=false;}
         }
         if(path==='/api/trace/compose-frame-correlation'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

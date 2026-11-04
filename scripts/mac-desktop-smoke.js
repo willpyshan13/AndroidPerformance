@@ -104,6 +104,7 @@ try {
   if(!ready.rendererState.benchmarkRegressionSmoke?.ok)throw new Error(`Packaged macOS Benchmark regression smoke failed: ${JSON.stringify(ready.rendererState.benchmarkRegressionSmoke)}`);
   if(!ready.rendererState.layoutTraceOnlySmoke?.ok)throw new Error(`Packaged macOS trace-only layout evidence smoke failed: ${JSON.stringify(ready.rendererState.layoutTraceOnlySmoke)}`);
   if(!ready.rendererState.traceAnalysisReportSmoke?.ok)throw new Error(`Packaged macOS trace analysis report export smoke failed: ${JSON.stringify(ready.rendererState.traceAnalysisReportSmoke)}`);
+  if(!ready.rendererState.powerUidEnergySmoke?.ok)throw new Error(`Packaged macOS per-UID power diagnostics smoke failed: ${JSON.stringify(ready.rendererState.powerUidEnergySmoke)}`);
   if(process.env.APW_SMOKE_NETWORK_SERIAL&&(!ready.rendererState.networkAgentDeviceSmoke?.ok||!ready.rendererState.networkAgentDeviceSmoke?.emptyAgentState))throw new Error(`Packaged macOS live Network Agent UI smoke failed: ${JSON.stringify(ready.rendererState.networkAgentDeviceSmoke)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
   if(process.env.APW_SMOKE_APK_PATH&&!ready.rendererState.apkAnalysisSmoke?.ok)throw new Error(`Packaged macOS APK analysis UI smoke failed: ${JSON.stringify(ready.rendererState.apkAnalysisSmoke)}`);

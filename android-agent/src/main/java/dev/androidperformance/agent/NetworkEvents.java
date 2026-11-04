@@ -23,14 +23,14 @@ public final class NetworkEvents extends EventListener {
     public final String scheme, host, method, path, protocol;
     public final Boolean connectionReused;
     public final int port, status;
-    public final long startedAtMs, elapsedNs;
+    public final long startedAtMs, deviceMonotonicNs, elapsedNs;
     public final Long responseBytes, dnsNs, connectNs, tlsNs, waitNs, receiveNs;
     public final boolean failed;
     Record(String scheme, String host, String method, String path, String protocol, Boolean connectionReused, int port, int status,
-        long startedAtMs, long elapsedNs, Long responseBytes, Long dnsNs,
+        long startedAtMs, long deviceMonotonicNs, long elapsedNs, Long responseBytes, Long dnsNs,
         Long connectNs, Long tlsNs, Long waitNs, Long receiveNs, boolean failed) {
       this.scheme=scheme; this.host=host; this.port=port; this.method=method; this.path=path; this.protocol=protocol; this.connectionReused=connectionReused; this.status=status;
-      this.startedAtMs=startedAtMs; this.elapsedNs=elapsedNs; this.responseBytes=responseBytes;
+      this.startedAtMs=startedAtMs; this.deviceMonotonicNs=deviceMonotonicNs; this.elapsedNs=elapsedNs; this.responseBytes=responseBytes;
       this.dnsNs=dnsNs; this.connectNs=connectNs; this.tlsNs=tlsNs; this.waitNs=waitNs; this.receiveNs=receiveNs; this.failed=failed;
     }
   }
@@ -89,7 +89,7 @@ public final class NetworkEvents extends EventListener {
           ? responseBodyEnd-responseBodyStart : null;
       Boolean connectionReused=connectionAcquisitions==0?null:reusedConnections>0;
       record=new Record(request.url().scheme(),request.url().host(),request.method(),path,protocol,connectionReused,request.url().port(),status,
-        startedAt,Math.max(0,System.nanoTime()-start),hasBytes?bytes:null,hasDns?dns:null,hasConnect?connect:null,hasTls?tls:null,waitNs,receiveNs,failed);
+        startedAt,start,Math.max(0,System.nanoTime()-start),hasBytes?bytes:null,hasDns?dns:null,hasConnect?connect:null,hasTls?tls:null,waitNs,receiveNs,failed);
     }
     // Instrumentation must not break the application's HTTP calls.
     try { sink.accept(record); } catch (RuntimeException ignored) { }

@@ -24,6 +24,7 @@ public class NetworkEventsTest {
       check(first.status==200&&!first.failed&&first.responseBytes==5,"response evidence");
       check(first.path==null,"path is absent by default");
       check(first.host.equals("127.0.0.1")&&first.method.equals("GET")&&first.elapsedNs>0,"request metadata");
+      check(first.startedAtMs>0&&first.deviceMonotonicNs>0,"wall and device-monotonic timestamps are both preserved");
       check("http/1.1".equals(first.protocol)&&Boolean.FALSE.equals(first.connectionReused),"new connection and protocol evidence");
       check(first.connectNs!=null&&first.tlsNs==null,"connection phases");
       check(first.waitNs!=null&&first.waitNs>=0&&first.receiveNs!=null&&first.receiveNs>=0,"waiting and body reading phases");

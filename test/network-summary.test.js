@@ -38,26 +38,26 @@ test('network filters combine method, status, connection, time and duration with
 
 test('network CSV export quotes fields, omits HAR secrets, and protects spreadsheet formulas',()=>{
  const [harRow]=parseHar({log:{entries:[{request:{url:'https://u:p@example.test/a,b?token=secret',method:'GET'},response:{status:200},time:12}]} });
- const csv=networkRequestsCsv([harRow,{...harRow,id:2,method:'=1+1',url:'https://example.test/a,"b',startedAt:null}]);
- assert.match(csv,/"开始时间","方法","URL"/);assert.match(csv,/"'=1\+1"/);assert.match(csv,/"https:\/\/example\.test\/a,""b"/);
+ const csv=networkRequestsCsv([{...harRow,deviceMonotonicNs:'1234567890123456789',clockDomain:'android-monotonic'},{...harRow,id:2,method:'=1+1',url:'https://example.test/a,"b',startedAt:null}]);
+ assert.match(csv,/"开始时间","设备单调时间 ns","时钟域","方法","URL"/);assert.match(csv,/"'=1\+1"/);assert.match(csv,/"https:\/\/example\.test\/a,""b"/);
  assert.doesNotMatch(csv,/secret|u:p|token=/);assert.equal(csv.endsWith('\r\n'),true);assert.equal((csv.match(/\r\n/g)||[]).length,3);
  assert.throws(()=>networkRequestsCsv(Array(50001).fill(harRow)),/超过/);
 });
 
 test('network HAR export preserves normalized evidence and excludes request secrets',()=>{
  const [row]=parseHar({log:{entries:[{startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-1',request:{url:'https://user:pass@example.test/api/items?token=secret',method:'GET',httpVersion:'h2',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],postData:{text:'secret'}},response:{status:200,content:{size:42}},time:12,timings:{dns:1,connect:2,ssl:3,wait:4,receive:5}}]}});
- const doc=networkRequestsHar([row]),entry=doc.log.entries[0];
- assert.equal(doc.log.version,'1.2');assert.equal(entry.request.url,'https://example.test/api/items');assert.equal(entry.request.httpVersion,'HTTP/2');assert.equal(entry.startedDateTime,'2026-01-01T00:00:00.000Z');assert.equal(entry.time,12);assert.equal(entry.response.content.size,42);assert.equal(entry.connection,'socket-1');assert.equal(entry._apw.connectionReused,null);
+ const doc=networkRequestsHar([{...row,deviceMonotonicNs:'1234567890123456789',clockDomain:'android-monotonic'}]),entry=doc.log.entries[0];
+ assert.equal(doc.log.version,'1.2');assert.equal(entry.request.url,'https://example.test/api/items');assert.equal(entry.request.httpVersion,'HTTP/2');assert.equal(entry.startedDateTime,'2026-01-01T00:00:00.000Z');assert.equal(entry.time,12);assert.equal(entry.response.content.size,42);assert.equal(entry.connection,'socket-1');assert.equal(entry._apw.connectionReused,null);assert.equal(entry._apw.deviceMonotonicNs,'1234567890123456789');assert.equal(entry._apw.clockDomain,'android-monotonic');
  assert.deepEqual(entry.request.headers,[]);assert.deepEqual(entry.request.cookies,[]);assert.equal(entry.request.bodySize,-1);assert.equal(entry.timings.ssl,3);assert.doesNotMatch(JSON.stringify(doc),/secret|user:pass|token=/);
- const [roundTrip]=parseHar(doc);assert.equal(roundTrip.url,'https://example.test/api/items');assert.equal(roundTrip.timeMs,12);assert.equal(roundTrip.startedAt,Date.parse('2026-01-01T00:00:00.000Z'));
+ const [roundTrip]=parseHar(doc);assert.equal(roundTrip.url,'https://example.test/api/items');assert.equal(roundTrip.timeMs,12);assert.equal(roundTrip.startedAt,Date.parse('2026-01-01T00:00:00.000Z'));assert.equal(roundTrip.deviceMonotonicNs,'1234567890123456789');assert.equal(roundTrip.clockDomain,'android-monotonic');
  const unknown=networkRequestsHar([{url:'https://example.test/a?x=1',method:'GET',startedAt:null,timeMs:null,status:0,bytes:null,timings:{}}]).log.entries[0];assert.equal(unknown.startedDateTime,null);assert.equal(unknown.time,-1);assert.equal(unknown._apw.timeUnavailable,true);assert.equal(unknown.timings.dns,-1);
  assert.throws(()=>networkRequestsHar([{url:'file:///tmp/a'}]),/URL/);assert.throws(()=>networkRequestsHar(Array(50001).fill(row)),/超过/);
 });
 
 test('network JSON export retains normalized metrics and excludes URL and request secrets',()=>{
  const [row]=parseHar({log:{entries:[{startedDateTime:'2026-01-01T00:00:00.000Z',connection:'socket-1',request:{url:'https://user:pass@example.test/api/items?token=secret',method:'POST',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],postData:{text:'secret'}},response:{status:201,content:{size:42}},time:12,timings:{dns:1,connect:2,ssl:3,wait:4,receive:5}}]}});
- const doc=networkRequestsJson([{...row,protocol:'h2',connectionReused:true,url:'https://user:pass@example.test/api/items?token=secret#fragment',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],body:'secret'}]);
- assert.equal(doc.schemaVersion,1);assert.equal(doc.type,'android-performance-network');assert.equal(doc.records[0].url,'https://example.test/api/items');assert.equal(doc.records[0].method,'POST');assert.equal(doc.records[0].status,201);assert.equal(doc.records[0].connectionId,'socket-1');assert.equal(doc.records[0].protocol,'h2');assert.equal(doc.records[0].connectionReused,true);assert.deepEqual(doc.records[0].timings,{dns:1,connect:2,ssl:3,wait:4,receive:5});
+ const doc=networkRequestsJson([{...row,protocol:'h2',connectionReused:true,deviceMonotonicNs:'1234567890123456789',clockDomain:'android-monotonic',url:'https://user:pass@example.test/api/items?token=secret#fragment',headers:[{name:'Authorization',value:'secret'}],cookies:[{name:'sid',value:'secret'}],body:'secret'}]);
+ assert.equal(doc.schemaVersion,1);assert.equal(doc.type,'android-performance-network');assert.equal(doc.records[0].url,'https://example.test/api/items');assert.equal(doc.records[0].method,'POST');assert.equal(doc.records[0].status,201);assert.equal(doc.records[0].connectionId,'socket-1');assert.equal(doc.records[0].protocol,'h2');assert.equal(doc.records[0].connectionReused,true);assert.equal(doc.records[0].deviceMonotonicNs,'1234567890123456789');assert.equal(doc.records[0].clockDomain,'android-monotonic');assert.deepEqual(doc.records[0].timings,{dns:1,connect:2,ssl:3,wait:4,receive:5});
  assert.doesNotMatch(JSON.stringify(doc),/secret|user:pass|token=/);assert.deepEqual(doc.redaction,{credentialsRemoved:true,queryAndFragmentRemoved:true,headersIncluded:false,cookiesIncluded:false,bodyIncluded:false});
  const unknown=networkRequestsJson([{url:'https://example.test/a?token=secret',method:'GET',startedAt:1e100,timeMs:null,status:0,bytes:null,timings:{}}]).records[0];assert.equal(unknown.startedAt,null);assert.equal(unknown.timeMs,null);assert.equal(unknown.responseBytes,null);assert.throws(()=>networkRequestsJson([{url:'file:///tmp/a'}]),/URL/);assert.throws(()=>networkRequestsJson(Array(50001).fill(row)),/超过/);
 });

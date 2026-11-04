@@ -139,7 +139,7 @@ tools/     ADB 和 AAPT2 资源准备目录
 
 参考文档：[Android ADB](https://developer.android.com/tools/adb) · [dumpsys](https://developer.android.com/tools/dumpsys) · [Perfetto](https://perfetto.dev/docs/getting-started/system-tracing)
 
-网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可导出脱敏 HAR 或 CSV。CSV 会引用并转义字段，且阻止表格公式注入；HAR 只从归一化记录重建，不包含请求头、Cookie、查询参数或正文，并保留阶段耗时和缺失值标记。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。当前 Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。首选通路通过本机抽象 socket、共享 debug 令牌和 ADB forward 按 cursor 增量读取；空令牌时保留旧版 Logcat 兼容。socket 协议、Agent 源码 ZIP 和 desktop API 已通过本机自动化测试，尚未在 Android 设备端完成端到端验证。API 25 真机上的旧 Logcat 验证覆盖本机 HTTP 请求、PID 回退与默认路径省略。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
+网络页面可按域名/路径、方法、状态、HAR 连接标识、请求耗时和本地开始时间筛选；筛选会同步更新请求统计、接口百分位、活动时间线和列表，也可导出脱敏 HAR、CSV 或 JSON。CSV 会引用并转义字段，且阻止表格公式注入；导出只从归一化记录重建，不包含请求头、Cookie、查询参数或正文，并保留阶段耗时、缺失值标记及 Agent 提供的 Android 单调时钟时间戳。单调时钟时间用于保留设备侧原始时间证据；在 Perfetto 时钟映射完成前，不会与电脑时间混用。HAR 导入仅保留安全字符组成的连接标识。网络页面也可下载 OkHttp Agent 源码包；解压后 Agent 源码位于 `src/debug/java`，不会默认进入 release source set。当前 Agent 默认不记录路径；应用可配置仅接收 path、不含 query 的 `PathSanitizer` 后发送脱敏端点，Header 与 Body 不采集。首选通路通过本机抽象 socket、共享 debug 令牌和 ADB forward 按 cursor 增量读取；空令牌时保留旧版 Logcat 兼容。socket 协议、Agent 源码 ZIP 和 desktop API 已通过本机自动化测试，尚未在 Android 设备端完成端到端验证。API 25 真机上的旧 Logcat 验证覆盖本机 HTTP 请求、PID 回退与默认路径省略。调试接入方式见 [android-agent/README.md](android-agent/README.md)。
 
 网络页面还可将筛选后的归一化请求导出为独立 JSON。JSON、HAR 和 CSV 都会移除 URL 凭据、查询和片段，并且不输出请求头、Cookie 或正文；HAR 适合与兼容工具交换，JSON 保留本工具的状态、阶段耗时和脱敏标记。
 

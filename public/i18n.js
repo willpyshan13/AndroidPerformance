@@ -245,7 +245,7 @@ const en={
  '接口耗时分布':'Request duration distribution',
  '请求列表':'Requests',
  '请求活动时间线':'Request activity timeline',
- '已复用':'Reused','新连接':'New connection','协议':'Protocol','连接复用':'Connection reuse','条有明确连接状态':'requests with explicit evidence','连接复用仅统计 Agent 明确报告状态的请求；缺少连接事件时保持未知。':'Connection reuse counts only requests with explicit Agent evidence; missing connection events remain unknown.',
+ '已复用':'Reused','新连接':'New connection','协议':'Protocol','连接复用':'Connection reuse','设备单调时间':'Device monotonic time','时钟域':'Clock domain','条有明确连接状态':'requests with explicit evidence','连接复用仅统计 Agent 明确报告状态的请求；缺少连接事件时保持未知。':'Connection reuse counts only requests with explicit Agent evidence; missing connection events remain unknown.',
  '请求的权限':'Requested permissions',
  'APK 体积组成':'APK size breakdown',
  '看清每一份安装包':'Inspect every package in detail',

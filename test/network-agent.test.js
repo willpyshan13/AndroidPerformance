@@ -43,6 +43,17 @@ test('v4 agent reports explicit protocol and connection reuse without inferring 
  assert.equal(parseNetworkAgentLog(JSON.stringify({...v4,connectionReused:'yes'})).invalid,1);assert.equal(parseNetworkAgentLog(JSON.stringify({...v4,protocol:'secret/1'})).invalid,1);
  const old=parseNetworkAgentLog(JSON.stringify({...record,v:3,eventId,path:null})).rows[0];assert.equal(old.protocol,null);assert.equal(old.connectionReused,null);
 });
+test('v5 agent preserves exact Android monotonic timestamps without mixing wall-clock time',()=>{
+ const eventId='52345678-1234-4234-8234-123456789abc',timestamp='1234567890123456789';
+ const v5={...record,v:5,eventId,path:null,protocol:'h2',connectionReused:true,deviceMonotonicNs:timestamp,clockDomain:'android-monotonic'};
+ const [row]=parseNetworkAgentLog(JSON.stringify(v5)).rows;assert.equal(row.deviceMonotonicNs,timestamp);assert.equal(row.clockDomain,'android-monotonic');assert.equal(row.startedAt,record.startedAtMs);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,deviceMonotonicNs:123})).invalid,1);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,deviceMonotonicNs:'90071992547409931234'})).invalid,1);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,deviceMonotonicNs:'9223372036854775808'})).invalid,1);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,deviceMonotonicNs:'-9223372036854775808'})).rows.length,1);
+ assert.equal(parseNetworkAgentLog(JSON.stringify({...v5,clockDomain:'host-wall'})).invalid,1);
+ const old=parseNetworkAgentLog(JSON.stringify({...record,v:4,eventId,path:null,protocol:'h2',connectionReused:false})).rows[0];assert.equal(old.deviceMonotonicNs,null);assert.equal(old.clockDomain,null);
+});
 test('network request empty state distinguishes agent wait, missing events, filters and empty imports',()=>{
  const state=(overrides={})=>networkRequestEmptyState({hasSnapshot:true,source:'adb',agentActive:false,totalRows:0,filteredRows:0,...overrides});
  assert.equal(networkRequestEmptyState({hasSnapshot:false,source:null,agentActive:false,totalRows:0,filteredRows:0}),'import');

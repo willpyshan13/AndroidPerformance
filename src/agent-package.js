@@ -29,6 +29,15 @@ export async function buildLeakCanaryAgentPackage(){
   {source:'optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java',path:'optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'},
  ]);
 }
+export async function buildJankStatsAgentPackage(){
+ return buildZip([
+  'JANKSTATS_AGENT_README.md',
+  {source:'src/main/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java'},
+  {source:'src/main/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java',path:'src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java'},
+  'src/debug/AndroidManifest.xml',
+  {source:'optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'},
+ ]);
+}
 async function buildZip(files){
  const local=[],central=[];let offset=0;
  for(const file of files){

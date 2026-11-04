@@ -18,7 +18,8 @@ import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact 
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
 import {createRemoteSourceSnapshot} from './source-git.js';
-import {buildAgentPackage,buildLayoutAgentPackage,buildLeakCanaryAgentPackage} from './agent-package.js';
+import {buildAgentPackage,buildLayoutAgentPackage,buildLeakCanaryAgentPackage,buildJankStatsAgentPackage} from './agent-package.js';
+import {injectLeakCanaryDebugAgent} from './agent-injection.js';
 import { runMacrobenchmark } from './macrobenchmark.js';
 import { resolveGradleJavaPath } from './java-runtime.js';
 
@@ -98,7 +99,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
         if(path==='/api/heap/leakcanary-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-leakcanary-agent.zip"'});return res.end(data);}
-        if(path==='/api/frames/jankstats-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-jankstats-agent.zip"'});return res.end(data);}
+        if(path==='/api/frames/jankstats-agent-package'){const data=await buildJankStatsAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-jankstats-agent.zip"'});return res.end(data);}
         if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
@@ -149,6 +150,10 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
       }
       if (req.method === 'POST') {
+        if(path==='/api/heap/leakcanary-agent/inject'){
+          const body=await readBody(req);
+          return json(await injectLeakCanaryDebugAgent({projectPath:body.projectPath,modulePath:body.modulePath,includeAndroidXFragments:body.includeAndroidXFragments??false}));
+        }
         if(path==='/api/cpu-profile/archive'){
           if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在处理'},409);}
           const declared=req.headers['content-length'];if(declared!==undefined&&(!/^\d+$/.test(declared)||Number(declared)>256*1024*1024)){req.resume();return json({error:'perf.data 不能超过 256 MiB'},413);}

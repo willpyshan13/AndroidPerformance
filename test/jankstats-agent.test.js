@@ -65,5 +65,8 @@ test('protected JankStats snapshot and Agent ZIP routes expose parsed aggregates
  const result=await fetch(snapshot,{method:'POST',headers:{'X-Workbench-Token':'test','Content-Type':'application/json'},body:JSON.stringify({serial:'device',packageName:'com.example.app'})});assert.equal(result.status,200);assert.equal((await result.json()).summary[0].jankCount,1);
  const bundle=await fetch(`${base}/api/frames/jankstats-agent-package`,{headers:{'X-Workbench-Token':'test'}});assert.equal(bundle.status,200);assert.equal(bundle.headers.get('content-type'),'application/zip');
  const {default:yauzl}=await import('yauzl'),archive=Buffer.from(await bundle.arrayBuffer());const paths=await new Promise((resolve,reject)=>yauzl.fromBuffer(archive,{lazyEntries:true},(error,zip)=>{if(error)return reject(error);const names=[];zip.on('error',reject);zip.on('end',()=>resolve(names));zip.on('entry',entry=>{names.push(entry.fileName);zip.readEntry();});zip.readEntry();}));
- assert.ok(paths.includes('optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
+ assert.ok(paths.includes('src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
+ assert.ok(paths.includes('src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java'));
+ assert.ok(paths.includes('JANKSTATS_AGENT_README.md'));
+ assert.ok(!paths.includes('LEAKCANARY_AGENT_README.md'));
 });

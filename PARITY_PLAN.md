@@ -8,6 +8,8 @@ Macrobenchmark CLI（2026-11-04）：新增 `npm run benchmark:cli -- macro-run`
 
 内存分析支持按当前搜索词和快照变化筛选导出完整匹配结果 CSV / Markdown / JSON；导出保留 HPROF 字段 / 元素字节的解释及类匹配歧义标记，不将其描述成浅大小或保留大小。2026-11-04 macOS ARM 打包 smoke 已验证三种格式的筛选内容、MIME 和报告字段；完整回归 407 项中 391 通过、16 项因未配置可选官方样本而跳过、0 失败。Smoke 需在沙盒外启动 Electron；修正按钮忙碌状态和筛选设置后通过。
 
+macOS ARM 交付验证（2026-11-04）：`npm run package:dmg` 生成 `dist/v0.2.0/Android Performance-0.2.0-arm64.dmg`，`hdiutil verify` 校验通过；沙盒外打包桌面 smoke 覆盖 16 个英文路由、HPROF 三种导出、50,000 样本 CPU 时间线栅格和真实 AAPT2 APK 导入（7 个分析页签、Manifest 文件筛选、JSON 报告均通过）。DMG 当前为 ad-hoc 签名且未公证；Apple Developer 签名 / 公证仍待配置。
+
 UIAutomator 布局检查线索现提供稳定规则 ID、严重级别、置信度、节点 ID 和可审阅证据；触控区域线索仍只依据可见节点边界，不代表系统实际命中区域。
 
 界面语言：已加入简体中文 / English 切换并持久化到桌面设置；Electron 原生菜单会读取保存语言并在设置切换时同步重建；静态键与 16 个路由的打包页面回归已覆盖；macOS arm64 打包 smoke 对演示状态可见 UI 文本扫描为 0 条残留中文；设备原始字段、工具输出及布局树等用户数据按来源保留，尚未对所有真实设备变体逐一核对。AI 分析按用户决定不实现。

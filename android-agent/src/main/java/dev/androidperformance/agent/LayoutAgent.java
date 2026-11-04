@@ -55,7 +55,7 @@ public final class LayoutAgent {
     private static volatile LocalServerSocket server;
     private static final Object SNAPSHOT_LOCK = new Object();
     private static final ReferenceQueue<Object> CHANGED_STATE_QUEUE = new ReferenceQueue<>();
-    private static final Set<IdentityWeakReference> CHANGED_SNAPSHOT_STATES = new java.util.HashSet<>();
+    private static final Map<IdentityWeakReference, ChangedStateTime> CHANGED_SNAPSHOT_STATES = new java.util.HashMap<>();
     private static final Map<ClassLoader, Object> SNAPSHOT_OBSERVER_HANDLES = new IdentityHashMap<>();
     private static final int MAX_PENDING_CHANGED_STATES = 5000;
     private static int droppedChangedSnapshotStates;
@@ -281,11 +281,15 @@ public final class LayoutAgent {
             for (Map.Entry<?, ?> entry : ((Map<?, ?>)values).entrySet()) {
                 Object stateObject = entry.getKey(), scopes = entry.getValue();
                 if (!(scopes instanceof Iterable)) continue;
-                boolean changed = state.changedSnapshotStates.contains(stateObject);
+                ChangedStateTime changedAt = state.changedSnapshotStates.get(stateObject);
+                boolean changed = changedAt != null;
                 if (changed && state.observedChangedSnapshotStates.add(stateObject)) state.composeChangedStateObjects++;
                 for (Object scope : (Iterable<?>)scopes) {
                     observations.readCounts.put(scope, observations.readCounts.containsKey(scope) ? observations.readCounts.get(scope) + 1 : 1);
-                    if (changed) observations.changedReadCounts.put(scope, observations.changedReadCounts.containsKey(scope) ? observations.changedReadCounts.get(scope) + 1 : 1);
+                    if (changed) {
+                        observations.changedReadCounts.put(scope, observations.changedReadCounts.containsKey(scope) ? observations.changedReadCounts.get(scope) + 1 : 1);
+                        observations.changedTimesByScope.computeIfAbsent(scope, ignored -> new ChangedStateTime()).merge(changedAt);
+                    }
                 }
             }
         } catch (Exception ignored) { return null; }
@@ -312,11 +316,14 @@ public final class LayoutAgent {
                         synchronized (SNAPSHOT_LOCK) {
                             IdentityWeakReference stale;
                             while ((stale = (IdentityWeakReference)CHANGED_STATE_QUEUE.poll()) != null) CHANGED_SNAPSHOT_STATES.remove(stale);
+                            long appliedAtNs = System.nanoTime();
                             for (Object changed : (Set<?>)args[0]) {
                                 IdentityWeakReference ref = new IdentityWeakReference(changed, CHANGED_STATE_QUEUE);
-                                if (CHANGED_SNAPSHOT_STATES.contains(ref)) continue;
+                                ChangedStateTime existing = CHANGED_SNAPSHOT_STATES.get(ref);
+                                if (existing != null) { existing.record(appliedAtNs); continue; }
                                 if (CHANGED_SNAPSHOT_STATES.size() >= MAX_PENDING_CHANGED_STATES) { droppedChangedSnapshotStates++; continue; }
-                                CHANGED_SNAPSHOT_STATES.add(ref);
+                                ChangedStateTime time = new ChangedStateTime(); time.record(appliedAtNs);
+                                CHANGED_SNAPSHOT_STATES.put(ref, time);
                             }
                         }
                         return Class.forName("kotlin.Unit", false, loader).getField("INSTANCE").get(null);
@@ -336,10 +343,10 @@ public final class LayoutAgent {
         }
     }
 
-    private static Set<Object> drainChangedSnapshotStates(CaptureState state) {
+    private static Map<Object, ChangedStateTime> drainChangedSnapshotStates(CaptureState state) {
         synchronized (SNAPSHOT_LOCK) {
-            Set<Object> result = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (IdentityWeakReference ref : CHANGED_SNAPSHOT_STATES) { Object value = ref.get(); if (value != null) result.add(value); }
+            Map<Object, ChangedStateTime> result = new IdentityHashMap<>();
+            for (Map.Entry<IdentityWeakReference, ChangedStateTime> entry : CHANGED_SNAPSHOT_STATES.entrySet()) { Object value = entry.getKey().get(); if (value != null) result.put(value, entry.getValue()); }
             CHANGED_SNAPSHOT_STATES.clear(); while (CHANGED_STATE_QUEUE.poll() != null) {}
             state.droppedChangedSnapshotStates = droppedChangedSnapshotStates; droppedChangedSnapshotStates = 0;
             return result;
@@ -362,12 +369,13 @@ public final class LayoutAgent {
         if (group == null || depth > MAX_DEPTH || state.count >= MAX_NODES) { state.truncated = true; return; }
         state.count++; state.composeRuntimeGroups++;
         Object key = invoke(group, "getKey"), identity = invoke(group, "getIdentity"), sourceInfo = invoke(group, "getSourceInfo");
-        int reads = 0, changedReads = 0;
+        int reads = 0, changedReads = 0; ChangedStateTime changedTime = new ChangedStateTime();
         Object data = invoke(group, "getData");
         if (data instanceof Iterable) for (Object item : (Iterable<?>)data) {
             if (observations != null && item != null && item.getClass().getName().contains("RecomposeScope")) {
                 reads += observations.readCounts.getOrDefault(item, 0);
                 changedReads += observations.changedReadCounts.getOrDefault(item, 0);
+                changedTime.merge(observations.changedTimesByScope.get(item));
             }
         }
         if (observations != null) state.composeStateReads += reads;
@@ -377,6 +385,11 @@ public final class LayoutAgent {
         attr(out, "compose-source-info", safe(sourceInfo == null ? "" : String.valueOf(sourceInfo)));
         attr(out, "compose-state-read-count", observations == null ? "unavailable" : Integer.toString(reads));
         attr(out, "compose-changed-state-read-count", observations == null || !observations.changedAvailable ? "unavailable" : state.changedObservationBaseline ? "baseline" : Integer.toString(changedReads));
+        if (changedTime.count > 0) {
+            attr(out, "compose-changed-state-apply-first-ns", Long.toString(changedTime.firstNs));
+            attr(out, "compose-changed-state-apply-last-ns", Long.toString(changedTime.lastNs));
+            attr(out, "compose-changed-state-apply-count", Integer.toString(changedTime.count));
+        }
         attr(out, "index", "0"); attr(out, "resource-id", ""); attr(out, "package", ""); attr(out, "text", ""); attr(out, "content-desc", "");
         attr(out, "bounds", "[0,0][0,0]"); attr(out, "checkable", "false"); attr(out, "checked", "false"); attr(out, "clickable", "false");
         attr(out, "long-clickable", "false"); attr(out, "focusable", "false"); attr(out, "focused", "false"); attr(out, "selected", "false");
@@ -526,12 +539,17 @@ public final class LayoutAgent {
         final Map<String, Object> properties = new java.util.LinkedHashMap<>();
         final List<SemanticsSnapshot> children = new ArrayList<>();
     }
-    private static final class StateObservations { final Map<Object,Integer> readCounts = new IdentityHashMap<>(); final Map<Object,Integer> changedReadCounts = new IdentityHashMap<>(); boolean changedAvailable; }
+    private static final class ChangedStateTime {
+        long firstNs = Long.MAX_VALUE, lastNs = Long.MIN_VALUE; int count;
+        void record(long timeNs) { firstNs = Math.min(firstNs, timeNs); lastNs = Math.max(lastNs, timeNs); if (count < Integer.MAX_VALUE) count++; }
+        void merge(ChangedStateTime other) { if (other == null || other.count == 0) return; firstNs = Math.min(firstNs, other.firstNs); lastNs = Math.max(lastNs, other.lastNs); count = (int)Math.min(Integer.MAX_VALUE, (long)count + other.count); }
+    }
+    private static final class StateObservations { final Map<Object,Integer> readCounts = new IdentityHashMap<>(); final Map<Object,Integer> changedReadCounts = new IdentityHashMap<>(); final Map<Object,ChangedStateTime> changedTimesByScope = new IdentityHashMap<>(); boolean changedAvailable; }
     private static final class IdentityWeakReference extends WeakReference<Object> {
         private final int hash;
         IdentityWeakReference(Object value, ReferenceQueue<Object> queue) { super(value, queue); hash = System.identityHashCode(value); }
         @Override public int hashCode() { return hash; }
         @Override public boolean equals(Object other) { if (this == other) return true; if (!(other instanceof IdentityWeakReference)) return false; Object value = get(); return value != null && value == ((IdentityWeakReference)other).get(); }
     }
-    private static final class CaptureState { int count; int composeHosts; int composeNodes; int composeRuntimeGroups; int composeStateReads; int composeChangedStateReadAssociations; int composeChangedStateObjects; int droppedChangedSnapshotStates; Set<Object> changedSnapshotStates = Collections.emptySet(); final Set<Object> observedChangedSnapshotStates = Collections.newSetFromMap(new IdentityHashMap<>()); boolean composeStateReadsAvailable = true; boolean composeChangedStateReadsAvailable = true; boolean changedObservationBaseline; boolean truncated; boolean composeWarning; boolean composeRuntimeWarning; boolean composeStateReadsWarning; boolean composeChangedStateReadsWarning; String composeRuntimeDetail = ""; }
+    private static final class CaptureState { int count; int composeHosts; int composeNodes; int composeRuntimeGroups; int composeStateReads; int composeChangedStateReadAssociations; int composeChangedStateObjects; int droppedChangedSnapshotStates; Map<Object,ChangedStateTime> changedSnapshotStates = Collections.emptyMap(); final Set<Object> observedChangedSnapshotStates = Collections.newSetFromMap(new IdentityHashMap<>()); boolean composeStateReadsAvailable = true; boolean composeChangedStateReadsAvailable = true; boolean changedObservationBaseline; boolean truncated; boolean composeWarning; boolean composeRuntimeWarning; boolean composeStateReadsWarning; boolean composeChangedStateReadsWarning; String composeRuntimeDetail = ""; }
 }

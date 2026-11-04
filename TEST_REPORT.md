@@ -1,5 +1,10 @@
 # 当前验证记录（2026-11-04）
 
+## Compose State apply 与函数体执行时序
+
+- Layout Agent 的 Snapshot apply observer 现为变更 State 记录首末 `System.nanoTime()`，并通过当前 `RecomposeScope` State 读取映射将时间戳写入对应 Runtime 组 XML；不读取 State 值。桌面端按 Compose group key 查找 apply 之后最早的 uptime 编译器函数体执行事件，只对唯一 key 显示时间差，重复 key 标记歧义；这提供时序证据，不证明因果或该 State 导致帧变化。
+- 回归覆盖大于安全整数范围的纳秒字符串、取 apply 后最早执行、排除旧时钟 / skip 和重复 key 拒绝；Layout Agent 响应测试验证 XML 中的 apply 时间字段保留。Agent Java 文件使用 Android API 35 `android.jar` 单独 `javac` 编译通过。Compose / Layout / i18n 定向测试 57 项通过；全量 `npm test`：376 项，360 通过、0 失败、16 项因缺少可选官方样例跳过；`npm run check` 和 `git diff --check` 通过。macOS ARM64 `npm run package:mac` 和 `node scripts/mac-desktop-smoke.js` 通过，未操作设备。
+
 ## 网络请求峰值并发
 
 - 网络页根据筛选后请求的开始时间和耗时计算最大同时在途请求数，并报告可用/缺失时间数据的请求数；缺失区间不补值，同一时刻结束与开始按不重叠处理。该值描述观测时间区间，不代表设备完整流量，也不证明请求间因果关系。

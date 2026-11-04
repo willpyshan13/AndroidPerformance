@@ -783,6 +783,31 @@ export function layoutScope(nodes, rootId = null) {
   return nodes.slice(start, end);
 }
 
+export function correlateComposeStateApplyToExecution(runtimeGroups, events) {
+  if (!Array.isArray(runtimeGroups) || !Array.isArray(events)) return [];
+  const byKey = new Map();
+  for (const group of runtimeGroups) {
+    const key = String(group?.key ?? ''), lastApplyNs = group?.lastApplyNs;
+    if (!/^-?\d{1,12}$/.test(key)) continue;
+    const row = byKey.get(key) || {key, groups: 0, lastApplyNs: null};
+    row.groups++;
+    if (typeof lastApplyNs === 'string' && /^\d{1,19}$/.test(lastApplyNs) && (row.lastApplyNs === null || BigInt(lastApplyNs) > BigInt(row.lastApplyNs))) row.lastApplyNs = lastApplyNs;
+    byKey.set(key, row);
+  }
+  const executions = new Map();
+  for (const event of events) {
+    if (event?.measurement !== 'automatic-execution' || event.clock !== 'uptime' || event.groupKey === null || event.groupKey === undefined || typeof event.elapsedNs !== 'string' || !/^\d{1,19}$/.test(event.elapsedNs)) continue;
+    const key = String(event.groupKey), group = byKey.get(key);
+    if (!group || group.groups !== 1 || BigInt(event.elapsedNs) < BigInt(group.lastApplyNs)) continue;
+    const previous = executions.get(key);
+    if (!previous || BigInt(event.elapsedNs) < BigInt(previous.executionNs)) executions.set(key, {executionNs: event.elapsedNs, name: event.name || null});
+  }
+  return [...byKey.values()].filter(row => row.lastApplyNs !== null).map(row => {
+    const execution = executions.get(row.key);
+    return {...row, ...(execution ? {executionNs: execution.executionNs, executionName: execution.name, deltaNs: (BigInt(execution.executionNs) - BigInt(row.lastApplyNs)).toString()} : {})};
+  });
+}
+
 export function matchComposeRuntimeGroups(nodes, key) {
   if (!Array.isArray(nodes) || !Number.isSafeInteger(key)) return [];
   return nodes.filter(node => node?.className === 'ComposeRuntimeGroup' && node.attributes?.['compose-key'] === String(key));

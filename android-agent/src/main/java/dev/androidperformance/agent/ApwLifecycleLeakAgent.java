@@ -45,6 +45,7 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
     private ApwLifecycleLeakAgent() {}
 
     @Override public void onActivityDestroyed(Activity activity) {
+        notifyOptionalJankStats("onActivityDestroyed", activity);
         track(activity);
     }
 
@@ -52,6 +53,17 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
         if (instance == null) return;
         ApwLifecycleLeakAgent agent = ApwLifecycleLeakAgent.instance;
         if (agent != null) agent.watch(instance);
+    }
+
+    private static void notifyOptionalJankStats(String callback, Activity activity) {
+        try {
+            Class<?> bridge = Class.forName("dev.androidperformance.agent.ApwJankStatsAgent", true, activity.getClassLoader());
+            bridge.getMethod(callback, Activity.class).invoke(null, activity);
+        } catch (ClassNotFoundException ignored) {
+            // The optional JankStats source is not part of this debug app.
+        } catch (ReflectiveOperationException error) {
+            Log.w(TAG, "Could not notify optional JankStats bridge", error);
+        }
     }
 
     private void watch(Object instance) {
@@ -129,8 +141,8 @@ public final class ApwLifecycleLeakAgent implements Application.ActivityLifecycl
     }
 
     @Override public void onActivityStarted(Activity activity) {}
-    @Override public void onActivityResumed(Activity activity) {}
-    @Override public void onActivityPaused(Activity activity) {}
+    @Override public void onActivityResumed(Activity activity) { notifyOptionalJankStats("onActivityResumed", activity); }
+    @Override public void onActivityPaused(Activity activity) { notifyOptionalJankStats("onActivityPaused", activity); }
     @Override public void onActivityStopped(Activity activity) {}
     @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
 }

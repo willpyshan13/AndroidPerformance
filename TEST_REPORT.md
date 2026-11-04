@@ -1,4 +1,10 @@
-# 当前验证记录（2026-11-03）
+# 当前验证记录（2026-11-04）
+
+## Jetpack JankStats 应用帧归因
+
+- 可选 Debug Agent 使用 AndroidX JankStats，按 Activity、Window 和 `PerformanceMetricsState` 状态聚合应用侧帧数、heuristic Jank、1 ms 桶 P95、均值 / 最大时长，并在 API 支持时记录 CPU 帧时长及 deadline overrun。每两秒批量写 `APWJank` Logcat，暂停或销毁 Activity 时冲刷；桌面端按目标 UID（旧设备回退主进程）读取，并与 gfxinfo 预算超限和 Perfetto 平台分类分开显示。
+- Agent 作为可选 debug source 提供；目标 app 需显式添加 `androidx.metrics:metrics-performance` 依赖后复制源码。没有接入的 APK 不会自动产生数据。状态值进入 debug Logcat，项目方需避免放入用户数据；此 Agent 增加调试开销，非正式测量构建用途。
+- 单元测试覆盖聚合校验、状态分组、P95 / Jank 比例、数据上限及 UID/PID 读取；macOS ARM64 app smoke 检查实际打包的 Agent ZIP、JankStats 页面和 JSON 导出入口。定向回归 50/50 通过，`npm run check`、`git diff --check` 通过。可选 Java Agent 对 Android API 35 与 AndroidX metrics-performance 1.0.0 编译通过（仅有缺少可选 annotation 元数据的 javac 警告）；`npm run package:mac` 与 `node scripts/mac-desktop-smoke.js` 通过。此功能尚未在目标 app 或 Android 设备端到端验证。
 
 ## Android 15 Bitmap PNG heap dump（2026-11-03）
 

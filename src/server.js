@@ -98,6 +98,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/network/agent-package'){const data=await buildAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-agent.zip"'});return res.end(data);}
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
         if(path==='/api/heap/leakcanary-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-leakcanary-agent.zip"'});return res.end(data);}
+        if(path==='/api/frames/jankstats-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-jankstats-agent.zip"'});return res.end(data);}
         if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
@@ -415,6 +416,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/battery/compare')return json(compareBatteryStats(body.before,body.after));
         if(path==='/api/network/agent')return json(await adb.networkAgentSnapshot(body.serial,body.packageName));
         if(path==='/api/heap/leakcanary-live')return json(await adb.leakCanarySnapshot(body.serial,body.packageName));
+        if(path==='/api/frames/jankstats-live')return json(await adb.jankStatsSnapshot(body.serial,body.packageName));
         if(path==='/api/gpu/capabilities')return json(await adb.gpuCapabilities(body.serial));
         if (path === '/api/frames/import') {
           if (typeof body.text !== 'string' || ![16.667, 11.111, 8.333].includes(body.budget)) throw new Error('gfxinfo 导入参数无效');

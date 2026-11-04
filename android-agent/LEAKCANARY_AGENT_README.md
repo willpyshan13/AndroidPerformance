@@ -18,4 +18,16 @@ When an Activity is destroyed, the agent keeps only a `WeakReference` and report
 
 The ZIP also includes `optional-androidx/src/debug/java/.../ApwAndroidXFragmentLeakAgent.java`. It is outside the app source set so projects without AndroidX Fragment do not need an extra dependency. In a project that already uses AndroidX Fragment, copy the file to `src/debug/java/dev/androidperformance/agent/`. The base agent detects `FragmentActivity` and registers the callback automatically. Destroyed Fragment instances use the same weak-reference checks as Activities; nested fragments are covered by recursive callback registration.
 
+### Optional Jetpack JankStats capture
+
+The ZIP includes `optional-jankstats/src/debug/java/.../ApwJankStatsAgent.java` outside the default source set. To enable it, add the AndroidX dependency to the app module and copy the file into `src/debug/java/dev/androidperformance/agent/`:
+
+```kotlin
+dependencies {
+    debugImplementation("androidx.metrics:metrics-performance:1.0.0")
+}
+```
+
+The base Agent detects the optional class and starts/stops JankStats with each Activity's resumed/paused lifecycle. It writes two-second aggregates to the `APWJank` Logcat tag instead of logging each frame. Aggregates include Activity/window, JankStats UI state, frame and jank counts, duration histogram/min/max/mean inputs, and API-available CPU duration/frame overrun. Apps can attach bounded, non-sensitive state labels to `PerformanceMetricsState`; state values are written to debug Logcat, so do not include user data or identifiers. The JankStats heuristic and gfxinfo/FrameTimeline platform classifications remain separate metrics. Aggregation and Logcat still add debug overhead; do not use this Agent in release builds or formal performance measurement.
+
 This lightweight signal helps identify suspicious lifecycles; use an HPROF analysis tool or LeakCanary's object graph analysis to confirm a leak. Arbitrary non-Activity/non-Fragment objects are not watched.

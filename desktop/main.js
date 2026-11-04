@@ -109,7 +109,7 @@ async function smokeLeakCanaryAgentPackageInRenderer() {
       if(method!==0||nameStart+nameLength+extraLength+size>bytes.length)return {ok:false,reason:'LeakCanary Agent ZIP entry uses unexpected compression or bounds'};
       paths.push(decoder.decode(bytes.subarray(nameStart,nameStart+nameLength)));offset=nameStart+nameLength+extraLength+size;
     }
-    const required=['LEAKCANARY_AGENT_README.md','src/debug/AndroidManifest.xml','src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'];
+    const required=['LEAKCANARY_AGENT_README.md','src/debug/AndroidManifest.xml','src/debug/java/dev/androidperformance/agent/ApwLifecycleLeakAgent.java','src/debug/java/dev/androidperformance/agent/ApwLeakCanaryAgentProvider.java','optional-androidx/src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java','optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'];
     const complete=required.every(path=>paths.includes(path));
     return {ok:complete,contentType:response.headers.get('content-type'),entryCount:paths.length,complete,paths};
   })()`);

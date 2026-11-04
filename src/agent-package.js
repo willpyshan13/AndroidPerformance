@@ -39,6 +39,14 @@ export async function buildJankStatsAgentPackage(){
   {source:'optional-jankstats/src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'},
  ]);
 }
+export async function buildStartupAgentPackage(){
+ return buildZip([
+  'STARTUP_AGENT_README.md',
+  {source:'STARTUP_AGENT_MANIFEST.xml',path:'src/debug/AndroidManifest.xml'},
+  {source:'src/main/java/dev/androidperformance/agent/ApwStartupAgentProvider.java',path:'src/debug/java/dev/androidperformance/agent/ApwStartupAgentProvider.java'},
+  {source:'src/main/java/dev/androidperformance/agent/ApwStartupAgent.java',path:'src/debug/java/dev/androidperformance/agent/ApwStartupAgent.java'},
+ ]);
+}
 async function buildZip(files){
  const local=[],central=[];let offset=0;
  for(const file of files){

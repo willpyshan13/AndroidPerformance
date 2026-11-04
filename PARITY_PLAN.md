@@ -96,7 +96,7 @@ CPU 调用栈时间图提供 PNG 导出，导出的是当前已绘制视图，�
 
 启动实验现显示 P50、最近秩 P90、波动系数、范围和基于中位数 / MAD 的复核候选，并保留逐轮 TotalTime 原始行。可选择两份本机保存的实验，比较 P50、P90、均值及变化百分比，报告包名、启动模式和设备序列号缺失 / 不一致，导出 JSON。对比明确按描述性数据处理，不把同份记录内的重复启动视为独立实验，也不推断显著性或因果。统计函数和上下文差异测试通过；macOS arm64 打包桌面 smoke 实际保存两份临时记录、点击比较并验证 JSON 导出与设备差异提示。TTID / TTFD 和 ART 阶段归因仍由单独 Perfetto 追踪提供，不与启动实验自动配对。
 
-启动实验可独立导出包含逐轮原始 `am start -W` 输出、编译前后快照和上下文的 JSON 报告，以及逐轮 CSV；CSV 含 UTF-8 BOM、正确引用字段并中和表格公式。导出数量限 10 轮、JSON 限 4 MiB。演示数据现在提供包名和设备标识，可在本机模式检验导出。430 项全量测试中 414 项通过、16 项因未配置可选官方样本跳过、0 失败；`npm run check` 通过；macOS arm64 `.app` smoke 实际触发两种导出并核对 JSON schema、轮数、摘要、CSV 行和 BOM。
+启动实验可独立导出包含逐轮原始 `am start -W` 输出、编译前后快照和上下文的 JSON 报告，以及逐轮 CSV；CSV 含 UTF-8 BOM、正确引用字段并中和表格公式。导出数量限 10 轮、JSON 限 4 MiB。可选 Startup Debug Agent 通过 debug-only provider 观察 Application 标记、Activity 创建 / 恢复和首次 PreDraw，并允许应用显式标记 fully-drawn；使用 `System.nanoTime()` 输出 APWS1 事件。桌面端按目标应用主进程 PID 过滤 Logcat，校验事件身份并展示阶段间隔。PreDraw 不证明画面已呈现，fully-drawn 需目标应用主动上报；这些日志暂不与某一轮 `am start -W` 或 Perfetto 启动自动配对。Agent 源码包、保护后的读取 API、协议解析及间隔计算通过自动化验证；Android 31 `android.jar` 编译通过。演示数据现在提供包名和设备标识，可在本机模式检验导出。435 项全量测试中 419 项通过、16 项因未配置可选官方样本跳过、0 失败；`npm run check` 通过；macOS arm64 `.app` smoke 实际触发两种导出并核对 JSON schema、轮数、摘要、CSV 行和 BOM，并验证 Startup Agent ZIP。
 
 ## Benchmark 回归阈值与报告
 

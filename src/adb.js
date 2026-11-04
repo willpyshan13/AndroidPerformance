@@ -13,6 +13,7 @@ import { captureLayoutFromAgent } from './layout-agent.js';
 import { parseComposeRecompositionLog } from './compose-runtime.js';
 import { parseSimpleperfDiagnostics } from './simpleperf-diagnostics.js';
 import { parseLeakCanaryLog } from './leakcanary-live.js';
+import { parseStartupAgentLog } from './startup-agent.js';
 import { parseJankStatsLog } from './jankstats-agent.js';
 import { openNetworkAgentSocket, pollNetworkAgentSocket } from './network-agent-socket.js';
 import { parseDevices, parseMemory, parseCpu, parseFrames, parseBattery, parseStartup, parseCompilationState, parseProcCpu, cpuDelta } from './parsers.js';
@@ -321,6 +322,19 @@ export class Adb {
         meanMs: valid.length ? valid.reduce((s, r) => s + r.totalTimeMs, 0) / valid.length : null,
         note: 'TotalTime 来自 am start -W，不等同于 TTFD。warm/hot 是操作协议，实际状态以 LaunchState 为准。' };
     });
+  }
+  async startupAgentSnapshot(serial,packageName) {
+    validateTarget(serial,packageName);
+    const uid=await this.packageUid(serial,packageName);let raw;
+    const pids=(await this.shell(serial,['pidof',packageName])).trim().split(/\s+/).filter(value=>/^\d+$/.test(value)).map(Number);
+    if(!pids.length)throw new Error('目标应用主进程未运行，无法读取 Startup Agent 事件');
+    const pid=pids[0],mainProcessPids=[pid];
+    try { raw=await this.shell(serial,['logcat','-b','main','-t','5000','-v','brief',`--uid=${uid}`,'-s','APWStartup:I'],{timeout:30000,maxBuffer:8*1024*1024}); }
+    catch(error) {
+      if(!/unrecognized option|unknown option/i.test(error.message))throw error;
+      raw=await this.shell(serial,['logcat','-b','main','-t','5000','-v','brief',`--pid=${pid}`,'-s','APWStartup:I'],{timeout:30000,maxBuffer:8*1024*1024});
+    }
+    return {...parseStartupAgentLog(raw,{serial,packageName,pids:mainProcessPids}),uid,pid,pids:mainProcessPids,processScope:'main-process',timestamp:Date.now()};
   }
   async layout(serial) {
     validateTarget(serial);

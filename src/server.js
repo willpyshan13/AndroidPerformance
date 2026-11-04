@@ -19,7 +19,7 @@ import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact 
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
 import {createRemoteSourceSnapshot} from './source-git.js';
-import {buildAgentPackage,buildLayoutAgentPackage,buildLeakCanaryAgentPackage,buildJankStatsAgentPackage} from './agent-package.js';
+import {buildAgentPackage,buildLayoutAgentPackage,buildLeakCanaryAgentPackage,buildJankStatsAgentPackage,buildStartupAgentPackage} from './agent-package.js';
 import {injectLeakCanaryDebugAgent} from './agent-injection.js';
 import { runMacrobenchmark } from './macrobenchmark.js';
 import { resolveGradleJavaPath } from './java-runtime.js';
@@ -101,6 +101,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         if(path==='/api/layout/agent-package'){const data=await buildLayoutAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-layout-agent.zip"'});return res.end(data);}
         if(path==='/api/heap/leakcanary-agent-package'){const data=await buildLeakCanaryAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-leakcanary-agent.zip"'});return res.end(data);}
         if(path==='/api/frames/jankstats-agent-package'){const data=await buildJankStatsAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-jankstats-agent.zip"'});return res.end(data);}
+        if(path==='/api/startup/agent-package'){const data=await buildStartupAgentPackage();res.writeHead(200,{'Content-Type':'application/zip','Content-Length':data.length,'Content-Disposition':'attachment; filename="android-performance-startup-agent.zip"'});return res.end(data);}
         if (path === '/api/status') {const inspector=await composeInspectorResources;return json({ version: VERSION, adbPath: adb.path, aapt2Path: await locateAapt2(), traceProcessorPath: await locateTraceProcessor().catch(()=>null), perfettoUiAvailable: await access(join(perfettoUiRoot,'index.html')).then(()=>true,()=>false), sharkAvailable:(await sharkResources).available, composeInspectorAvailable:inspector.available,composeInspectorReason:inspector.reason||null, platform: process.platform, desktop, dataDir });}
         if(path==='/api/trace/current'){
           if(!traceSession)return json({error:'当前没有可查看的追踪'},404);
@@ -454,6 +455,7 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
         }
         if (path === '/api/frames/reset') return json({ message: await adb.resetFrames(body.serial, body.packageName) });
         if (path === '/api/startup') return json(await adb.startup(body.serial, body.packageName, body));
+        if (path === '/api/startup/agent') return json(await adb.startupAgentSnapshot(body.serial,body.packageName));
         if (path === '/api/benchmark/run') return json(await adb.runBenchmark(body.serial,body.component,body.testClass??''));
         if (path === '/api/benchmark/gradle/run') {
           if (macrobenchmarkBusy) return json({ error: '已有 Gradle Benchmark 任务正在运行，请等待完成' }, 409);

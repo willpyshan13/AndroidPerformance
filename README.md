@@ -27,17 +27,19 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 
 ## 功能一览
 
+工作台共 16 个页面：概览、实时监控、CPU 采样、帧耗时分析、启动测试、电池与资源、GPU 产物、堆转储、布局检查、系统追踪、网络分析、基准对比、APK 分析、源码工作区、采集记录、设置与帮助。
+
 | 功能 | 可以做什么 | 数据来源 |
 | --- | --- | --- |
 | 设备与应用 | 查看连接状态、设备信息和已安装应用 | `adb devices -l`、设备属性 |
 | 实时监控 | 查看主进程 CPU、PSS / RSS、内存组成及设备电池信息 | `/proc`、`dumpsys cpuinfo`、`dumpsys meminfo` |
-| CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；时间范围与线程筛选可放大调用栈时间图，密集窗口优先呈现该窗口内的原始采样；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
-| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV / Markdown / JSON；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告，并导出完整报告 TXT / JSON；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配；分析已导入追踪中的 ART GC 回收量、运行 / 等待时间，以及 JIT、类加载、验证和初始化切片 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd 与 Trace Processor |
+| CPU 采样 | 采集和导入 simpleperf 数据，查看可展开调用树及相对权重条、热点调用方、火焰图、按单调时间排列的采样调用栈、采样点时间线与叶函数权重分布，并提供按事件、线程、时间范围和完整调用栈筛选的 CPU 样本标记列表；设备采集会保留 simpleperf 明确报告的截断及丢失样本诊断；时间范围与线程筛选可放大调用栈时间图，密集窗口优先呈现该窗口内的原始采样；macOS arm64 打包 renderer 已用 50,000 个合成样本核对索引、2,000 样本投影及 Canvas 像素绘制 | Android NDK simpleperf |
+| 堆分析 | 采集或导入 HPROF，查看类、实例、引用、候选根路径、近似支配图及快照差异；Android 15+ 可采集并导出系统 Bitmap PNG dump；普通快照可导出已记录的 Bitmap Java 缓冲区原始字节；按当前搜索和增长筛选导出类统计或快照对比 CSV / Markdown / JSON；使用 Shark 2.14 生成 LeakCanary 格式的 Android 泄漏报告，并导出完整报告 TXT / JSON；读取 LeakCanary 或可选 Debug Agent 生命周期事件；在支持的设备上按调用栈采样 Native / ART 分配，也可导入含 heapprofd 数据的追踪，按采样区间（dump）切换查看分配调用树；分析已导入追踪中的 ART GC 回收量、运行 / 等待时间，以及 JIT、类加载、验证和初始化切片 | `am dumpheap`、Android Bitmap PNG dump、LeakCanary Logcat、Debug Agent、Shark、Perfetto heapprofd 与 Trace Processor |
 | 电池与资源 | 单次或按间隔重复采集 batterystats，查看 UID 网络、唤醒锁、唤醒闹钟、作业及采样时间线；在可用时计算系统报告的 UID mAh 估计值区间差；导出实验 JSON 或 Battery Historian checkin | `dumpsys batterystats --checkin` |
 | 帧耗时 | 查看逐帧图、超预算帧、FrameTimeline 实际与预期时间、系统超期分类及同轨道分组；同一设备采集的 gfxinfo 与 Perfetto FrameTimeline 可按纳秒区间列出重叠候选并跳转追踪；同设备、同包名且带 Agent 单调时钟的布局快照可映射到追踪帧区间；可选接入 Jetpack JankStats Debug Agent，按 Activity、Window、Fragment 和应用 UI 状态汇总应用侧帧耗时，并按同 PID、±5 ms 起始窗口查找 FrameTimeline 候选，按帧区间重叠时长排序 | `dumpsys gfxinfo framestats`、Perfetto、AndroidX JankStats |
 | 启动测试 | 重复冷、温、热启动；可选择保持现有 ART 编译状态或先执行 `speed-profile` / `speed` 编译；查看 P50 / P90、耗时波动、复核候选、设备报告的启动模式及编译状态；可导出包含每轮原始输出和编译上下文的 JSON，或导出逐轮 CSV；保存两份实验后可对比 P50、P90 与均值并导出 JSON；可下载可选 debug-only Startup Agent，在目标应用接入后读取 Application / Activity、首次 PreDraw 和应用显式报告的 fully-drawn 里程碑；可选择逐轮读取 Agent Logcat，或读取系统 event log 里的首帧 / fully-drawn 事件 | `am start -W`、Android event log、`cmd package compile`、`dumpsys package`、Startup Debug Agent |
 | 布局检查 | debug 构建可接入应用内 Agent 采集 Android View 树、Compose 合并/未合并 Semantics 树和截图；可导入/导出包含层级、截图与设备元数据的完整采集档案；可对选定 Composable 显式插桩并读取运行时执行次数；应用内 Agent 还可统计 RecomposeScope 的 State 读取关联，以及两次采集之间已应用 State 对象与读取关系的时间交集（不证明重组或帧因果）；新 Probe 的 uptime 事件可与 gfxinfo 逐帧区间做时间重合关联；布局检查线索附有规则 ID、严重级别、置信度和节点证据，并在层级明确报告不可见或完全透明节点时提示复核；未接入时使用 UIAutomator 回退 | Android View、Compose Semantics、Compose Runtime probe、UIAutomator、Compose 编译报告 |
-| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、Binder 阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
+| 系统追踪 | 采集 5–30 秒追踪并下载、自动载入；可选择 FrameTimeline 模式；Compose Probe uptime 事件可借助追踪时钟快照与实际帧区间做时间重合关联；在本机完整 Perfetto UI 中交互分析，并查看切片、调度时间线、基于 android.binder 模块的事务总览、同步事务阶段及 GPU RenderStage / 频率 / 进程显存证据；可用同一追踪的 FrameTimeline 以 UPID 和时间区间找重叠项 | Perfetto，32 MB 缓冲区 |
 | GPU 产物 | 导入 AGI 帧捕获或追踪，保存索引、校验 SHA-256，并将追踪送入系统追踪分析 | 本地 `.gfxtrace` / Perfetto 文件、外部 AGI |
 | 网络分析 | 查看请求活动时间线、筛选后的峰值并发、HTTP 协议、OkHttp Agent 明确记录的连接复用状态和域名连接阶段；支持本机抽象 socket 增量采集与旧版 Logcat 兼容；可将筛选结果导出为脱敏 HAR、CSV 或 JSON；也可比较系统按 UID 统计的移动网络与 Wi-Fi 字节数 | 本地导入标准 HAR、`dumpsys batterystats --checkin` |
 | 基准对比 | 保存及载入历史运行，按测试参数比较指标并提示环境差异；逐项设置优化方向和回归阈值，导出 JSON、CSV、Markdown 与 CI JSON；可运行已安装的 instrumentation，或配置启动方式、ART 编译模式、启动/滚动/动画/页面切换场景、预热/迭代次数和 Baseline Profile 输入，再运行带 Gradle Wrapper 的 Macrobenchmark 工程；配置以 APS Gradle properties 和环境变量传入，目标测试需要显式读取；载入本次生成的 JSON、直接将本次 trace 导入分析；可选多份独立保存报告，查看并导出逐指标的报告级中位数及探索性 95% Bootstrap 区间 | AndroidX Benchmark JSON / ADB / Gradle Wrapper |
@@ -58,7 +60,7 @@ GitHub Actions 仅在 macOS arm64 runner 上执行自动测试、APK 工具检�
 npm ci
 npm run prepare:adb        # 准备 macOS 官方 ADB，打包前需要
 npm run prepare:apk-tools  # 从本机 Android SDK 准备 AAPT2
-npm run prepare:simpleperf  # 准备当前 macOS/Windows/Linux x64 的 simpleperf 资源（需要稳定版 NDK；旧版设备二进制可使用仓库内置资源）
+npm run prepare:simpleperf  # 为当前 macOS ARM64 主机准备 simpleperf 资源（需要稳定版 NDK；旧版设备二进制可使用仓库内置资源）
 npm run prepare:trace-processor  # 下载并校验当前主机架构的官方 Trace Processor
 npm run prepare:perfetto-ui  # 下载并校验本机自托管的 Perfetto UI
 npm run prepare:shark        # 下载并校验 Shark 及 Java runtime
@@ -95,12 +97,12 @@ npm run package:mac   # 本机生成 macOS arm64 .app 目录
 
 ## 结果解读与范围
 
-- **CPU 采样与 ART 方法跟踪**：当前原生打包流程为 macOS、Windows 和 Linux x64 安装包准备 Android simpleperf 二进制、宿主解析库及 Python 3.11.18 运行时；安装包无需另装 Python。源码运行需稳定版 Android NDK，Android 7 兼容二进制已随仓库提供，未安装旧 NDK 时会复用这些资源；`npm run prepare:simpleperf` 会校验并准备 Python 运行时。Linux arm64 安装包暂未包含可用的 simpleperf 宿主解析库。源码开发可用 `APW_PYTHON_PATH` 指定自有解释器。采集需要可调试或可 profile 的目标和允许采样的设备；可点击“读取设备事件”查询该设备支持的 simpleperf 事件，最多选择 8 个。硬件计数器复用时，样本数和权重会受计数器运行比例影响；权重是事件周期，不等同于 CPU 百分比，时间线显示采样点而非线程调度状态。可在目标应用运行时通过 `am profile` 采集 ART `.trace/.dmtrace`（3–30 秒、100 µs–1 s 间隔，可取消），也可导入已有文件，查看方法调用时间线、线程、调用次数、包含与自身时间；逐方法插桩开销明显，只适合相对参考，不能与 simpleperf 采样结果混为一类。
+- **CPU 采样与 ART 方法跟踪**：当前桌面包只面向 macOS ARM64 本机使用，包含 Android simpleperf 二进制、宿主解析库和 Python 3.11.18 运行时，无需另装 Python。源码运行需稳定版 Android NDK；Android 7 兼容二进制已随仓库提供，未安装旧 NDK 时会复用这些资源。源码开发可用 `APW_PYTHON_PATH` 指定自有解释器。采集需要可调试或可 profile 的目标和允许采样的设备；可点击“读取设备事件”查询该设备支持的 simpleperf 事件，最多选择 8 个。硬件计数器复用时，样本数和权重会受计数器运行比例影响；权重是事件周期，不等同于 CPU 百分比，时间线显示采样点而非线程调度状态。可在目标应用运行时通过 `am profile` 采集 ART `.trace/.dmtrace`（3–30 秒、100 µs–1 s 间隔，可取消），也可导入已有文件，查看方法调用时间线、线程、调用次数、包含与自身时间；逐方法插桩开销明显，只适合相对参考，不能与 simpleperf 采样结果混为一类。
 - **CPU 和内存**：CPU 优先根据相邻 `/proc` 计数器计算主进程利用率，单核为 100%；首个样本、进程重启或在线 CPU 数变化时需要重新建立基线。权限不足时回退到 `cpuinfo` 的应用及子进程窗口，超过 30 秒未更新则显示不可用。内存为主进程快照；电池信息不代表应用耗电量。
 - **电池与资源**：统计属于 UID 的 since-charged 累计窗口，共享 UID 不能按应用拆分；两次同设备快照仅在窗口标识一致且计数未下降时计算可用差值，不能据此推算耗电量。可设置 2–50 次、1–3600 秒间隔采样；采样时间线显示累计读数，停止会保留已有样本。离线导入可导出原始 Battery Historian checkin；设备导出会重新读取设备当前 checkin，不代表此前快照的原始文件。保存实验和 JSON 报告包含完整样本序列；离线文件上限为 12 MiB。
 - **帧与启动**：gfxinfo 历史缓冲区与平台累计 janky frames 的范围可能不同；超过自选预算不等同于平台 Jank。连续帧分组仅包含同一 PROFILEDATA 段中原始记录相邻、起始间隔不超过 100 ms 的超预算帧；缺失或无效记录会打断分组。FrameTimeline 模式要求 Android 12 及以上，请求系统帧数据源；有数据的真实设备录制尚待验证。普通追踪中是否包含该数据取决于设备的 Perfetto 版本。启动 TotalTime 不等同于 TTFD，温 / 热启动的实际状态以设备返回的 LaunchState 为准。编译模式默认为“保持现状”；选择 `speed-profile` 或 `speed` 会在启动测量前对目标包执行 `cmd package compile`，改变设备的编译状态。`speed-profile` 使用设备当前可用的 profile，不能证明 APK 中的 Baseline Profile 已安装或生效。冷启动会 force-stop 目标应用；帧分析建议先重置统计、重现操作，再读取数据。
 - **布局与基准**：UIAutomator 提供可访问性层级，不是完整 View / Compose 树；截图与层级顺序采集，动画期间可能不一致。Benchmark 单份报告变化是描述性比较；多份独立保存报告可估算报告级中位数差异的 Bootstrap 区间，但它是探索性估计，不是显著性检验或因果结论。使用者需确认报告来自独立运行；sampledMetrics 如未提供中位数，会计算合并样本的中位数，单份报告内的 runs 不等于独立实验。
-- **堆分析**：采集通常需要可调试应用；字段和数组元素数据字节不等于浅大小或保留大小，支持分页查看已索引实例、跟随引用、查找有限的候选根路径和浏览近似支配图。最多索引 100 万个对象；支配图用 CSR 类型化数组计算，最多读取 150 万条引用边，超限会标记结果不完整。支配图基于可见 GC 根、字段、数组、类及静态字段关系；不区分强弱引用，可能缺少运行时关系。记录数据字节不含对象头、对齐等信息，不能作为保留大小；快照对比或路径结果都不能证明泄漏。
+- **堆分析**：heap 分配剖析的每个数值只统计所选采样区间内记录的分配增量，不是从采集开始的累计值；没有设备时可导入 `.perfetto-trace` / `.pftrace` 分析，导入受 256 MiB 限制，界面上的采样区间列表最多 500 项。采集通常需要可调试应用；字段和数组元素数据字节不等于浅大小或保留大小，支持分页查看已索引实例、跟随引用、查找有限的候选根路径和浏览近似支配图。最多索引 100 万个对象；支配图用 CSR 类型化数组计算，最多读取 150 万条引用边，超限会标记结果不完整。支配图基于可见 GC 根、字段、数组、类及静态字段关系；不区分强弱引用，可能缺少运行时关系。记录数据字节不含对象头、对齐等信息，不能作为保留大小；快照对比或路径结果都不能证明泄漏。
 - **实时生命周期与应用帧观察**：内存页可选择 Android 工程目录，将 Activity Agent 注入目标 app 的 `src/debug` source set；已有 debug Manifest 会先备份，文件冲突时停止，已有 AndroidX Fragment 依赖时可选择加入 Fragment 桥接。项目已添加 AndroidX `metrics-performance` debug 依赖时，也可一并注入 JankStats 桥接。注入后需自行构建并安装 debug 变体。Agent 按弱引用观察已销毁 Activity / Fragment，在 5 秒、30 秒、2 分钟报告仍可达的候选，不强制 GC 或持有对象强引用。帧页仍提供独立 JankStats Agent 源码包下载。两者都只用于 debug 构建；生命周期候选不读取对象图，也不等于确认泄漏，确认分析请使用 HPROF / LeakCanary Shark。
 - **GPU**：桌面版可选择或启动本机安装的 AGI；导出 `.gfxtrace` 后需在 AGI 中手动打开。校验仅检测导入后文件是否变化，不能验证来源或格式；单个产物上限 512 MiB，交给内置追踪分析器的上限为 256 MiB。此功能不采集 GPU 数据。
 - **源码工作区**：快照保存在本机；本地目录读取期间可能变化，因此不是原子的 Git 版本。远程模式使用浅克隆并记录完整提交 ID；临时仓库下载量可能大于快照限制，获取结束后清除临时仓库，不执行项目脚本，也不获取子模块或 LFS 内容。快照包含受支持的文本源码，并在 Gradle 工程中额外收集 `build/outputs/mapping/**/mapping.txt`；其他构建产物和符号链接会跳过。最多 5,000 文件、总计 32 MiB。Java/Kotlin 符号定位会优先使用 R8 / ProGuard 映射文件还原混淆类名、方法名及可用的行号范围，再按源码声明生成候选；没有映射时按声明名、类名和包名排序。C/C++ 符号先尝试内置解析；遇到复杂 Itanium ABI 编码时，macOS ARM64 桌面包会调用 NDK `llvm-cxxfilt` 解码后匹配源码声明。此处生成的是文本候选，不等于 ELF 地址级证明。CPU 采样还会保留受限的 ELF 文件地址和 Build ID；macOS ARM64 包内 LLVM symbolizer 可在符号目录中验证同 Build ID 的 ELF，再读取 DWARF 源码行及内联帧。无匹配 Build ID、未剥离符号文件或 DWARF 行表时无法给出精确行；解析出的构建路径仍须与源码快照核对。
@@ -116,7 +118,8 @@ Compose State 时间面板会保留每个唯一 group key 的 apply 首末单调
 
 | 验证 | 结果 | 详情 |
 | --- | --- | --- |
-| 自动测试（2026-11-04） | 416 项，400 通过、0 失败、16 项因未配置的可选外部样本而跳过 | `npm test` |
+| 自动测试（2026-11-06） | 455 项，438 通过、0 失败、17 项因未配置的可选外部样本而跳过 | `npm test` |
+| heapprofd 分配区间（2026-11-06） | 合成 2 个 dump 的 trace 经真实 HTTP 与桌面渲染导入：区间数 2、默认最新区间、切换后数值与调用树随之刷新；真实设备采集仍未验证 | `test/trace-analysis.test.js`、`test/heap-profile-ui.test.js`、桌面 smoke |
 | 设备采集（2026-11-02） | rk3399-all（Android 7.1.2 / API 25）：15 项通过；Perfetto 因设备不支持而跳过 | [真机测试记录](TEST_REPORT.md) |
 | APK 分析 | 真实 APK 导入、分析、导出和回放已验证 | [APK 测试记录](APK_TEST_REPORT.md) |
 
@@ -162,6 +165,7 @@ GPU 页面可读取设备系统报告的 Vulkan 和 OpenGL ES 版本；该报告
 CPU 采样完成后会下载并尝试自动载入分析；若解析失败，下载的原始文件仍可使用。实时采集会一并显示 simpleperf 输出中可识别的记录数、切除数、丢失数、内核 / 用户态丢失数及截断调用栈数；支持 trace-offcpu 的设备还可记录线程被调度切出后的等待栈，并在 `sched:sched_switch` 事件中查看区间估算。未由设备报告的项目保持“未提供”，不会按零计，也不会从解析后的时间线推算；单独导入 perf.data 时，这些采集器诊断不可恢复。采样可以保存为本机档案，载入前校验 SHA-256 并重新分析。支持指定本机 `symfs` 符号目录并重新解析，符号文件需要与采样中的路径和构建 ID 对应；不匹配的文件会被 simpleperf 拒绝，无法解析的函数仍显示为 `unknown`。
 
 启动追踪的可选真实样本回归：从 Perfetto 官方测试数据获取 `api31_startup_cold.perfetto-trace`（SHA-256 `aadf4a141dc0249abd4d7080a7d94bd614949eb0e7398fa6f3c75b503c70dade`），设置 `APW_STARTUP_TRACE` 为本机路径后执行 `npm test`。未设置时相关真实样本测试会跳过。
+Binder 事务总览的可选正向回归：设置 `APW_BINDER_TRACE` 为已有 Android Perfetto trace 的本机路径，再运行 `node --test test/trace-analysis.test.js`；未设置时仅跳过该真实数据用例。
 
 Perfetto 启动记录可查看基于主线程状态和切片的阶段分解；分类及累计时间是分析工具的归类，不能单独证明问题根因。
 
@@ -171,7 +175,9 @@ Perfetto 启动记录可查看基于主线程状态和切片的阶段分解；�
 
 CPU 采样提供按叶函数汇总的时间分布图，点击时间段可查看该段全部线程的调用树；图中是事件周期采样权重，不是 CPU 时间或函数包含成本。线程时间线可按 PID/TID 查询当前系统追踪窗口的线程状态；不同记录可能来自不同设备或时间，PID/TID 也可能复用，请自行核对，功能不会自动对齐时钟。
 
-桌面 GPU 页面可将已导入的 `.gfxtrace` 校验后交给已配置的 AGI。交接会在应用数据目录 `gpu-open/` 保留私有副本，便于 AGI 异步读取；可在不再需要时手动清理。当前环境未安装 AGI，实际打开行为仍待验证。
+CPU 样本标记列表会列出离散采样点，可按当前采样事件、线程、相对起始时间和完整调用栈筛选。每行可打开该样本的完整已解析调用栈；列表最多显示 500 条匹配记录，周期权重不表示函数运行时长。
+
+桌面 GPU 页面可将已导入的 `.gfxtrace` 校验后交给已配置的 AGI。交接会在应用数据目录 `gpu-open/` 保留私有副本，便于 AGI 异步读取；可在不再需要时手动清理。打包 smoke 用本机假 AGI 验证了页面操作、桌面启动调用、单独传递文件路径和副本内容；当前环境未安装真实 AGI，实际兼容性仍待验证。
 
 Benchmark 详情展示样本范围、四分位数及每次迭代中位数范围；新导入的 sampledMetrics 保留迭代分组，旧记录可能没有分组。这些描述性统计不能证明显著性。
 

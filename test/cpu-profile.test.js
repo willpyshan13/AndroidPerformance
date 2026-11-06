@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseFoldedStacks,layoutFlame,buildSampleTimeline,cpuLibraryOptions,filterCpuProfileByLibrary} from '../public/offline.js';
+import {parseFoldedStacks,layoutFlame,buildSampleTimeline,cpuLibraryOptions,filterCpuProfileByLibrary,sampleMarkerRows,buildHeapProfileCallTree,visibleHeapProfileCallTreeRows,defaultHeapProfileCallTreeExpansion} from '../public/offline.js';
 import {Adb} from '../src/adb.js';
 import {parseSimpleperfDiagnostics} from '../src/simpleperf-diagnostics.js';
 test('simpleperf record diagnostics preserve distinct counters and leave absent values unknown',()=>{
@@ -14,6 +14,28 @@ test('folded stacks accumulate event period weights and preserve call order',()=
 });
 test('folded stacks reject malformed values and unsafe weights',()=>{
  for(const s of ['x; 5','x -2','x 9007199254740992','x y'])assert.throws(()=>parseFoldedStacks(s));
+});
+test('heap allocation call tree preserves parent paths and exposes bounded expansion rows',()=>{
+ const sites=[
+  {id:'1',parentId:null,name:'root',cumulativeAllocatedBytes:'1000'},
+  {id:'2',parentId:'1',name:'caller',cumulativeAllocatedBytes:'800'},
+  {id:'3',parentId:'2',name:'leaf',cumulativeAllocatedBytes:'500'},
+  {id:'4',parentId:'1',name:'other',cumulativeAllocatedBytes:'200'},
+  {id:'5',parentId:'missing',name:'orphan',cumulativeAllocatedBytes:'50'},
+ ];
+ const tree=buildHeapProfileCallTree(sites),expanded=defaultHeapProfileCallTreeExpansion(tree);
+ assert.deepEqual(tree.map(node=>node.name),['root','orphan']);
+ assert.deepEqual(tree[0].children.map(node=>node.name),['caller','other']);
+ assert.deepEqual([...expanded],['1','2']);
+ assert.deepEqual(visibleHeapProfileCallTreeRows(tree,expanded).map(row=>[row.node.name,row.depth]),[['root',0],['caller',1],['leaf',2],['other',1],['orphan',0]]);
+ expanded.delete('2');assert.deepEqual(visibleHeapProfileCallTreeRows(tree,expanded).map(row=>row.node.name),['root','caller','other','orphan']);
+});
+test('heap allocation call tree safely roots cycles and rejects duplicate IDs or invalid limits',()=>{
+ const cyclic=buildHeapProfileCallTree([{id:'1',parentId:'2',cumulativeAllocatedBytes:'4'},{id:'2',parentId:'1',cumulativeAllocatedBytes:'3'}]);
+ assert.equal(visibleHeapProfileCallTreeRows(cyclic,new Set(['1','2'])).length,2);
+ assert.throws(()=>buildHeapProfileCallTree([{id:'1'},{id:'1'}]),/重复/);
+ assert.throws(()=>buildHeapProfileCallTree(Array(501).fill({id:'1'})),/上限/);
+ assert.throws(()=>buildHeapProfileCallTree([{id:'bad',cumulativeAllocatedBytes:'1'}]),/节点无效/);
 });
 test('CPU library filtering keeps samples containing that library and aggregates only its frames',()=>{
  const input={event:'cpu-clock',samples:[
@@ -110,6 +132,18 @@ test('sample timeline preserves large nanosecond timestamps and filters by sampl
  assert.equal(grouped.clockId,'monotonic');
  const t=buildSampleTimeline(input,2);assert.equal(t.durationMs,1000);assert.deepEqual(t.groups[0].counts,[1,1]);
  const p=profileForTimeBin(t,1);assert.equal(p.root.weight,20);assert.equal(p.symbols.find(x=>x.name==='b').self,20);
+});
+test('CPU sample markers filter by event, thread, inclusive time range and full stack with bounded rows',()=>{
+ const timeline=buildSampleTimeline({event:'cpu-clock:u',samples:[
+  {timeNs:'1000000000',period:'10',thread:'main',pid:1,tid:1,frames:['root','renderRow']},
+  {timeNs:'1500000000',period:'20',thread:'worker',pid:1,tid:2,frames:['root','loadImage']},
+  {timeNs:'2000000000',period:'30',thread:'main',pid:1,tid:1,frames:['root','renderRow','drawText']},
+ ]},4);
+ const result=sampleMarkerRows(timeline,{thread:'main-1/1',event:'cpu-clock:u',fromMs:500,toMs:1000,stackQuery:'drawtext',limit:1});
+ assert.equal(result.total,1);assert.equal(result.rows[0].offsetMs,1000);assert.equal(result.rows[0].sample.frames.at(-1),'drawText');assert.equal(result.truncated,false);
+ assert.equal(sampleMarkerRows(timeline,{event:'instructions',limit:10}).total,0);
+ const bounded=sampleMarkerRows(timeline,{limit:1});assert.equal(bounded.rows.length,1);assert.equal(bounded.total,3);assert.equal(bounded.truncated,true);
+ assert.throws(()=>sampleMarkerRows(timeline,{fromMs:-1}),/无效/);assert.throws(()=>sampleMarkerRows(timeline,{fromMs:2,toMs:1}),/无效/);
 });
 test('sample timeline reports unusable timestamps and rejects invalid ranges',async()=>{
  const {buildSampleTimeline,profileForTimeBin}=await import('../public/offline.js');

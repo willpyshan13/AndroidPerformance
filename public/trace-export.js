@@ -51,7 +51,7 @@ export function createTraceAnalysisReport({trace,sqlResult=null,sql='',perfettoU
     schema:'android-performance.trace-analysis-report',
     schemaVersion:1,
     generatedAt:new Date().toISOString(),
-    trace:{fileName:String(trace.fileName||'trace'),fileBytes:Number.isSafeInteger(trace.fileBytes)?trace.fileBytes:null,bounds:trace.bounds||null,slices:Array.isArray(trace.slices)?trace.slices.slice(0,100):[],threads:Array.isArray(trace.threads)?trace.threads.slice(0,100):[],binder:Array.isArray(trace.binder)?trace.binder.slice(0,100):[],errors:Array.isArray(trace.errors)?trace.errors.slice(0,200):[]},
+    trace:{fileName:String(trace.fileName||'trace'),fileBytes:Number.isSafeInteger(trace.fileBytes)?trace.fileBytes:null,bounds:trace.bounds||null,slices:Array.isArray(trace.slices)?trace.slices.slice(0,100):[],threads:Array.isArray(trace.threads)?trace.threads.slice(0,100):[],binder:Array.isArray(trace.binder)?trace.binder.slice(0,100):[],binderTransactions:Array.isArray(trace.binderTransactions)?trace.binderTransactions.slice(0,100):[],errors:Array.isArray(trace.errors)?trace.errors.slice(0,200):[]},
     customSql:null,
     perfettoUiCsv:null,
     evidence:{}

@@ -39,15 +39,22 @@ test('Perfetto UI CSV parser enforces structure, field widths, and bounded rows'
 });
 
 test('trace analysis report includes matching SQL and trace evidence while excluding stale sessions',()=>{
-  const trace={sessionId:'trace-a',fileName:'capture.perfetto-trace',fileBytes:123,bounds:{startNs:'9007199254740993',endNs:'9007199254741993'},slices:[{name:'Frame',count:2,totalMs:3}],threads:[],binder:[],errors:[]};
+  const trace={sessionId:'trace-a',fileName:'capture.perfetto-trace',fileBytes:123,bounds:{startNs:'9007199254740993',endNs:'9007199254741993'},slices:[{name:'Frame',count:2,totalMs:3}],threads:[],binder:[],binderTransactions:[{name:'android.view.IWindowSession',count:2,totalMs:8.25}],errors:[]};
   const report=createTraceAnalysisReport({trace,sql:'SELECT ts FROM slice',sqlResult:{sessionId:'trace-a',columns:['ts'],rows:[['9007199254740993']],truncated:false},frameTimeline:{sessionId:'trace-a',frames:[{tsNs:'9007199254740993'}]},binderResult:{sessionId:'trace-old',transactions:[{id:1}]}});
   assert.equal(report.schema,'android-performance.trace-analysis-report');
   assert.equal(report.trace.bounds.startNs,'9007199254740993');
+  assert.deepEqual(report.trace.binderTransactions,trace.binderTransactions);
   assert.deepEqual(report.customSql,{query:'SELECT ts FROM slice',columns:['ts'],rows:[['9007199254740993']],truncated:false});
   assert.equal(report.evidence.frameTimeline.frames[0].tsNs,'9007199254740993');
   assert.equal(report.evidence.binderResult,undefined);
   const parsed=JSON.parse(formatTraceAnalysisReport({trace,sqlResult:{sessionId:'trace-old',columns:['x'],rows:[]}}));
   assert.equal(parsed.customSql,null);
+});
+
+test('trace analysis report bounds Binder transaction summary groups',()=>{
+ const groups=Array.from({length:101},(_,i)=>({name:`service.${i}`,count:i+1,totalMs:i}));
+ const report=createTraceAnalysisReport({trace:{sessionId:'trace-binder',binderTransactions:groups}});
+ assert.equal(report.trace.binderTransactions.length,100);assert.equal(report.trace.binderTransactions[99].name,'service.99');
 });
 
 test('trace analysis report includes a current Perfetto UI CSV import with honest provenance and excludes stale imports',()=>{

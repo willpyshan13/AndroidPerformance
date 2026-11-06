@@ -685,6 +685,32 @@ export function reverseCallTree(scope, symbol) {
   return {root,matches};
 }
 
+// Trace Processor's heap summary is parent-linked. Keep its hierarchy
+// explorable instead of flattening the call paths into a symbol ranking.
+export function buildHeapProfileCallTree(sites) {
+  if (!Array.isArray(sites) || sites.length > 500) throw new Error('内存调用树记录无效或超出 500 个节点上限');
+  const nodes=sites.map(site=>{
+    if(!site||!/^\d+$/.test(String(site.id??''))||!/^-?\d+$/.test(String(site.cumulativeAllocatedBytes??'0')))throw new Error('内存调用树节点无效');
+    return {...site,id:String(site.id),parentId:site.parentId===null||site.parentId===undefined||site.parentId===''?null:String(site.parentId),children:[],parent:null};
+  });
+  const byId=new Map();for(const node of nodes){if(byId.has(node.id))throw new Error('内存调用树节点 ID 重复');byId.set(node.id,node);}
+  const roots=[];
+  for(const node of nodes){const parent=byId.get(node.parentId);if(!parent||parent===node){roots.push(node);continue;}let ancestor=parent,cycle=false,steps=0;while(ancestor&&steps++<=nodes.length){if(ancestor===node){cycle=true;break;}ancestor=ancestor.parent;}if(cycle||steps>nodes.length+1){roots.push(node);continue;}node.parent=parent;parent.children.push(node);}
+  const compare=(a,b)=>{const left=BigInt(a.cumulativeAllocatedBytes||'0'),right=BigInt(b.cumulativeAllocatedBytes||'0');return left>right?-1:left<right?1:a.id.localeCompare(b.id);};
+  const pending=roots.slice();while(pending.length){const node=pending.pop();node.children.sort(compare);pending.push(...node.children);}roots.sort(compare);return roots;
+}
+
+export function visibleHeapProfileCallTreeRows(roots,expandedIds=new Set()) {
+  if(!Array.isArray(roots)||!(expandedIds instanceof Set))throw new Error('内存调用树展开状态无效');
+  const rows=[],pending=roots.slice().reverse().map(node=>({node,depth:0}));
+  while(pending.length){const {node,depth}=pending.pop(),expanded=expandedIds.has(node.id);rows.push({node,depth,hasChildren:node.children.length>0,expanded});if(expanded)for(let i=node.children.length-1;i>=0;i--)pending.push({node:node.children[i],depth:depth+1});}
+  return rows;
+}
+
+export function defaultHeapProfileCallTreeExpansion(roots) {
+  const expanded=new Set();for(const root of roots||[]){if(root.children.length){expanded.add(root.id);for(const child of root.children)if(child.children.length)expanded.add(child.id);}}return expanded;
+}
+
 // Positions are normalized to the selected root's event-period weight.
 export function layoutFlame(root,{maxDepth=40,maxNodes=3000}={}) {
   if(!root||!Number.isFinite(root.weight)||root.weight<=0)throw new Error('火焰图缺少有效权重');
@@ -803,6 +829,13 @@ export function sampleStackTimeline(timeline,{thread=null,rangeMs=null,maxSample
  const functions=[...weights].map(([name,weight])=>({name,weight})).sort((a,b)=>b.weight-a.weight||a.name.localeCompare(b.name)).slice(0,8);
  const origin=ordered[0].time;
  return {entries,functions,totalSamples:candidates.length,renderedSamples:entries.length,truncated:entries.length<candidates.length,maxDepth,startTime:candidates[0].time,endTime:candidates.at(-1).time,startMs:Number(candidates[0].time-origin)/1e6,endMs:Number(candidates.at(-1).time-origin)/1e6};
+}
+export function sampleMarkerRows(timeline,{thread=null,event=null,fromMs=null,toMs=null,stackQuery='',limit=500}={}) {
+ if(!timeline?.available||!Array.isArray(timeline.samples)||thread!==null&&typeof thread!=='string'||event!==null&&typeof event!=='string'||fromMs!==null&&(!Number.isFinite(fromMs)||fromMs<0)||toMs!==null&&(!Number.isFinite(toMs)||toMs<0)||fromMs!==null&&toMs!==null&&toMs<fromMs||fromMs!==null&&fromMs>timeline.durationMs||toMs!==null&&toMs>timeline.durationMs||typeof stackQuery!=='string'||stackQuery.length>512||!Number.isInteger(limit)||limit<1||limit>2000)throw new Error('CPU 样本标记筛选参数无效');
+ const ordered=timeline.samplesByTime||[...timeline.samples].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0),origin=ordered[0]?.time??0n,query=stackQuery.trim().toLocaleLowerCase(),effectiveFrom=fromMs??0,effectiveTo=toMs??timeline.durationMs,rows=[];let total=0;
+ if(event!==null&&event!==timeline.event)return {rows,total:0,truncated:false,event:timeline.event,fromMs:effectiveFrom,toMs:effectiveTo};
+ for(const sample of ordered){if(thread!==null&&sample.thread!==thread)continue;const offsetMs=Number(sample.time-origin)/1e6;if(offsetMs<effectiveFrom||offsetMs>effectiveTo)continue;if(query&&!sample.frames.join(' ').toLocaleLowerCase().includes(query))continue;total++;if(rows.length<limit)rows.push({sample,offsetMs});}
+ return {rows,total,truncated:total>rows.length,event:timeline.event,fromMs:effectiveFrom,toMs:effectiveTo};
 }
 export function drawSampleStackTimeline(canvas,projection,{devicePixelRatio=globalThis.devicePixelRatio||1}={}) {
  if(!canvas||!Array.isArray(projection?.entries)||!projection.entries.length||!Number.isFinite(devicePixelRatio)||devicePixelRatio<=0)throw new Error('调用栈时间图画布无效');

@@ -113,7 +113,7 @@ test('English localization changes static UI labels but skips code, table conten
     const parent={tag,closest(){return ['pre','code','textarea','input','td'].includes(tag)?this:null;},matches(selector){return selector.split(',').includes(tag);}};
     return {parentElement:parent,nodeValue:value};
   };
-  const nodes=[entry('h2','APK 体积组成'),entry('pre','APK 体积组成'),entry('td','APK 体积组成'),entry('h2','customer label'),entry('dt','CPU 架构'),entry('a','参考项目 ↗')];
+  const nodes=[entry('h2','APK 体积组成'),entry('pre','APK 体积组成'),entry('td','APK 体积组成'),entry('h2','customer label'),entry('dt','CPU 架构')];
   const root={ownerDocument:{createTreeWalker(){let index=-1;return {nextNode(){index++;if(index>=nodes.length)return false;this.currentNode=nodes[index];return true;}};}}};
   localizeTextNodes(root,'en-US');
   assert.equal(nodes[0].nodeValue,'APK size breakdown');
@@ -121,11 +121,9 @@ test('English localization changes static UI labels but skips code, table conten
   assert.equal(nodes[2].nodeValue,'APK 体积组成');
   assert.equal(nodes[3].nodeValue,'customer label');
   assert.equal(nodes[4].nodeValue,'CPU architecture');
-  assert.equal(nodes[5].nodeValue,'Reference project ↗');
   localizeTextNodes(root,'zh-CN');
   assert.equal(nodes[0].nodeValue,'APK 体积组成');
   assert.equal(nodes[4].nodeValue,'CPU 架构');
-  assert.equal(nodes[5].nodeValue,'参考项目 ↗');
 });
 
 test('English localization translates accessible labels and placeholders and restores them in Chinese',()=>{
@@ -298,7 +296,7 @@ test('Heap page labels preserve HPROF evidence while explaining allocation-profi
   const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
   const guidance=[
     '采集通常要求应用可调试，可能暂停目标进程。文件可能包含敏感数据。字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小；可分页浏览实例、候选根路径和近似支配图，不能据此证明泄漏。最多索引 100 万个对象，近似支配图计算最多支持 25 万个索引对象。',
-    '按调用栈采样 malloc/free 分配。Native 要求 Android 10+；ART 分配样本要求 Android 12+，仅显示采集期间分配调用，不是存活对象快照。目标应用还需符合系统 debuggable/profileable 限制；数据源可能增加目标进程开销。采集按应用包名匹配进程，独立命名的子进程可能需要单独配置。',
+    '按调用栈采样 malloc/free 分配。Native 要求 Android 10+；ART 分配样本要求 Android 12+，仅显示采集期间分配调用，不是存活对象快照。ART 模式不跟踪对象释放，因此只展示累计分配，不提供未释放估计。目标应用还需符合系统 debuggable/profileable 限制；数据源可能增加目标进程开销。采集按应用包名匹配进程，独立命名的子进程可能需要单独配置。',
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
@@ -352,4 +350,19 @@ test('Layout inspector localizes capture controls and reports accessibility/Comp
     '编译器执行计数包括首次组合；跳过计数来自 Composer.skipToGroupEnd，不区分 Composable 多实例。',
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
+});
+
+test('heapprofd allocation call tree is wired to bounded parent-linked rows and expand/collapse controls',async()=>{
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  assert.match(app,/buildHeapProfileCallTree\(profile\?\.sites\|\|\[\]\)/);
+  assert.match(app,/visibleHeapProfileCallTreeRows\(tree,state\.heapProfileExpanded\)/);
+  assert.match(app,/data-heap-profile-toggle/);
+  assert.match(app,/defaultHeapProfileCallTreeExpansion\(buildHeapProfileCallTree/);
+  assert.match(app,/heapProfileExpanded\.delete\(id\)/);
+  assert.match(app,/profile\?\.mode==='art'\?'':/);
+  assert.match(app,/profile\.mode==='art'\?'':`<span>未释放估计/);
+  assert.match(app,/ART 模式不跟踪对象释放/);
+  assert.match(app,/heap-profile-snapshot/);
+  assert.match(app,/api\('\/heap-profile\/snapshot'/);
+  assert.match(app,/profile\.snapshotsTruncated/);
 });

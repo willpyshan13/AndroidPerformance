@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -25,6 +25,8 @@ const tempRoot = await mkdtemp(join(tmpdir(), 'android-performance-mac-smoke-'))
 const profileDir = join(tempRoot, 'profile');
 const readyFile = join(tempRoot, 'ready.json');
 const sourceFixtureDir = join(tempRoot, 'source-fixture');
+const agiStub = join(tempRoot, 'fake-agi');
+const agiLog = join(tempRoot, 'agi-argument.txt');
 let child;
 let childError;
 let childOutput = '';
@@ -61,9 +63,11 @@ try {
   await mkdir(join(sourceFixtureDir, 'src'), { recursive: true });
   await writeFile(join(sourceFixtureDir, 'src', 'SmokeWorkspaceTarget.java'), 'package apw.smoke;\npublic final class SmokeWorkspaceTarget {\n  public String marker() { return "LOCAL_SOURCE_WORKSPACE_SMOKE"; }\n}\n', 'utf8');
   await writeFile(join(sourceFixtureDir, 'src', 'native.cxx'), 'namespace apw {\nclass SmokeWorker {\n public:\n  void run();\n};\n}\nvoid apw::SmokeWorker::\nrun() {}\n', 'utf8');
-  await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US' }), { mode: 0o600 });
+  await writeFile(agiStub, '#!/bin/sh\nprintf \'%s\\n\' "$1" > "$APW_SMOKE_AGI_LOG"\n', { mode: 0o700 });
+  await chmod(agiStub, 0o700);
+  await writeFile(join(profileDir, 'settings.json'), JSON.stringify({ language: 'en-US', agiPath: agiStub }), { mode: 0o600 });
   child = spawn(executable, ['--no-sandbox', '--disable-gpu'], {
-    env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile, APW_SMOKE_SOURCE_DIR: sourceFixtureDir },
+    env: { ...process.env, APW_PROFILE_DIR: profileDir, APW_SMOKE_READY_FILE: readyFile, APW_SMOKE_SOURCE_DIR: sourceFixtureDir, APW_SMOKE_AGI_PATH: agiStub, APW_SMOKE_AGI_LOG: agiLog },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.once('error', error => { childError = error; childOutput = `${childOutput}${error.message}`.slice(-8000); });
@@ -82,7 +86,11 @@ try {
     await delay(200);
   }
   if (!ready) throw new Error(`Packaged macOS app did not become ready within 60 seconds${childOutput ? `\n${childOutput}` : ''}`);
-  if (!ready.rendererReady) throw new Error(`Packaged macOS renderer did not build its navigation and main view: ${JSON.stringify({initial:{readyState:ready.rendererState.readyState,navItems:ready.rendererState.navItems,quickActionRoutes:ready.rendererState.quickActionRoutes,mainPresent:ready.rendererState.mainPresent,mainText:ready.rendererState.mainText,script:ready.rendererState.script,resources:ready.rendererState.resources,smokeErrors:ready.rendererState.smokeErrors},rendererMessages:ready.rendererState.smokeRendererMessages,failed:ready.rendererState.failedReadinessChecks,routeChecks:ready.rendererState.routeChecks,networkJson:ready.rendererState.networkJsonExport,traceReport:ready.rendererState.traceAnalysisReportSmoke,perfettoUiCsv:ready.rendererState.perfettoUiCsvSmoke,perfettoUiCsvBridge:ready.rendererState.perfettoUiCsvBridgeSmoke,heapCsv:ready.rendererState.heapCsvExport,heapMarkdown:ready.rendererState.heapMarkdownExport,heapJson:ready.rendererState.heapJsonExport,cpuPng:ready.rendererState.cpuPngExport,deepCpuStack:ready.rendererState.deepCpuStackSmoke,cpuTimeline:ready.rendererState.cpuLargeTimeline,layout:ready.rendererState.layoutFindings,source:ready.rendererState.sourceWorkspaceSmoke})}${childOutput ? `\n${childOutput}` : ''}`);
+  if (!ready.rendererReady) throw new Error(JSON.stringify({failed:ready.rendererState.failedReadinessChecks,apkAnalysis:ready.rendererState.apkAnalysisSmoke,gpuAgiHandoff:ready.rendererState.gpuAgiHandoffSmoke,deepCpuStack:ready.rendererState.deepCpuStackSmoke,cpuPng:ready.rendererState.cpuPngExport,cpuTimeline:ready.rendererState.cpuLargeTimeline,cpuRoute:ready.rendererState.routeChecks?.demo?.find(route=>route.route==='#cpu-profile')}));
+  if(!ready.rendererState.gpuAgiHandoffSmoke?.ok)throw new Error(`Packaged macOS AGI handoff UI smoke failed: ${JSON.stringify(ready.rendererState.gpuAgiHandoffSmoke)}`);
+  let agiArgument='';const agiDeadline=Date.now()+5_000;while(Date.now()<agiDeadline){try{agiArgument=(await readFile(agiLog,'utf8')).trim();if(agiArgument)break;}catch{}await delay(25);}
+  if(!agiArgument.endsWith('capture.gfxtrace'))throw new Error(`Fake AGI did not receive the staged capture path: ${agiArgument}`);
+  const stagedCapture=await readFile(agiArgument,'utf8');if(stagedCapture!=='APW verified AGI handoff smoke')throw new Error('Fake AGI staged capture content did not match the imported artifact');
   const requiredQuickActions=['monitor','frames','startup','layout','cpu-profile','heap','battery','gpu','benchmark','source','trace','network','apk'];
   const missingQuickActions=requiredQuickActions.filter(route=>!ready.rendererState.quickActionRoutes?.includes(route));
   if(missingQuickActions.length)throw new Error(`Packaged macOS home is missing quick actions: ${missingQuickActions.join(', ')}`);
@@ -97,6 +105,7 @@ try {
   if(!ready.rendererState.heapCsvExport?.ok||!ready.rendererState.heapCsvExport?.dominatorGraph?.ok)throw new Error(`Packaged macOS HPROF CSV / dominator graph smoke failed: ${JSON.stringify(ready.rendererState.heapCsvExport)}`);
   if(!ready.rendererState.heapMarkdownExport?.ok)throw new Error(`Packaged macOS HPROF Markdown export smoke failed: ${JSON.stringify(ready.rendererState.heapMarkdownExport)}`);
   if(!ready.rendererState.heapJsonExport?.ok)throw new Error(`Packaged macOS HPROF JSON export smoke failed: ${JSON.stringify(ready.rendererState.heapJsonExport)}`);
+  if(!ready.rendererState.heapProfileWindows?.ok||ready.rendererState.heapProfileWindows?.windows!==2||ready.rendererState.heapProfileWindows?.defaultWindow!=='1')throw new Error(`Packaged macOS heap allocation window smoke failed: ${JSON.stringify(ready.rendererState.heapProfileWindows)}`);
   if(!ready.rendererState.layoutFindings?.ok)throw new Error(`Packaged macOS structured layout findings smoke failed: ${JSON.stringify(ready.rendererState.layoutFindings)}`);
   if(!ready.rendererState.sourceWorkspaceSmoke?.ok||!ready.rendererState.sourceWorkspaceSmoke.nativeSymbolResolve||!ready.rendererState.sourceWorkspaceSmoke.nativeCandidateLocalized||!ready.rendererState.sourceWorkspaceSmoke.nativeFileOpened)throw new Error(`Packaged macOS source workspace smoke failed: ${JSON.stringify(ready.rendererState.sourceWorkspaceSmoke)}`);
   if(!ready.rendererState.networkAgentPackage?.ok)throw new Error(`Packaged macOS Network Agent ZIP smoke failed: ${JSON.stringify(ready.rendererState.networkAgentPackage)}`);
@@ -126,7 +135,7 @@ try {
     const response = await fetch(new URL(path, ready.origin), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
   }
-  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, LLVM DWARF symbolizer, Trace Processor, Perfetto UI, trace-only layout evidence without gfxinfo, trace analysis report export, HPROF CSV / Markdown / JSON exports and dominator graph, filtered redacted Network JSON export, structured layout findings, local source workspace, debug-only Network, LeakCanary, JankStats, and Startup Agent ZIPs, startup experiment JSON / CSV exports, automatic embedded Perfetto CSV report import, optional live Network Agent UI, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,traceReport:ready.rendererState.traceAnalysisReportSmoke,perfettoUiCsv:ready.rendererState.perfettoUiCsvSmoke,perfettoUiCsvBridge:ready.rendererState.perfettoUiCsvBridgeSmoke,heapCsv:ready.rendererState.heapCsvExport,heapMarkdown:ready.rendererState.heapMarkdownExport,heapJson:ready.rendererState.heapJsonExport,networkJson:ready.rendererState.networkJsonExport,layout:ready.rendererState.layoutFindings,layoutTraceOnly:ready.rendererState.layoutTraceOnlySmoke,source:ready.rendererState.sourceWorkspaceSmoke,networkAgentPackage:ready.rendererState.networkAgentPackage,leakCanaryAgentPackage:ready.rendererState.leakCanaryAgentPackage,jankStatsAgentPackage:ready.rendererState.jankStatsAgentPackage,startupAgentPackage:ready.rendererState.startupAgentPackage,startupExport:ready.rendererState.startupExportSmoke,networkAgentDevice:ready.rendererState.networkAgentDeviceSmoke,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length,deepCpuStack:ready.rendererState.deepCpuStackSmoke})})`);
+  console.log(`Packaged macOS desktop smoke passed: ${appBundle}; renderer, Java runtime, LLVM DWARF symbolizer, Trace Processor, Perfetto UI, trace-only layout evidence without gfxinfo, trace analysis report export, HPROF CSV / Markdown / JSON exports and dominator graph, heapprofd sampling windows, filtered redacted Network JSON export, structured layout findings, local source workspace, debug-only Network, LeakCanary, JankStats, and Startup Agent ZIPs, startup experiment JSON / CSV exports, automatic embedded Perfetto CSV report import, optional live Network Agent UI, fake AGI artifact launch, 50k CPU timeline raster, APK analyzer UI${ready.rendererState.apkAnalysisSmoke?.ok?' passed':''}, and 16-route English scan (${JSON.stringify({cpu:ready.rendererState.cpuLargeTimeline,traceReport:ready.rendererState.traceAnalysisReportSmoke,perfettoUiCsv:ready.rendererState.perfettoUiCsvSmoke,perfettoUiCsvBridge:ready.rendererState.perfettoUiCsvBridgeSmoke,heapCsv:ready.rendererState.heapCsvExport,heapMarkdown:ready.rendererState.heapMarkdownExport,heapJson:ready.rendererState.heapJsonExport,heapWindows:ready.rendererState.heapProfileWindows,networkJson:ready.rendererState.networkJsonExport,layout:ready.rendererState.layoutFindings,layoutTraceOnly:ready.rendererState.layoutTraceOnlySmoke,source:ready.rendererState.sourceWorkspaceSmoke,networkAgentPackage:ready.rendererState.networkAgentPackage,leakCanaryAgentPackage:ready.rendererState.leakCanaryAgentPackage,jankStatsAgentPackage:ready.rendererState.jankStatsAgentPackage,startupAgentPackage:ready.rendererState.startupAgentPackage,startupExport:ready.rendererState.startupExportSmoke,gpuAgiHandoff:ready.rendererState.gpuAgiHandoffSmoke,agiArgument,networkAgentDevice:ready.rendererState.networkAgentDeviceSmoke,apk:ready.rendererState.apkAnalysisSmoke,englishRoutes:routeChecks.demo.length,deepCpuStack:ready.rendererState.deepCpuStackSmoke})})`);
 } catch (error) { failure = error; }
 finally {
   await stopChild(child);

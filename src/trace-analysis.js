@@ -14,10 +14,12 @@ export async function locateTraceProcessor(){
   throw new Error('未找到 Trace Processor；请运行 npm run prepare:trace-processor 或设置 TRACE_PROCESSOR_PATH');
 }
 export const TRACE_QUERY=`
+INCLUDE PERFETTO MODULE android.binder;
 SELECT 'bounds' AS kind, 'trace' AS label, CAST(start_ts AS TEXT) AS count, CAST(end_ts AS TEXT) AS value FROM trace_bounds
 UNION ALL SELECT 'slice', hex(CAST(label AS BLOB)), CAST(n AS TEXT), CAST(ms AS TEXT) FROM (SELECT COALESCE(name,'(未命名)') AS label, COUNT(*) AS n, ROUND(SUM(dur)/1000000.0,3) AS ms FROM slice WHERE dur >= 0 GROUP BY name ORDER BY SUM(dur) DESC LIMIT 100)
 UNION ALL SELECT 'thread', hex(CAST(label AS BLOB)), CAST(n AS TEXT), CAST(ms AS TEXT) FROM (SELECT COALESCE(process.name,'?') || ' / ' || COALESCE(thread.name,'?') || ' (' || thread.tid || ')' AS label, COUNT(*) AS n, ROUND(SUM(sched.dur)/1000000.0,3) AS ms FROM sched JOIN thread USING(utid) LEFT JOIN process USING(upid) WHERE sched.dur >= 0 GROUP BY thread.utid ORDER BY SUM(sched.dur) DESC LIMIT 100)
 UNION ALL SELECT 'binder', hex(CAST(label AS BLOB)), CAST(n AS TEXT), CAST(ms AS TEXT) FROM (SELECT COALESCE(name,'(未命名)') AS label, COUNT(*) AS n, ROUND(SUM(dur)/1000000.0,3) AS ms FROM slice WHERE dur >= 0 AND LOWER(name) LIKE '%binder%' GROUP BY name ORDER BY SUM(dur) DESC LIMIT 100)
+UNION ALL SELECT 'binder_txn', hex(CAST(label AS BLOB)), CAST(n AS TEXT), CAST(ms AS TEXT) FROM (SELECT COALESCE(NULLIF(aidl_name,''),COALESCE(client_process,'?') || ' → ' || COALESCE(server_process,'?')) AS label, COUNT(*) AS n, ROUND(SUM(client_dur)/1000000.0,3) AS ms FROM android_binder_txns WHERE client_ts IS NOT NULL AND client_dur >= 0 GROUP BY label ORDER BY SUM(client_dur) DESC LIMIT 100)
 UNION ALL SELECT 'error', hex(CAST(name AS BLOB)), CAST(value AS TEXT), severity FROM (SELECT name,value,severity FROM stats WHERE severity IN ('error','data_loss') AND value > 0 LIMIT 200)
 UNION ALL SELECT 'slice_event', label, ts, dur FROM (SELECT hex(CAST(COALESCE(slice.name,'(未命名)') AS BLOB)) || ':' || hex(CAST(COALESCE(thread.name,track.name,'轨道 ' || track.id) AS BLOB)) || ':' || track.id || ':' || COALESCE(thread.tid,'') || ':' || COALESCE(slice.depth,0) || ':' || slice.id AS label, CAST(slice.ts AS TEXT) AS ts, CAST(slice.dur AS TEXT) AS dur FROM slice JOIN track ON track.id=slice.track_id LEFT JOIN thread_track ON thread_track.id=track.id LEFT JOIN thread ON thread.utid=thread_track.utid WHERE slice.dur >= 0 ORDER BY slice.ts LIMIT 3001)
 UNION ALL SELECT 'sched_event', label, ts, dur FROM (SELECT sched.cpu || ':' || hex(CAST(COALESCE(thread.name,'?') AS BLOB)) || ':' || thread.tid || ':' || COALESCE(process.pid,'') AS label, CAST(sched.ts AS TEXT) AS ts, CAST(sched.dur AS TEXT) AS dur FROM sched JOIN thread USING(utid) LEFT JOIN process USING(upid) WHERE sched.dur >= 0 ORDER BY sched.ts LIMIT 3001)`;
@@ -59,11 +61,11 @@ export async function queryTraceSql(path,{sql,locator=locateTraceProcessor,runne
 }
 export function parseTraceSummary(csv){
   const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='kind,label,count,value')throw new Error('Trace Processor 返回了意外的列');
-  const result={bounds:null,slices:[],threads:[],binder:[],errors:[],sliceEvents:[],schedEvents:[],truncated:{slices:false,sched:false}};
+  const result={bounds:null,slices:[],threads:[],binder:[],binderTransactions:[],errors:[],sliceEvents:[],schedEvents:[],truncated:{slices:false,sched:false}};
   const decode=hex=>{if(!/^(?:[0-9A-Fa-f]{2})*$/.test(hex))throw new Error('追踪文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
   for(const row of rows){if(row.length!==4)throw new Error('Trace Processor 返回了不完整的行');const [kind,label,count,value]=row;
     if(kind==='bounds'){if(!/^-?\d+$/.test(count)||!/^-?\d+$/.test(value)||BigInt(value)<BigInt(count))throw new Error('追踪时间范围无效');result.bounds={startNs:count,endNs:value};}
-    else if(['slice','thread','binder'].includes(kind)){const n=Number(count),ms=Number(value);if(!/^\d+$/.test(count)||!value.trim()||!Number.isSafeInteger(n)||n<0||!Number.isFinite(ms)||ms<0)throw new Error('追踪统计值无效');result[{slice:'slices',thread:'threads',binder:'binder'}[kind]].push({name:decode(label),count:n,totalMs:ms});}
+    else if(['slice','thread','binder','binder_txn'].includes(kind)){const n=Number(count),ms=Number(value);if(!/^\d+$/.test(count)||!value.trim()||!Number.isSafeInteger(n)||n<0||!Number.isFinite(ms)||ms<0)throw new Error('追踪统计值无效');result[{slice:'slices',thread:'threads',binder:'binder',binder_txn:'binderTransactions'}[kind]].push({name:decode(label),count:n,totalMs:ms});}
     else if(kind==='slice_event'||kind==='sched_event'){
       if(!/^-?\d+$/.test(count)||!/^\d+$/.test(value))throw new Error('追踪事件时间无效');
       const parts=label.split(':');if(parts.length!==(kind==='slice_event'?6:4))throw new Error('追踪事件格式无效');
@@ -130,20 +132,76 @@ export function parseHeapProfileSummary(csv,mode='native'){
  const sites=rows.slice(0,500).map(row=>{
    if(row.length!==10)throw new Error('内存剖析记录不完整');
    const id=integer(row[0]),parentId=row[1]===''?null:integer(row[1]);
-   return {id,parentId,name:decode(row[2]),mapping:decode(row[3]),source:decode(row[4]),line:row[5]===''?null:integer(row[5]),selfUnreleasedBytes:integer(row[6],true),cumulativeUnreleasedBytes:integer(row[7],true),selfAllocatedBytes:integer(row[8]),cumulativeAllocatedBytes:integer(row[9])};
+   return {id,parentId,name:decode(row[2]),mapping:decode(row[3]),source:decode(row[4]),line:row[5]===''?null:integer(row[5]),selfUnreleasedBytes:mode==='native'?integer(row[6],true):null,cumulativeUnreleasedBytes:mode==='native'?integer(row[7],true):null,selfAllocatedBytes:integer(row[8]),cumulativeAllocatedBytes:integer(row[9])};
  });
  const totals=sites.reduce((best,x)=>BigInt(x.cumulativeAllocatedBytes)>BigInt(best.cumulativeAllocatedBytes)?x:best,{cumulativeAllocatedBytes:'0',cumulativeUnreleasedBytes:'0'});
- return {mode,sites,totalAllocatedBytes:totals.cumulativeAllocatedBytes,totalUnreleasedBytes:totals.cumulativeUnreleasedBytes,truncated:rows.length>500,available:sites.length>0};
+ return {mode,sites,totalAllocatedBytes:totals.cumulativeAllocatedBytes,totalUnreleasedBytes:mode==='native'?totals.cumulativeUnreleasedBytes:null,truncated:rows.length>500,available:sites.length>0};
 }
-export async function queryHeapProfile(path,{mode='native',locator=locateTraceProcessor,runner=exec}={}){
+export function parseHeapProfileSnapshots(csv,mode='native'){
  if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
- const query=`INCLUDE PERFETTO MODULE android.memory.heap_profile.summary_tree;
+ const rows=parseCsv(csv),header=rows.shift(),expected='id,ts_ns,ts_end_ns,duration_ns,upid,pid,process_hex,heap_hex';
+ if(!header||header.join(',')!==expected)throw new Error('内存分配快照返回列无效');
+ const decode=hex=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(hex))throw new Error('内存剖析文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
+ const number=(value,{signed=false,min=0n}={})=>{if(!(signed?/^-?\d+$/:/^\d+$/).test(value)||value.length>20)throw new Error('内存剖析数值无效');const n=BigInt(value);if(n<min||n>(1n<<63n)-1n)throw new Error('内存剖析数值超出范围');return value;};
+ const snapshots=rows.slice(0,500).map(row=>{
+  if(row.length!==8)throw new Error('内存分配快照记录不完整');
+  const heapName=decode(row[7]);if(mode==='art'&&heapName!=='com.android.art'||mode==='native'&&heapName==='com.android.art')throw new Error('内存分配快照堆类型无效');
+  const startNs=number(row[1],{signed:true,min:-(1n<<63n)}),endNs=number(row[2],{signed:true,min:-(1n<<63n)}),durationNs=number(row[3]);
+  if(BigInt(endNs)<BigInt(startNs)||BigInt(endNs)-BigInt(startNs)!==BigInt(durationNs))throw new Error('内存分配快照时间范围无效');
+  return {id:number(row[0]),startNs,endNs,durationNs,upid:number(row[4]),pid:row[5]===''?null:Number(number(row[5])),process:decode(row[6]),heapName};
+ });
+ snapshots.sort((a,b)=>BigInt(a.endNs)<BigInt(b.endNs)?-1:BigInt(a.endNs)>BigInt(b.endNs)?1:BigInt(a.id)<BigInt(b.id)?-1:BigInt(a.id)>BigInt(b.id)?1:0);
+ return {mode,snapshots,truncated:rows.length>500};
+}
+export async function queryHeapProfileSnapshots(path,{mode='native',locator=locateTraceProcessor,runner=exec}={}){
+ if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
+ const heapFilter=mode==='art'?"h.heap_name='com.android.art'":"(h.heap_name IS NULL OR h.heap_name!='com.android.art')";
+ const query=`SELECT CAST(h.id AS TEXT) AS id,CAST(h.ts AS TEXT) AS ts_ns,CAST(h.ts_end AS TEXT) AS ts_end_ns,
+ CAST(h.dur AS TEXT) AS duration_ns,CAST(h.upid AS TEXT) AS upid,COALESCE(CAST(p.pid AS TEXT),'') AS pid,
+ hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,hex(CAST(COALESCE(h.heap_name,'') AS BLOB)) AS heap_hex
+ FROM heap_profile h LEFT JOIN process p USING(upid) WHERE ${heapFilter}
+ ORDER BY h.ts_end,h.id LIMIT 501`;
+ const binary=await locator();let output;
+ try{output=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}
+ catch(error){throw new Error(`内存分配快照查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}
+ return parseHeapProfileSnapshots(output.stdout,mode);
+}
+export async function queryHeapProfile(path,{mode='native',snapshotId=null,locator=locateTraceProcessor,runner=exec}={}){
+ if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
+ let query;
+ if(snapshotId===null){
+  query=`INCLUDE PERFETTO MODULE android.memory.heap_profile.summary_tree;
  SELECT CAST(id AS TEXT) AS id,COALESCE(CAST(parent_id AS TEXT),'') AS parent_id,
  hex(CAST(COALESCE(name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(mapping_name,'') AS BLOB)) AS mapping_hex,
  hex(CAST(COALESCE(source_file,'') AS BLOB)) AS source_hex,COALESCE(CAST(line_number AS TEXT),'') AS line_number,
  CAST(self_size AS TEXT) AS self_unreleased_bytes,CAST(cumulative_size AS TEXT) AS cumulative_unreleased_bytes,
  CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes
  FROM android_heap_profile_summary_tree ORDER BY cumulative_alloc_size DESC LIMIT 501`;
+ }else{
+  if(typeof snapshotId!=='string'||!/^\d{1,19}$/.test(snapshotId)||BigInt(snapshotId)>(1n<<63n)-1n)throw new Error('内存分配快照标识无效');
+  query=`INCLUDE PERFETTO MODULE callstacks.stack_profile;
+ PERFETTO PRAGMA pipelines = 1;
+ CREATE PERFETTO TABLE _apw_heap_profile_metrics AS
+ SELECT a.callsite_id,SUM(a.size) AS self_size,SUM(MAX(a.size,0)) AS self_alloc_size
+ FROM heap_profile_allocation a JOIN heap_profile h ON h.upid=a.upid AND h.ts_end=a.ts
+ WHERE h.id=${snapshotId} GROUP BY a.callsite_id;
+ CREATE PERFETTO TABLE _apw_heap_profile_raw_callstacks AS
+ WITH metrics AS MATERIALIZED (SELECT * FROM _apw_heap_profile_metrics)
+ SELECT c.id,c.parent_id,c.name,c.mapping_name,c.source_file,c.line_number,
+  COALESCE(m.self_size,0) AS self_size,COALESCE(m.self_alloc_size,0) AS self_alloc_size
+ FROM _callstacks_for_stack_profile_samples!(metrics) c LEFT JOIN metrics m USING(callsite_id);
+ CREATE PERFETTO TABLE _apw_heap_profile_cumulatives AS
+ FROM _apw_heap_profile_raw_callstacks
+ |> TREE ACCUMULATE UP
+ SUM(self_size) AS cumulative_size,
+ SUM(self_alloc_size) AS cumulative_alloc_size;
+ SELECT CAST(id AS TEXT) AS id,COALESCE(CAST(parent_id AS TEXT),'') AS parent_id,
+  hex(CAST(COALESCE(name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(mapping_name,'') AS BLOB)) AS mapping_hex,
+  hex(CAST(COALESCE(source_file,'') AS BLOB)) AS source_hex,COALESCE(CAST(line_number AS TEXT),'') AS line_number,
+  CAST(self_size AS TEXT) AS self_unreleased_bytes,CAST(cumulative_size AS TEXT) AS cumulative_unreleased_bytes,
+  CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes
+ FROM _apw_heap_profile_cumulatives ORDER BY cumulative_alloc_size DESC LIMIT 501`;
+ }
  const binary=await locator();let output;
  try{output=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:8*1024*1024,encoding:'utf8',windowsHide:true});}
  catch(error){throw new Error(`内存分配剖析查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}

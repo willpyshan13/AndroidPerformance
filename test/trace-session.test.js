@@ -51,6 +51,16 @@ test('trace sessions query windows and reject stale or out-of-range requests',as
  }finally{app.close();await once(app,'close');}
 });
 
+test('heap profile dump requests stay bound to the retained trace and profiled mode',async t=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const app=createApp({adb:{path:'adb'},token:'test'});app.listen(0,'127.0.0.1');await once(app,'listening');t.after(()=>new Promise(resolve=>app.close(resolve)));
+ const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'test'},trace=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));
+ const analyzed=await fetch(base+'/heap-profile/analyze',{method:'POST',headers:{...headers,'X-Heap-Profile-Mode':'native'},body:trace});assert.equal(analyzed.status,200);const session=await analyzed.json();assert.deepEqual(session.heapProfile.snapshots,[]);
+ const post=body=>fetch(base+'/heap-profile/snapshot',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const missing=await post({sessionId:session.sessionId,mode:'native',snapshotId:'1'});assert.equal(missing.status,400);assert.match((await missing.json()).error,/不属于当前追踪/);
+ const stale=await post({sessionId:'stale',mode:'native',snapshotId:'1'});assert.equal(stale.status,400);assert.match((await stale.json()).error,/已关闭或已替换/);
+});
+
 test('self-hosted Perfetto UI serves pinned assets locally and exposes only the retained trace with a token',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
  const {mkdir}=await import('node:fs/promises'),uiDir=await mkdtemp(join(tmpdir(),'apw-perfetto-ui-test-'));
@@ -92,7 +102,7 @@ test('real Android startup trace is queryable through the retained HTTP session'
  const escapedState=await fetch(base+'/trace/frame-thread-states',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,upid:frame.processId,utid:selected.utid,state:"R' OR 1=1 --",startNs:frame.tsNs,endNs:String(BigInt(frame.tsNs)+BigInt(frame.durationNs))})});assert.equal(escapedState.status,200);assert.deepEqual((await escapedState.json()).intervals,[]);
  const badFrame=await fetch(base+'/trace/frame-thread-states',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,upid:'1;DROP',startNs:frame.tsNs,endNs:String(BigInt(frame.tsNs)+BigInt(frame.durationNs))})});assert.equal(badFrame.status,400);
  const breakdown=await fetch(base+'/trace/startup-breakdown',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,startupId:rows[0].id})});assert.equal(breakdown.status,200);assert.ok((await breakdown.json()).summary.some(row=>row.reason==='binder'));
- const binder=await fetch(base+'/trace/binder',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})});assert.equal(binder.status,200);const transactions=await binder.json();assert.equal(transactions.transactions.length,500);assert.equal(transactions.truncated,true);assert.equal(transactions.transactions[0].client,'cmd');assert.equal(transactions.transactions[0].server,'system_server');assert.equal(transactions.transactions[0].durationNs,'149306525');
+ assert.ok(session.binderTransactions.length>0,'trace summary should include decoded Binder transaction totals');const binder=await fetch(base+'/trace/binder',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})});assert.equal(binder.status,200);const transactions=await binder.json();assert.equal(transactions.transactions.length,500);assert.equal(transactions.truncated,true);assert.equal(transactions.transactions[0].client,'cmd');assert.equal(transactions.transactions[0].server,'system_server');assert.equal(transactions.transactions[0].durationNs,'149306525');
  const binderQuery=async body=>fetch(base+'/trace/binder',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId,...body})});
  const clientFiltered=await binderQuery({packageName:'com.breel.wallpapers19',direction:'client'});assert.equal(clientFiltered.status,200);const clientRows=(await clientFiltered.json()).transactions;assert.ok(clientRows.length>0);assert.ok(clientRows.every(x=>x.client==='com.breel.wallpapers19'||x.client.startsWith('com.breel.wallpapers19:')));
  const subproc=await binderQuery({packageName:'com.google.android.googlequicksearchbox',direction:'client'});assert.equal(subproc.status,200);assert.ok((await subproc.json()).transactions.some(x=>x.client==='com.google.android.googlequicksearchbox:search'));

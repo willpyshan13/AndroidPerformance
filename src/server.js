@@ -14,7 +14,7 @@ import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
 import { symbolizeNativeAddress } from './native-symbolizer.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryNetworkFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryNetworkFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile, queryHeapProfileSnapshots } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -183,10 +183,21 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           traceBusy=true;let session;
           try{
             const analyzed=await analyzeTraceUpload(req,{retain:true});session=analyzed.session;
-            const profile=await queryHeapProfile(session.path,{mode});if(closed){await session.cleanup();throw new Error('服务已关闭');}
-            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:analyzed.result.bounds,fileBytes:analyzed.result.fileBytes};session=undefined;
+            const snapshotIndex=await queryHeapProfileSnapshots(session.path,{mode}),selected=snapshotIndex.snapshots.at(-1);
+            const profile=selected?await queryHeapProfile(session.path,{mode,snapshotId:selected.id}):await queryHeapProfile(session.path,{mode});
+            profile.snapshots=snapshotIndex.snapshots;profile.snapshotsTruncated=snapshotIndex.truncated;profile.snapshotId=selected?.id??null;
+            if(closed){await session.cleanup();throw new Error('服务已关闭');}
+            const previous=traceSession,sessionId=randomUUID();traceSession={...session,sessionId,bounds:analyzed.result.bounds,fileBytes:analyzed.result.fileBytes,heapProfileMode:mode,heapProfileSnapshotIds:new Set(snapshotIndex.snapshots.map(item=>item.id))};session=undefined;
             if(previous)await previous.cleanup();return json({...analyzed.result,heapProfile:profile,sessionId,viewBounds:analyzed.result.bounds});
           }finally{if(session)await session.cleanup();traceBusy=false;}
+        }
+        if(path==='/api/heap-profile/snapshot'){
+          const body=await readBody(req);
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          if(!['native','art'].includes(body.mode))throw new Error('内存剖析模式无效');
+          if(body.mode!==traceSession.heapProfileMode||typeof body.snapshotId!=='string'||!traceSession.heapProfileSnapshotIds?.has(body.snapshotId))throw new Error('内存分配快照不属于当前追踪');
+          traceBusy=true;try{return json({heapProfile:await queryHeapProfile(traceSession.path,{mode:body.mode,snapshotId:body.snapshotId}),sessionId:traceSession.sessionId,snapshotId:body.snapshotId});}finally{traceBusy=false;}
         }
         if (path === '/api/cpu-profile/analyze') {
           if(perfBusy){req.resume();return json({error:'已有 CPU 文件正在分析，请等待完成'},409);}

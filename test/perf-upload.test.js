@@ -21,8 +21,8 @@ test('bundled Python is selected from the staged platform runtime when present',
  assert.equal(await locateBundledPython(root,'freebsd'),null);
 });
 test('perf upload validates magic, invokes the converter with argument array and cleans the file',async()=>{
- let temporary;
- const result=await analyzePerfUpload(request([Buffer.from('PERF'),Buffer.from('ILE2data')]),{locator:async()=>'/ndk/simpleperf/stackcollapse.py',runner:async(cmd,args,opts)=>{assert.equal(cmd,'python3');assert.equal(opts.cwd,'/ndk/simpleperf');if(args[0].endsWith('simpleperf-timeline.py'))return {stdout:JSON.stringify({event:'cpu-clock',samples:[],truncated:false}),stderr:''};assert.ok(args[0].endsWith('simpleperf-collapse.py'));assert.equal(args[1],'/ndk/simpleperf');temporary=args[2];assert.equal((await readFile(temporary)).toString(),'PERFILE2data');return {stdout:'thread;func 2\n',stderr:'warning'};}});
+ let temporary;const simpleperfDir=join(tmpdir(),'ndk','simpleperf');
+ const result=await analyzePerfUpload(request([Buffer.from('PERF'),Buffer.from('ILE2data')]),{locator:async()=>join(simpleperfDir,'stackcollapse.py'),runner:async(cmd,args,opts)=>{assert.equal(cmd,process.platform==='win32'?'python':'python3');assert.equal(opts.cwd,simpleperfDir);if(args[0].endsWith('simpleperf-timeline.py'))return {stdout:JSON.stringify({event:'cpu-clock',samples:[],truncated:false}),stderr:''};assert.ok(args[0].endsWith('simpleperf-collapse.py'));assert.equal(args[1],simpleperfDir);temporary=args[2];assert.equal((await readFile(temporary)).toString(),'PERFILE2data');return {stdout:'thread;func 2\n',stderr:'warning'};}});
  assert.equal(result.folded,'thread;func 2\n');assert.equal(result.warning,'warning');await assert.rejects(access(temporary));
 });
 test('invalid perf uploads and empty converter results fail without leaving temporary files',async()=>{
@@ -38,8 +38,8 @@ test('selected perf event is passed as one safe argument to both converters',asy
  await assert.rejects(()=>analyzePerfUpload(request([],{ 'x-perf-event':'%0Aevil' })),/事件名称/);
 });
 test('symbol directory is validated and passed identically to both parsers',async()=>{
- const argsSeen=[];const result=await analyzePerfUpload(request([Buffer.from('PERFILE2')],{'x-perf-symfs':encodeURIComponent('/tmp')}),{locator:async()=>'/ndk/stackcollapse.py',runner:async(_cmd,args)=>{argsSeen.push(args);return args[0].endsWith('timeline.py')?{stdout:JSON.stringify({samples:[]}),stderr:''}:{stdout:'thread;symbol 1\n',stderr:''};}});
- assert.equal(result.folded,'thread;symbol 1\n');assert.equal(argsSeen.length,2);for(const args of argsSeen)assert.deepEqual(args.slice(-2),['','/tmp']);
+ const argsSeen=[];const result=await analyzePerfUpload(request([Buffer.from('PERFILE2')],{'x-perf-symfs':encodeURIComponent(tmpdir())}),{locator:async()=>'/ndk/stackcollapse.py',runner:async(_cmd,args)=>{argsSeen.push(args);return args[0].endsWith('timeline.py')?{stdout:JSON.stringify({samples:[]}),stderr:''}:{stdout:'thread;symbol 1\n',stderr:''};}});
+ assert.equal(result.folded,'thread;symbol 1\n');assert.equal(argsSeen.length,2);for(const args of argsSeen)assert.deepEqual(args.slice(-2),['',tmpdir()]);
  await assert.rejects(analyzePerfUpload(request([],{ 'x-perf-symfs':'relative' })),/绝对路径/);
  await assert.rejects(analyzePerfUpload(request([],{ 'x-perf-symfs':encodeURIComponent('/path/does/not/exist') })),/不存在/);
 });
@@ -50,7 +50,7 @@ test('simpleperf timeline enumerates events and retains only the selected event 
  const script=fileURLToPath(new URL('../scripts/simpleperf-timeline.py',import.meta.url));const run=promisify(execFile);const parse=async(...args)=>JSON.parse((await run('python3',[script,dir,'dummy',...args])).stdout);
  const first=await parse();assert.equal(first.event,'cycles');assert.deepEqual(first.events,[{name:'cycles',count:2},{name:'instructions',count:1}]);assert.equal(first.samples.length,2);
  const second=await parse('instructions');assert.equal(second.event,'instructions');assert.equal(second.samples.length,1);assert.equal(second.samples[0].timeNs,'101');
- assert.deepEqual(first.samples[0].frames,['caller%3Bname','leaf%253Bname']);assert.deepEqual(first.samples[0].libraries,['/system/lib/libcaller.so','/data/app/libsample.so']);assert.equal(first.samples[0].thread,'main%3Bworker');const collapse=fileURLToPath(new URL('../scripts/simpleperf-collapse.py',import.meta.url));const result=await run('python3',[collapse,dir,'dummy','instructions']);assert.equal(result.stdout,'main%3Bworker-1/2;caller%3Bname;leaf%253Bname 1\n');
+ assert.deepEqual(first.samples[0].frames,['caller%3Bname','leaf%253Bname']);assert.deepEqual(first.samples[0].libraries,['/system/lib/libcaller.so','/data/app/libsample.so']);assert.equal(first.samples[0].thread,'main%3Bworker');const collapse=fileURLToPath(new URL('../scripts/simpleperf-collapse.py',import.meta.url));const result=await run('python3',[collapse,dir,'dummy','instructions']);assert.equal(result.stdout.replace(/\r\n/g,'\n'),'main%3Bworker-1/2;caller%3Bname;leaf%253Bname 1\n');
  const {buildSampleTimeline,profileForTimeRange,parseFoldedStacks}=await import('../public/offline.js');const timeline=buildSampleTimeline(second);assert.equal(timeline.skipped,0);assert.deepEqual(profileForTimeRange(timeline,0,0).symbols.map(x=>x.name).sort(),parseFoldedStacks(result.stdout).symbols.map(x=>x.name).sort());
  const resolved=await parse('instructions',dir);assert.equal(resolved.samples[0].frames.at(-1),'resolved');const collapsed=await run('python3',[collapse,dir,'dummy','instructions',dir]);assert.match(collapsed.stdout,/;resolved 1/);
 });

@@ -22,7 +22,7 @@ test('battery comparison reports only monotonic same-window system UID mAh estim
 });
 test('battery checkin refuses ambiguous UID and never assumes absent network is zero',()=>{
  assert.throws(()=>parseBatteryStats(raw+'9,0,i,uid,20123,com.example.demo\n','com.example.demo'),/多个 UID/);
- const x=parseBatteryStats(raw.replace(/^.*?,nt,.*\n/m,''),'com.example.demo');assert.equal(x.network,null);
+ const x=parseBatteryStats(raw.split(/\r?\n/).filter(line=>!line.includes(',nt,')).join('\n'),'com.example.demo');assert.equal(x.network,null);
 });
 test('device battery snapshot uses quoted arguments and releases lock',async()=>{
  const calls=[];const adb=new Adb('adb',async(_p,args)=>{calls.push(args.join(' '));return {stdout:args.join(' ').includes('batterystats')?raw:'level: 50\nscale: 100'};});

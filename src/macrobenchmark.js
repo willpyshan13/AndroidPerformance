@@ -83,7 +83,7 @@ async function findFreshOutputs(projectRoot, startedAt) {
   return outputs.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 200);
 }
 
-export async function runMacrobenchmark({ javaPath, projectPath, task, serial = '', experiment = {}, timeoutMs = 30 * 60 * 1000, onOutput = () => {} }) {
+export async function runMacrobenchmark({ javaPath, projectPath, task, serial = '', experiment = {}, timeoutMs = 30 * 60 * 1000, onOutput = () => {} }, { spawnProcess = spawn } = {}) {
   const project = await validateMacrobenchmarkProject(projectPath, task);
   const selectedExperiment = validateMacrobenchmarkExperiment(experiment);
   let baselineProfile = null;
@@ -120,7 +120,7 @@ export async function runMacrobenchmark({ javaPath, projectPath, task, serial = 
   };
   const output = [];
   let outputBytes = 0, timedOut = false;
-  const child = spawn(javaPath, args, { cwd: project.root, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnProcess(javaPath, args, { cwd: project.root, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   const append = (stream, chunk) => {
     const value = chunk.toString();
     const remaining = Math.max(0, MAX_OUTPUT - outputBytes);

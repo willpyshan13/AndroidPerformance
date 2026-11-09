@@ -62,14 +62,14 @@ test('Debug Agent injection can add optional AndroidX Fragment source to debug o
  const module=await appModule(root);
  const result=await injectLeakCanaryDebugAgent({projectPath:root,includeAndroidXFragments:true});
  assert.equal(result.includeAndroidXFragments,true);
- assert.ok(result.changed.includes('src/debug/java/dev/androidperformance/agent/ApwAndroidXFragmentLeakAgent.java'));
+ assert.ok(result.changed.includes(join('src','debug','java','dev','androidperformance','agent','ApwAndroidXFragmentLeakAgent.java')));
 });
 
 test('Debug Agent injection can add optional JankStats bridge to debug source set',async t=>{
  const root=await mkdtemp(join(tmpdir(),'apw-agent-jankstats-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const module=await appModule(root),result=await injectLeakCanaryDebugAgent({projectPath:root,includeJankStats:true});
  assert.equal(result.includeJankStats,true);
- assert.ok(result.changed.includes('src/debug/java/dev/androidperformance/agent/ApwJankStatsAgent.java'));
+ assert.ok(result.changed.includes(join('src','debug','java','dev','androidperformance','agent','ApwJankStatsAgent.java')));
 });
 
 test('combined optional Fragment and JankStats injection carries Fragment state into frame reports',async t=>{
@@ -100,5 +100,5 @@ test('Debug Agent injection API requires the local workbench token and injects s
  const url=`http://127.0.0.1:${server.address().port}/api/heap/leakcanary-agent/inject`,body=JSON.stringify({projectPath:module,includeJankStats:true});
  assert.equal((await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body})).status,403);
  const response=await fetch(url,{method:'POST',headers:{'X-Workbench-Token':'local-test','Content-Type':'application/json'},body});
- assert.equal(response.status,200);const result=await response.json();assert.equal(result.changed.length,4);assert.equal(result.includeJankStats,true);assert.ok(result.modulePath.includes('/app'));
+ assert.equal(response.status,200);const result=await response.json();assert.equal(result.changed.length,4);assert.equal(result.includeJankStats,true);assert.equal(result.modulePath,await realpath(module));
 });

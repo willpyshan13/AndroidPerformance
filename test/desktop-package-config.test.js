@@ -23,8 +23,8 @@ test('native desktop packages target macOS ARM64 and Windows x64 without publish
  assert.equal(inspectorSource.minimumJavaVersion,25);assert.equal(inspectorSource.classFileVersion,69);
  const inspectorRuntimePrep=await readFile(new URL('../scripts/prepare-inspector-runtime.js',import.meta.url),'utf8');
  assert.match(inspectorRuntimePrep,/Temurin JRE/);assert.match(inspectorRuntimePrep,/createHash\('sha256'\)/);assert.match(inspectorRuntimePrep,/72ebd76b502c849e88dea39afae51baf5f82f2b5b1b6389c28ea707b20451bce/);
- const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8');
- const windowsWorkflow=await readFile(new URL('../.github/workflows/windows-x64-checks.yml',import.meta.url),'utf8');
+ const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8').then(text=>text.replace(/\r\n/g,'\n'));
+ const windowsWorkflow=await readFile(new URL('../.github/workflows/windows-x64-checks.yml',import.meta.url),'utf8').then(text=>text.replace(/\r\n/g,'\n'));
  assert.equal((workflow.match(/paths-ignore:\n\s+- '\*\*\/\*\.md'/g)||[]).length,2,'Markdown-only updates should skip automated checks');
  assert.match(workflow,/jobs:\n  macos-arm64:\n    runs-on: macos-15/);assert.equal((workflow.match(/^      - run: npm ci$/gm)||[]).length,1);assert.equal((workflow.match(/prepare:trace-processor/g)||[]).length,1);assert.match(workflow,/uses: actions\/cache@v6/);assert.match(workflow,/key: macos-arm64-tools-v2-\$\{\{ hashFiles/);assert.match(workflow,/tools\/java25-runtime/);assert.match(workflow,/run: npm test/);assert.match(workflow,/run: npm run check/);assert.match(workflow,/run: node scripts\/run-npm-task\.js package:mac/);assert.match(workflow,/run: node scripts\/mac-desktop-smoke\.js/);assert.doesNotMatch(workflow,/actions\/upload-artifact|create-release/);
  assert.match(windowsWorkflow,/windows-x64:\n    runs-on: windows-2025/);assert.match(windowsWorkflow,/run: npm run package:win/);assert.match(windowsWorkflow,/run: node scripts\/desktop-smoke\.js/);assert.match(windowsWorkflow,/node scripts\/run-npm-task\.js prepare:inspector-runtime/);assert.doesNotMatch(windowsWorkflow,/actions\/upload-artifact|create-release/);
@@ -86,7 +86,7 @@ test('large HPROF device fixture remains reproducible without entering desktop p
 });
 
 test('macOS CI package smoke retains local diagnostics without publishing artifacts',async()=>{
- const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8');
+ const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8').then(text=>text.replace(/\r\n/g,'\n'));
  const apkSmoke=await readFile(new URL('../scripts/apk-tools-smoke.js',import.meta.url),'utf8');
  const desktopSmoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
  assert.match(workflow,/id: apk-smoke-sdk/);assert.match(workflow,/scripts\/mac-desktop-smoke\.js/);assert.doesNotMatch(workflow,/actions\/upload-artifact|android-performance-smoke-diagnostics|create-release/);

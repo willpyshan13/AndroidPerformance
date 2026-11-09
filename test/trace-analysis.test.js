@@ -172,7 +172,7 @@ test('power diagnostics keep subsystem rails separate and parse per-UID energy e
 });
 test('bundled Trace Processor supports power analysis on traces without power data',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const input=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));const path=`/tmp/apw-power-rail-${process.pid}.pftrace`;const {writeFile,unlink}=await import('node:fs/promises');await writeFile(path,input);
+ const input=await readFile(new URL('../fixtures/trace-sample.json',import.meta.url));const {tmpdir}=await import('node:os');const {join}=await import('node:path');const path=join(tmpdir(),`apw-power-rail-${process.pid}.pftrace`);const {writeFile,unlink}=await import('node:fs/promises');await writeFile(path,input);
  try{const result=await queryPowerRailDiagnostics(path);assert.equal(result.available,true);assert.equal(result.batteryCounters.available,true);assert.deepEqual(result.rows,[]);assert.deepEqual(result.batteryCounters.rows,[]);assert.match(result.note,/µJ/);}finally{await unlink(path).catch(()=>{});}
 });
 test('bundled Trace Processor imports ODPM per-UID energy samples and interval deltas',async t=>{

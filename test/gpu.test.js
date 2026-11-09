@@ -45,7 +45,7 @@ test('AGI handoff creates a private extension-preserving copy only after checksu
  const {Readable}=await import('node:stream');const {stat}=await import('node:fs/promises');const {importGpuArtifact,prepareAgiArtifact}=await import('../src/gpu.js');
  const dir=await mkdtemp(join(tmpdir(),'apw-agi-'));t.after(()=>rm(dir,{recursive:true,force:true}));const root=join(dir,'index'),copies=join(dir,'copies');
  const stream=Readable.from([Buffer.from('capture contents')]);stream.headers={'x-file-name':'test.gfxtrace'};const meta=await importGpuArtifact(stream,root);
- const result=await prepareAgiArtifact(root,copies,meta.id);assert.match(result.path,/capture\.gfxtrace$/);assert.equal((await readFile(result.path)).toString(),'capture contents');assert.equal((await stat(result.path)).mode&0o777,0o600);
+ const result=await prepareAgiArtifact(root,copies,meta.id);assert.match(result.path,/capture\.gfxtrace$/);assert.equal((await readFile(result.path)).toString(),'capture contents');if(process.platform!=='win32')assert.equal((await stat(result.path)).mode&0o777,0o600);
  await writeFile(join(root,meta.id,'artifact'),'altered');await assert.rejects(()=>prepareAgiArtifact(root,copies,meta.id),/完整性/);
  const {readdir}=await import('node:fs/promises');assert.equal((await readdir(copies)).length,1);await assert.rejects(()=>prepareAgiArtifact(root,copies,'../bad'),/标识/);
 });

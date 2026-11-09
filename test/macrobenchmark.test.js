@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile, chmod, readFile, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { runMacrobenchmark, validateMacrobenchmarkExperiment, validateMacrobenchmarkProject } from '../src/macrobenchmark.js';
 
 async function projectFixture(t) {
@@ -36,11 +37,18 @@ test('Macrobenchmark runner invokes wrapper without a shell and imports only fre
   const root = await projectFixture(t), canonicalRoot = await realpath(root), outputDir = join(canonicalRoot, 'macrobenchmark', 'build', 'outputs', 'connected_android_test_additional_output', 'connected', 'com.example.macrobenchmark.test', 'androidx.benchmark.junit4.MacrobenchmarkTest');
   await mkdir(outputDir, { recursive: true });
   const reportPath = join(outputDir, 'com.example.macrobenchmark-benchmarkData.json'), tracePath = join(outputDir, 'capture.trace'), metadataPath=join(root,'macro-args.txt'),profilePath=join(root,'baseline-prof.txt');await writeFile(profilePath,'Lcom/example/Foo;->bar()V\n');
-  const javaPath = join(root, 'fake-java');
-  await writeFile(javaPath, `#!/bin/sh\n[ "$1" = "-classpath" ] || exit 8\nprintf 'gradle-run-ok\\n'\nprintf '%s\\n' "$APS_MACROBENCHMARK_STARTUP_MODE|$APS_MACROBENCHMARK_COMPILATION_MODE|$APS_MACROBENCHMARK_SCENARIO|$APS_MACROBENCHMARK_WARMUPS|$APS_MACROBENCHMARK_ITERATIONS|$APS_MACROBENCHMARK_BASELINE_PROFILE_STATE|$APS_MACROBENCHMARK_BASELINE_PROFILE_SHA256|$APS_MACROBENCHMARK_TRACE_DIR" > '${metadataPath}'\nprintf '%s\\n' "$@" >> '${metadataPath}'\nmkdir -p 'macrobenchmark/build/outputs/connected_android_test_additional_output/connected/com.example.macrobenchmark.test/androidx.benchmark.junit4.MacrobenchmarkTest'\nprintf '%s' '{"benchmarks":[{"name":"startup","className":"com.example.StartupBenchmark","metrics":{"timeNs":{"runs":[[100,200]]}}}]}' > '${reportPath}'\nprintf 'trace' > '${tracePath}'\n`);
-  await chmod(javaPath, 0o755);
+  const javaPath = join(root, process.platform==='win32'?'fake-java.exe':'fake-java'), fixture=join(root,'wrapper-fixture.cjs');
+  await writeFile(fixture, `const fs=require('node:fs');
+const args=process.argv.slice(2);if(args[0]!=='-classpath')process.exit(8);
+console.log('gradle-run-ok');
+const keys=['STARTUP_MODE','COMPILATION_MODE','SCENARIO','WARMUPS','ITERATIONS','BASELINE_PROFILE_STATE','BASELINE_PROFILE_SHA256','TRACE_DIR'];
+fs.writeFileSync(${JSON.stringify(metadataPath)},keys.map(key=>process.env['APS_MACROBENCHMARK_'+key]).join('|')+'\\n'+args.join('\\n'));
+fs.mkdirSync(${JSON.stringify(outputDir)},{recursive:true});
+fs.writeFileSync(${JSON.stringify(reportPath)},JSON.stringify({benchmarks:[{name:'startup',className:'com.example.StartupBenchmark',metrics:{timeNs:{runs:[[100,200]]}}}]}));
+fs.writeFileSync(${JSON.stringify(tracePath)},'trace');
+`);
   const experiment={startupMode:'WARM',compilationMode:'SPEED_PROFILE',scenario:'SCROLL',baselineProfileState:'PRESENT',warmups:2,iterations:8,baselineProfilePath:profilePath,traceDir:'/tmp/macro-traces'};
-  const result = await runMacrobenchmark({ javaPath, projectPath: root, task: ':macrobenchmark:connectedBenchmarkAndroidTest', serial: 'DEVICE-1',experiment });
+  const result = await runMacrobenchmark({ javaPath, projectPath: root, task: ':macrobenchmark:connectedBenchmarkAndroidTest', serial: 'DEVICE-1',experiment },{spawnProcess:(command,args,options)=>{assert.equal(command,javaPath);assert.equal(options.shell,false);assert.equal(options.windowsHide,true);assert.equal(options.env.ANDROID_SERIAL,'DEVICE-1');return spawn(process.execPath,[fixture,...args],options);}});
   assert.equal(result.status, 'completed');
   assert.match(result.output, /gradle-run-ok/);
   assert.equal(result.task, ':macrobenchmark:connectedBenchmarkAndroidTest');

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseMacrobenchmarkCliArgs, runMacrobenchmarkCli } from '../src/benchmark-cli.js';
 
 test('Macrobenchmark CLI parses the experiment matrix and rejects unsafe or incomplete arguments', () => {
@@ -11,12 +11,12 @@ test('Macrobenchmark CLI parses the experiment matrix and rejects unsafe or inco
     '--serial', 'device-1', '--startup-mode', 'warm', '--compilation-mode', 'speed_profile',
     '--scenario', 'scroll', '--warmups', '2', '--iterations', '7', '--trace-dir', '/tmp/trace output',
   ]);
-  assert.equal(options.projectPath, '/tmp/project with spaces');
+  assert.equal(options.projectPath, resolve('/tmp/project with spaces'));
   assert.equal(options.task, ':macrobenchmark:connectedCheck');
   assert.deepEqual(options.experiment, {
     startupMode: 'WARM', compilationMode: 'SPEED_PROFILE', scenario: 'SCROLL',
     baselineProfileState: 'UNKNOWN', warmups: 2, iterations: 7,
-    baselineProfilePath: '', traceDir: '/tmp/trace output',
+    baselineProfilePath: '', traceDir: resolve('/tmp/trace output'),
   });
   assert.throws(() => parseMacrobenchmarkCliArgs(['macro-run', '--project', '/tmp/app']), /--task/);
   assert.throws(() => parseMacrobenchmarkCliArgs(['macro-run', '--project', '/tmp/app', '--task', ':benchmark:test', '--iterations', '51']), /iterations/);
@@ -44,7 +44,7 @@ test('Macrobenchmark CLI invokes the runner, streams logs, writes a private repo
     writeStderr: value => stderr.push(value),
   });
   assert.equal(code, 0);
-  assert.equal(seen.javaResolver.fallbackJavaPath, join(root, 'jdk', 'bin', 'java'));
+  assert.equal(seen.javaResolver.fallbackJavaPath, join(root, 'jdk', 'bin', process.platform === 'win32' ? 'java.exe' : 'java'));
   assert.equal(seen.options.javaPath, '/test/jdk/bin/java');
   assert.equal(seen.options.experiment.traceDir, join(root, 'traces'));
   assert.deepEqual(stderr, ['gradle output\n']);

@@ -1,3 +1,4 @@
+import {downloadGithubReleaseAsset} from './github-download.js';
 import {createWriteStream} from 'node:fs';
 import {access,cp,mkdir,mkdtemp,readFile,rename,rm,writeFile,chmod,readdir,stat,realpath,copyFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -92,7 +93,7 @@ async function prepareRuntime(){
 }
 try{
  await mkdir(tools,{recursive:true});
- await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','180',asset,'-o',archive],{timeout:190000});
+ await downloadGithubReleaseAsset(asset,archive,{runner:run,timeout:190000});
  const actual=createHash('sha256').update(await readFile(archive)).digest('hex');if(actual!==expected)throw new Error(`Shark CLI ZIP SHA-256 不匹配：${actual}`);
  await mkdir(stage,{recursive:true});await extractCoreJars();
  await mkdir(join(stage,'licenses'),{recursive:true});

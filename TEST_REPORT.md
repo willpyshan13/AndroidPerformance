@@ -1,3 +1,9 @@
+## 官方下载备用通道验证（2026-11-09）
+
+- 发布页直链持续 HTTP 504 时，先从同一官方仓库/版本查询精确资源，再以 `Accept: application/octet-stream` 从 GitHub 资产 API 下载；不使用第三方镜像，原 SHA-256 校验保留。
+- 实际下载 Windows Python runtime 25,128,375 字节，SHA-256 `67215a7bf1643e33d01b17ee3f1e91a8b0b39163746855ee02594bf0608f68b4` 与固定值一致。
+- 对应回归验证精确文件选择、官方 URL 校验、二进制媒体类型及非网络错误不被掩盖；相关 8 项通过，语法检查通过。
+
 ## CI 下载稳定性（2026-11-09）
 
 - 第二轮 Windows Python 包及 macOS Shark 包下载返回 HTTP 504；增强工具下载的 curl 全错误重试并保留 SHA-256 校验。

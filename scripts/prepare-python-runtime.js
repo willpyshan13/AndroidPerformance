@@ -1,3 +1,4 @@
+import {downloadGithubReleaseAsset} from './github-download.js';
 import {createHash} from 'node:crypto';
 import {access,chmod,mkdir,mkdtemp,readdir,readFile,rename,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -35,7 +36,7 @@ async function findLicenses(directory,depth=0){
 }
 try{
  await mkdir(simpleperf,{recursive:true});
- await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','240',url,'-o',archive],{timeout:250000});
+ await downloadGithubReleaseAsset(url,archive,{runner:run,timeout:250000});
  const actual=createHash('sha256').update(await readFile(archive)).digest('hex');
  if(actual!==artifact.sha256)throw new Error(`Python runtime SHA-256 不匹配：${actual}`);
  await mkdir(stage,{recursive:true});

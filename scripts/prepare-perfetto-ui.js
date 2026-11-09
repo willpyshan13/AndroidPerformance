@@ -1,3 +1,4 @@
+import {downloadGithubReleaseAsset} from './github-download.js';
 import {createWriteStream} from 'node:fs';
 import {access,mkdir,mkdtemp,readFile,rename,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -17,7 +18,7 @@ const archive=join(tmp,'perfetto-ui.zip'),stage=join(tools,`.perfetto-ui-${proce
 const run=promisify(execFile);
 function openZip(path){return new Promise((resolve,reject)=>yauzl.open(path,{lazyEntries:true,validateEntrySizes:true},(error,zip)=>error?reject(error):resolve(zip)));}
 try{
- await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','180',asset,'-o',archive],{timeout:190000});
+ await downloadGithubReleaseAsset(asset,archive,{runner:run,timeout:190000});
  const bytes=await readFile(archive),actual=createHash('sha256').update(bytes).digest('hex');
  if(actual!==expected)throw new Error(`Perfetto UI SHA-256 不匹配：${actual}`);
  await mkdir(stage,{recursive:true});

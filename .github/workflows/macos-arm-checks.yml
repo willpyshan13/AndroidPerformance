@@ -17,6 +17,7 @@ jobs:
   macos-arm64:
     runs-on: macos-15
     env:
+      GH_TOKEN: ${{ github.token }}
       APK_SMOKE_OUTPUT_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
       APW_SMOKE_APK_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
       APW_TASK_LOG_PATH: ${{ github.workspace }}/dist/resource-preparation.log

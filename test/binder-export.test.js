@@ -1,12 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {binderTransactionsCsv,binderTransactionsJson,binderBreakdownCsv,binderBreakdownJson} from '../public/binder-export.js';
+import {binderTransactionsCsv,binderTransactionsJson,binderMethodSummaryCsv,binderMethodSummaryJson,binderBreakdownCsv,binderBreakdownJson} from '../public/binder-export.js';
 
-const transactions=[{tsNs:'1730000000000000000',durationNs:'2500000',client:'app.client',clientTid:'42',server:'system_server',serverTid:'8',aidl:'android.example.IFoo',sync:true,serverTsNs:'1730000000001000000',serverDurationNs:'1500000',id:'9007199254740993'}];
+const transactions=[{tsNs:'1730000000000000000',durationNs:'2500000',client:'app.client',clientTid:'42',server:'system_server',serverTid:'8',aidl:'android.example.IFoo',interface:'android.example.IFoo',method:'readValue',sync:true,serverTsNs:'1730000000001000000',serverDurationNs:'1500000',id:'9007199254740993'}];
 
 test('Binder JSON export preserves nanosecond precision, direction and truncation metadata',()=>{
  const data=JSON.parse(binderTransactionsJson({transactions,packageName:'com.example.app',direction:'client',truncated:true},{traceFileName:'capture.perfetto-trace'}));
  assert.equal(data.kind,'perfetto-binder-transactions');assert.equal(data.traceFileName,'capture.perfetto-trace');assert.equal(data.packageName,'com.example.app');assert.equal(data.direction,'client');assert.equal(data.truncated,true);assert.equal(data.count,1);assert.equal(data.transactions[0].tsNs,transactions[0].tsNs);assert.equal(data.transactions[0].id,transactions[0].id);
+ assert.equal(data.transactions[0].interface,'android.example.IFoo');assert.equal(data.transactions[0].method,'readValue');
 });
 
 test('Binder CSV export quotes fields, protects spreadsheet formulas and keeps nanoseconds as text',()=>{
@@ -15,12 +16,21 @@ test('Binder CSV export quotes fields, protects spreadsheet formulas and keeps n
  assert.ok(csv.includes("'=IMPORTXML("));
  assert.ok(csv.includes('"1730000000000000000"'));
  assert.ok(csv.includes('"9007199254740993"'));
+ assert.ok(csv.includes('"android.example.IFoo","readValue"'));
 });
 
 test('Binder report exporters reject oversized and invalid values',()=>{
  assert.throws(()=>binderTransactionsCsv(Array(501).fill(transactions[0])),/超过导出限制/);
  assert.throws(()=>binderTransactionsJson({direction:'invalid',transactions}),/结果无效/);
  assert.throws(()=>binderTransactionsCsv([{...transactions[0],durationNs:'-1'}]),/耗时无效/);
+});
+
+test('Binder method summary exports keep exact timings and reject malformed counts',()=>{
+ const groups=[{client:'app.client',server:'system_server',interface:'android.example.IFoo',method:'readValue',count:4,totalClientNs:'9007199254740993',totalServerNs:'3000000',maxClientNs:'2500000',syncCount:3}];
+ const json=JSON.parse(binderMethodSummaryJson({groups,truncated:true},{traceFileName:'capture.pftrace',packageName:'com.example.app',direction:'client'}));
+ assert.equal(json.kind,'perfetto-binder-method-summary');assert.equal(json.truncated,true);assert.equal(json.groups[0].totalClientNs,'9007199254740993');assert.equal(json.groups[0].method,'readValue');
+ const csv=binderMethodSummaryCsv(groups);assert.ok(csv.includes('"android.example.IFoo","readValue","4"'));assert.ok(csv.includes('"9007199254740993"'));
+ assert.throws(()=>binderMethodSummaryCsv([{...groups[0],syncCount:5}]),/计数无效/);
 });
 
 test('Binder phase breakdown exports summary and all bounded intervals with completeness metadata',()=>{

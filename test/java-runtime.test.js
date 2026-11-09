@@ -12,6 +12,9 @@ test('Gradle Java resolver prefers a configured full JDK and falls back to the b
  assert.equal(await resolveGradleJavaPath({fallbackJavaPath:'/bundled/java',env:{JAVA_HOME:home},platform:'linux'}),join(bin,'java'));
  assert.equal(await resolveGradleJavaPath({fallbackJavaPath:'/bundled/java',env:{JAVA_HOME:'/jdk-25'},platform:'darwin',javaHomeResolver:async()=>home}),join(bin,'java'));
  assert.equal(await resolveGradleJavaPath({fallbackJavaPath:'/bundled/java',env:{JAVA_HOME:'/missing/jdk'},platform:'linux'}),'/bundled/java');
+ const windowsJbr=join(home,'Android','Android Studio','jbr'),windowsBin=join(windowsJbr,'bin');await mkdir(windowsBin,{recursive:true});
+ for(const name of ['java.exe','javac.exe'])await writeFile(join(windowsBin,name),'runtime');
+ assert.equal(await resolveGradleJavaPath({fallbackJavaPath:'C:\\bundled\\java.exe',env:{ProgramFiles:home},platform:'win32',home}),join(windowsBin,'java.exe'));
 });
 
 test('Windows Java runtime extracts once from the bundled archive and reuses the verified executable',async()=>{

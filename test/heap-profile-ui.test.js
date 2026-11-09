@@ -18,4 +18,13 @@ test('heap allocation profiles can be imported from a trace file and switched pe
  assert.match(app,/event\.target\.id==='heap-profile-snapshot'\)\{try\{await loadHeapProfileSnapshot\(event\.target\.value\)/,'the window selector must reload the selected dump');
  assert.match(app,/该区间分配 \$\{human\(profile\.totalAllocatedBytes\)\}/,'the header must describe the number as the selected window');
  assert.match(app,/数值只统计所选采样区间内记录的分配增量，不是从采集开始的累计值。/,'the panel must state that the value is not a running total');
+ assert.match(app,/buildHeapAllocationFlameTree\(roots,measure\)/,'positive profiles must render an allocation flame graph for the selected metric');
+ assert.match(app,/id="heap-flame-measure"/,'the flame graph needs a selector for byte and allocation-count metrics');
+ assert.match(app,/selfAllocatedCount/);assert.match(app,/cumulativeAllocatedCount/);
+ assert.match(app,/当前指标没有可绘制的数据。/,'a missing count series must leave the metric control available');
+ assert.match(app,/result.allocationProfile.totalAllocatedCount/,'the ART runtime diagnosis summary must expose allocation count');
+ assert.match(app,/x.cumulativeAllocatedCount/,'the ART runtime diagnosis table must expose per-callsite allocation count');
+ assert.match(app,/data-heap-flame-path/,'allocation frames must be interactive');
+ assert.match(app,/heap-flame-back/);assert.match(app,/heap-flame-reset/);
+ assert.match(app,/heapProfileFlameFocus=\[\]/,'switching to a new profile or dump must reset flame graph zoom');
 });

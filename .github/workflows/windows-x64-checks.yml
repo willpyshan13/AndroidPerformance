@@ -1,0 +1,72 @@
+name: Windows x64 checks
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    env:
+      APK_SMOKE_OUTPUT_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
+      APW_SMOKE_APK_PATH: ${{ github.workspace }}/dist/apw-smoke.apk
+      APW_TASK_LOG_PATH: ${{ github.workspace }}/dist/resource-preparation.log
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'build-tools;35.0.0 platforms;android-35 ndk;27.2.12479018'
+      - uses: actions/cache@v6
+        with:
+          path: |
+            tools/platform-tools
+            tools/apk-tools
+            tools/simpleperf
+            tools/trace-processor
+            tools/perfetto-ui
+            tools/shark-cli
+            tools/java-runtime
+            tools/java-runtime.tar.gz
+            tools/java25-runtime
+            tools/native-symbolizer
+          key: windows-x64-tools-v1-${{ hashFiles('scripts/prepare-sdk-tools.js', 'scripts/prepare-simpleperf.js', 'scripts/prepare-python-runtime.js', 'scripts/prepare-trace-processor.js', 'scripts/prepare-shark.js', 'scripts/prepare-inspector-runtime.js', 'scripts/prepare-perfetto-ui.js', 'scripts/prepare-native-symbolizer.js', 'src/trace-processor-artifacts.js', 'tools/simpleperf-legacy/**', 'package-lock.json') }}
+      - run: npm ci
+      - name: Prepare Trace Processor for integration tests
+        run: node scripts/run-npm-task.js prepare:trace-processor
+      - name: Prepare Windows desktop tools
+        shell: bash
+        run: |
+          node scripts/run-npm-task.js prepare:desktop-tools
+          node scripts/run-npm-task.js prepare:simpleperf
+          node scripts/run-npm-task.js prepare:native-symbolizer
+          node scripts/native-symbolizer-smoke.js
+          node scripts/run-npm-task.js prepare:shark
+          node scripts/run-npm-task.js prepare:inspector-runtime
+          node scripts/run-npm-task.js prepare:perfetto-ui
+      - name: Analyze a generated APK with the SDK AAPT2
+        run: npm run smoke:apk-tools
+      - run: npm test
+      - name: Identify individual failing test files
+        if: failure()
+        run: node scripts/diagnose-tests.js
+      - run: npm run check
+      - run: npm run package:win
+      - name: Install both Windows packages and verify desktop startup
+        run: node scripts/desktop-smoke.js

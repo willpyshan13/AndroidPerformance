@@ -125,17 +125,17 @@ export async function querySliceArguments(path,{sliceId,locator=locateTraceProce
 
 export function parseHeapProfileSummary(csv,mode='native'){
  if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
- const rows=parseCsv(csv),header=rows.shift(),expected='id,parent_id,name_hex,mapping_hex,source_hex,line_number,self_unreleased_bytes,cumulative_unreleased_bytes,self_allocated_bytes,cumulative_allocated_bytes';
+ const rows=parseCsv(csv),header=rows.shift(),expected='id,parent_id,name_hex,mapping_hex,source_hex,line_number,self_unreleased_bytes,cumulative_unreleased_bytes,self_allocated_bytes,cumulative_allocated_bytes,self_unreleased_count,cumulative_unreleased_count,self_allocated_count,cumulative_allocated_count';
  if(!header||header.join(',')!==expected)throw new Error('内存分配剖析返回列无效');
  const decode=hex=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(hex))throw new Error('内存剖析文本编码无效');return Buffer.from(hex,'hex').toString('utf8');};
  const integer=(value,signed=false)=>{if(!(signed?/^-?\d+$/:/^\d+$/).test(value)||value.length>20)throw new Error('内存剖析数值无效');const n=BigInt(value);if(n<-(1n<<63n)||n>(1n<<63n)-1n)throw new Error('内存剖析数值超出范围');return value;};
  const sites=rows.slice(0,500).map(row=>{
-   if(row.length!==10)throw new Error('内存剖析记录不完整');
+   if(row.length!==14)throw new Error('内存剖析记录不完整');
    const id=integer(row[0]),parentId=row[1]===''?null:integer(row[1]);
-   return {id,parentId,name:decode(row[2]),mapping:decode(row[3]),source:decode(row[4]),line:row[5]===''?null:integer(row[5]),selfUnreleasedBytes:mode==='native'?integer(row[6],true):null,cumulativeUnreleasedBytes:mode==='native'?integer(row[7],true):null,selfAllocatedBytes:integer(row[8]),cumulativeAllocatedBytes:integer(row[9])};
+   return {id,parentId,name:decode(row[2]),mapping:decode(row[3]),source:decode(row[4]),line:row[5]===''?null:integer(row[5]),selfUnreleasedBytes:mode==='native'?integer(row[6],true):null,cumulativeUnreleasedBytes:mode==='native'?integer(row[7],true):null,selfAllocatedBytes:integer(row[8]),cumulativeAllocatedBytes:integer(row[9]),selfUnreleasedCount:mode==='native'?integer(row[10],true):null,cumulativeUnreleasedCount:mode==='native'?integer(row[11],true):null,selfAllocatedCount:integer(row[12]),cumulativeAllocatedCount:integer(row[13])};
  });
- const totals=sites.reduce((best,x)=>BigInt(x.cumulativeAllocatedBytes)>BigInt(best.cumulativeAllocatedBytes)?x:best,{cumulativeAllocatedBytes:'0',cumulativeUnreleasedBytes:'0'});
- return {mode,sites,totalAllocatedBytes:totals.cumulativeAllocatedBytes,totalUnreleasedBytes:mode==='native'?totals.cumulativeUnreleasedBytes:null,truncated:rows.length>500,available:sites.length>0};
+ const totals=sites.reduce((best,x)=>BigInt(x.cumulativeAllocatedBytes)>BigInt(best.cumulativeAllocatedBytes)?x:best,{cumulativeAllocatedBytes:'0',cumulativeUnreleasedBytes:'0',cumulativeAllocatedCount:'0',cumulativeUnreleasedCount:'0'});
+ return {mode,sites,totalAllocatedBytes:totals.cumulativeAllocatedBytes,totalUnreleasedBytes:mode==='native'?totals.cumulativeUnreleasedBytes:null,totalAllocatedCount:totals.cumulativeAllocatedCount,totalUnreleasedCount:mode==='native'?totals.cumulativeUnreleasedCount:null,truncated:rows.length>500,available:sites.length>0};
 }
 export function parseHeapProfileSnapshots(csv,mode='native'){
  if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
@@ -168,40 +168,37 @@ export async function queryHeapProfileSnapshots(path,{mode='native',locator=loca
 }
 export async function queryHeapProfile(path,{mode='native',snapshotId=null,locator=locateTraceProcessor,runner=exec}={}){
  if(!['native','art'].includes(mode))throw new Error('内存剖析模式无效');
- let query;
- if(snapshotId===null){
-  query=`INCLUDE PERFETTO MODULE android.memory.heap_profile.summary_tree;
- SELECT CAST(id AS TEXT) AS id,COALESCE(CAST(parent_id AS TEXT),'') AS parent_id,
- hex(CAST(COALESCE(name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(mapping_name,'') AS BLOB)) AS mapping_hex,
- hex(CAST(COALESCE(source_file,'') AS BLOB)) AS source_hex,COALESCE(CAST(line_number AS TEXT),'') AS line_number,
- CAST(self_size AS TEXT) AS self_unreleased_bytes,CAST(cumulative_size AS TEXT) AS cumulative_unreleased_bytes,
- CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes
- FROM android_heap_profile_summary_tree ORDER BY cumulative_alloc_size DESC LIMIT 501`;
- }else{
-  if(typeof snapshotId!=='string'||!/^\d{1,19}$/.test(snapshotId)||BigInt(snapshotId)>(1n<<63n)-1n)throw new Error('内存分配快照标识无效');
-  query=`INCLUDE PERFETTO MODULE callstacks.stack_profile;
+ if(snapshotId!==null&&(typeof snapshotId!=='string'||!/^\d{1,19}$/.test(snapshotId)||BigInt(snapshotId)>(1n<<63n)-1n))throw new Error('内存分配快照标识无效');
+ const heapFilter=mode==='art'?"h.heap_name='com.android.art'":"(h.heap_name IS NULL OR h.heap_name!='com.android.art')";
+ const snapshotFilter=snapshotId===null?'':'AND h.id='+snapshotId;
+ const query=`INCLUDE PERFETTO MODULE callstacks.stack_profile;
  PERFETTO PRAGMA pipelines = 1;
  CREATE PERFETTO TABLE _apw_heap_profile_metrics AS
- SELECT a.callsite_id,SUM(a.size) AS self_size,SUM(MAX(a.size,0)) AS self_alloc_size
+ SELECT a.callsite_id,SUM(a.size) AS self_size,SUM(MAX(a.size,0)) AS self_alloc_size,
+  SUM(a.count) AS self_count,SUM(MAX(a.count,0)) AS self_alloc_count
  FROM heap_profile_allocation a JOIN heap_profile h ON h.upid=a.upid AND h.ts_end=a.ts
- WHERE h.id=${snapshotId} GROUP BY a.callsite_id;
+ WHERE ${heapFilter} ${snapshotFilter} GROUP BY a.callsite_id;
  CREATE PERFETTO TABLE _apw_heap_profile_raw_callstacks AS
  WITH metrics AS MATERIALIZED (SELECT * FROM _apw_heap_profile_metrics)
  SELECT c.id,c.parent_id,c.name,c.mapping_name,c.source_file,c.line_number,
-  COALESCE(m.self_size,0) AS self_size,COALESCE(m.self_alloc_size,0) AS self_alloc_size
+  COALESCE(m.self_size,0) AS self_size,COALESCE(m.self_alloc_size,0) AS self_alloc_size,
+  COALESCE(m.self_count,0) AS self_count,COALESCE(m.self_alloc_count,0) AS self_alloc_count
  FROM _callstacks_for_stack_profile_samples!(metrics) c LEFT JOIN metrics m USING(callsite_id);
  CREATE PERFETTO TABLE _apw_heap_profile_cumulatives AS
  FROM _apw_heap_profile_raw_callstacks
  |> TREE ACCUMULATE UP
  SUM(self_size) AS cumulative_size,
- SUM(self_alloc_size) AS cumulative_alloc_size;
+ SUM(self_alloc_size) AS cumulative_alloc_size,
+ SUM(self_count) AS cumulative_count,
+ SUM(self_alloc_count) AS cumulative_alloc_count;
  SELECT CAST(id AS TEXT) AS id,COALESCE(CAST(parent_id AS TEXT),'') AS parent_id,
   hex(CAST(COALESCE(name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(mapping_name,'') AS BLOB)) AS mapping_hex,
   hex(CAST(COALESCE(source_file,'') AS BLOB)) AS source_hex,COALESCE(CAST(line_number AS TEXT),'') AS line_number,
   CAST(self_size AS TEXT) AS self_unreleased_bytes,CAST(cumulative_size AS TEXT) AS cumulative_unreleased_bytes,
-  CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes
+  CAST(self_alloc_size AS TEXT) AS self_allocated_bytes,CAST(cumulative_alloc_size AS TEXT) AS cumulative_allocated_bytes,
+  CAST(self_count AS TEXT) AS self_unreleased_count,CAST(cumulative_count AS TEXT) AS cumulative_unreleased_count,
+  CAST(self_alloc_count AS TEXT) AS self_allocated_count,CAST(cumulative_alloc_count AS TEXT) AS cumulative_allocated_count
  FROM _apw_heap_profile_cumulatives ORDER BY cumulative_alloc_size DESC LIMIT 501`;
- }
  const binary=await locator();let output;
  try{output=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:8*1024*1024,encoding:'utf8',windowsHide:true});}
  catch(error){throw new Error(`内存分配剖析查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}
@@ -259,7 +256,13 @@ export async function queryFrameTimeline(path,{packageName=null,locator=locateTr
 const GPU_RENDER_STAGE_QUERY=`SELECT CAST(s.ts AS TEXT) AS ts_ns,CAST(s.dur AS TEXT) AS dur_ns,
  hex(CAST(COALESCE(s.name,'') AS BLOB)) AS name_hex,hex(CAST(COALESCE(t.name,'') AS BLOB)) AS queue_hex,
  CAST(COALESCE(s.render_stage_category,-1) AS TEXT) AS category,CAST(COALESCE(s.submission_id,-1) AS TEXT) AS submission_id,
- hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,COALESCE(CAST(p.pid AS TEXT),'') AS pid,COALESCE(CAST(p.upid AS TEXT),'') AS upid
+ hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,COALESCE(CAST(p.pid AS TEXT),'') AS pid,COALESCE(CAST(p.upid AS TEXT),'') AS upid,
+ COALESCE(CAST(s.context_id AS TEXT),'') AS context_id,COALESCE(CAST(s.render_target AS TEXT),'') AS render_target,
+ hex(CAST(COALESCE(s.render_target_name,'') AS BLOB)) AS render_target_name,
+ COALESCE(CAST(s.render_pass AS TEXT),'') AS render_pass,hex(CAST(COALESCE(s.render_pass_name,'') AS BLOB)) AS render_pass_name,
+ COALESCE(CAST(s.command_buffer AS TEXT),'') AS command_buffer,hex(CAST(COALESCE(s.command_buffer_name,'') AS BLOB)) AS command_buffer_name,
+ COALESCE(CAST(s.frame_id AS TEXT),'') AS frame_id,COALESCE(CAST(s.hw_queue_id AS TEXT),'') AS hw_queue_id,
+ hex(CAST(COALESCE(s.render_subpasses,'') AS BLOB)) AS render_subpasses
  FROM gpu_slice s JOIN track t ON t.id=s.track_id LEFT JOIN process p ON p.upid=s.upid
  WHERE t.type='gpu_render_stage' AND s.dur>=0 ORDER BY s.ts LIMIT 1001`;
 const GPU_FREQUENCY_QUERY=`INCLUDE PERFETTO MODULE android.gpu.frequency;
@@ -269,6 +272,12 @@ const GPU_MEMORY_QUERY=`INCLUDE PERFETTO MODULE android.gpu.memory;
  SELECT CAST(m.ts AS TEXT) AS ts_ns,CAST(m.dur AS TEXT) AS dur_ns,COALESCE(CAST(m.upid AS TEXT),'') AS upid,
  hex(CAST(COALESCE(p.name,'') AS BLOB)) AS process_hex,CAST(m.gpu_memory AS TEXT) AS bytes
  FROM android_gpu_memory_per_process m LEFT JOIN process p USING(upid) WHERE m.dur>=0 ORDER BY m.ts LIMIT 2001`;
+const GPU_FRAME_PIPELINE_QUERY=`SELECT CAST(id AS TEXT) AS id,CAST(ts AS TEXT) AS ts_ns,CAST(dur AS TEXT) AS dur_ns,
+ hex(CAST(COALESCE(layer_name,'') AS BLOB)) AS layer_hex,COALESCE(CAST(frame_number AS TEXT),'') AS frame_number,
+ COALESCE(CAST(queue_to_acquire_time AS TEXT),'') AS queue_to_acquire_ns,
+ COALESCE(CAST(acquire_to_latch_time AS TEXT),'') AS acquire_to_latch_ns,
+ COALESCE(CAST(latch_to_present_time AS TEXT),'') AS latch_to_present_ns
+ FROM frame_slice WHERE name='PresentFenceSignaled' AND dur>=0 ORDER BY ts LIMIT 2001`;
 const POWER_RAILS_QUERY=`INCLUDE PERFETTO MODULE android.power_rails;
  SELECT CAST(c.ts AS TEXT) AS ts_ns,CAST(c.dur AS TEXT) AS dur_ns,
  hex(CAST(COALESCE(m.friendly_name,c.power_rail_name,'') AS BLOB)) AS rail_hex,
@@ -295,20 +304,24 @@ const PROCESS_UID_QUERY=`INCLUDE PERFETTO MODULE android.process_metadata;
  SELECT DISTINCT CAST(uid AS TEXT) AS uid FROM android_process_metadata
  WHERE hex(CAST(COALESCE(package_name,'') AS BLOB))=upper('{PACKAGE_HEX}') ORDER BY uid LIMIT 3`;
 function parseGpuTraceRows(csv,kind){
- const rows=parseCsv(csv),headers={stage:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid',frequency:'ts_ns,dur_ns,gpu_id,frequency',memory:'ts_ns,dur_ns,upid,process_hex,bytes'};
+ const rows=parseCsv(csv),headers={stage:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid,context_id,render_target,render_target_name,render_pass,render_pass_name,command_buffer,command_buffer_name,frame_id,hw_queue_id,render_subpasses',frequency:'ts_ns,dur_ns,gpu_id,frequency',memory:'ts_ns,dur_ns,upid,process_hex,bytes',frame:'id,ts_ns,dur_ns,layer_hex,frame_number,queue_to_acquire_ns,acquire_to_latch_ns,latch_to_present_ns'};
  if(!rows[0]||rows.shift().join(',')!==headers[kind])throw new Error('GPU 追踪返回列无效');
  const decode=value=>{if(!/^(?:[0-9a-f]{2})*$/i.test(value))throw new Error('GPU 追踪文本编码无效');return Buffer.from(value,'hex').toString('utf8');};
  const out=[];let truncated=false;
  for(const row of rows){if(row.length!==headers[kind].split(',').length)throw new Error('GPU 追踪数据不完整');
   if(kind==='stage'){
    if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||! /^-?\d+$/.test(row[4])||![-1,0,1,2].includes(Number(row[4]))||! /^-?\d+$/.test(row[5])||!(row[7]===''||/^\d+$/.test(row[7])&&Number.isSafeInteger(Number(row[7])))||!(row[8]===''||/^\d+$/.test(row[8])))throw new Error('GPU RenderStage 数值无效');
-   out.push({tsNs:row[0],durationNs:row[1],name:decode(row[2]),queue:decode(row[3]),category:Number(row[4]),submissionId:row[5],process:decode(row[6]),pid:row[7]?Number(row[7]):null,upid:row[8]||null});
+   for(const i of [9,10,12,14,16,17])if(row[i]!==''&&!/^-?\d{1,19}$/.test(row[i]))throw new Error('GPU RenderStage 上下文标识无效');
+   out.push({tsNs:row[0],durationNs:row[1],name:decode(row[2]),queue:decode(row[3]),category:Number(row[4]),submissionId:row[5],process:decode(row[6]),pid:row[7]?Number(row[7]):null,upid:row[8]||null,contextId:row[9]||null,renderTarget:row[10]||null,renderTargetName:decode(row[11]),renderPass:row[12]||null,renderPassName:decode(row[13]),commandBuffer:row[14]||null,commandBufferName:decode(row[15]),frameId:row[16]||null,hardwareQueueId:row[17]||null,renderSubpasses:decode(row[18])});
   }else if(kind==='frequency'){
    if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||! /^\d+$/.test(row[2])||! /^\d+$/.test(row[3]))throw new Error('GPU 频率数据无效');
    out.push({tsNs:row[0],durationNs:row[1],gpuId:row[2],frequency:row[3]});
-  }else{
+  }else if(kind==='memory'){
    if(!/^-?\d{1,19}$/.test(row[0])||!/^-?\d{1,19}$/.test(row[1])||BigInt(row[1])<0n||!(row[2]===''||/^\d+$/.test(row[2]))||! /^\d+$/.test(row[4])||BigInt(row[4])>(1n<<63n)-1n)throw new Error('GPU 内存数据无效');
    out.push({tsNs:row[0],durationNs:row[1],upid:row[2]||null,process:decode(row[3]),bytes:row[4]});
+  }else{
+   if(!/^\d{1,19}$/.test(row[0])||! /^-?\d{1,19}$/.test(row[1])||! /^-?\d{1,19}$/.test(row[2])||BigInt(row[2])<0n||!(row[4]===''||/^\d{1,19}$/.test(row[4]))||row.slice(5).some(value=>value!==''&&! /^-?\d{1,19}$/.test(value)))throw new Error('GPU 图形帧数据无效');
+   out.push({id:row[0],tsNs:row[1],durationNs:row[2],layer:decode(row[3]),frameNumber:row[4]||null,queueToAcquireNs:row[5]||null,acquireToLatchNs:row[6]||null,latchToPresentNs:row[7]||null});
   }
   if(out.length>= (kind==='stage'?1000:2000)){truncated=rows.length>out.length;break;}
  }
@@ -320,7 +333,8 @@ export async function queryGpuTraceDiagnostics(path,{locator=locateTraceProcesso
  const renderStages=await collect('stage',GPU_RENDER_STAGE_QUERY,'GPU RenderStage');
  const frequencies=await collect('frequency',GPU_FREQUENCY_QUERY,'GPU 频率轨道');
  const memory=await collect('memory',GPU_MEMORY_QUERY,'进程 GPU 内存轨道');
- return {renderStages,frequencies,memory,note:'RenderStage 持续时间是各 GPU 队列事件的记录区间；多队列事件可能并行，持续时间求和不等于墙钟耗时。频率与内存取决于设备驱动和追踪配置。轨道时间重合不证明 GPU 负载导致某帧卡顿。'};
+ const graphicsFrames=await collect('frame',GPU_FRAME_PIPELINE_QUERY,'图形帧阶段');
+ return {renderStages,frequencies,memory,graphicsFrames,note:'RenderStage 持续时间是各 GPU 队列事件的记录区间；多队列事件可能并行，持续时间求和不等于墙钟耗时。SurfaceFlinger 图形帧各阶段由追踪事件提供，不一定都存在。频率与内存取决于设备驱动和追踪配置。轨道时间重合不证明 GPU 负载导致某帧卡顿。'};
 }
 export async function queryPowerRailDiagnostics(path,{packageName=null,locator=locateTraceProcessor,runner=exec}={}){
  if(packageName!==null&&(typeof packageName!=='string'||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName)))throw new Error('应用包名无效');
@@ -569,12 +583,12 @@ export async function queryStartupTrace(path,{packageName=null,locator=locateTra
 
 export function parseBinderTransactions(csv){
  const rows=parseCsv(csv),header=rows.shift();
- if(!header||header.join(',')!=='ts,dur,client_hex,client_tid,server_hex,server_tid,aidl_hex,is_sync,server_ts,server_dur,txn_id')throw new Error('Binder 事务返回列无效');
+ if(!header||header.join(',')!=='ts,dur,client_hex,client_tid,server_hex,server_tid,aidl_hex,interface_hex,method_hex,is_sync,server_ts,server_dur,txn_id')throw new Error('Binder 事务返回列无效');
  const decode=value=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(value))throw new Error('Binder 文本编码无效');return Buffer.from(value,'hex').toString('utf8');};
  const optional=(value,signed=false)=>{if(value==='')return null;if(!(signed?/^-?\d+$/:/^\d+$/).test(value))throw new Error('Binder 事务数值无效');return value;};
  const transactions=rows.slice(0,500).map(r=>{
-  if(r.length!==11||!/^[-]?\d+$/.test(r[0])||!/^\d+$/.test(r[1])||!['','0','1'].includes(r[7]))throw new Error('Binder 事务数据无效');
-  return {tsNs:r[0],durationNs:r[1],client:decode(r[2]),clientTid:optional(r[3]),server:decode(r[4]),serverTid:optional(r[5]),aidl:decode(r[6]),sync:r[7]===''?null:r[7]==='1',serverTsNs:optional(r[8],true),serverDurationNs:optional(r[9]),id:optional(r[10])};
+  if(r.length!==13||!/^[-]?\d+$/.test(r[0])||!/^\d+$/.test(r[1])||!['','0','1'].includes(r[9]))throw new Error('Binder 事务数据无效');
+  return {tsNs:r[0],durationNs:r[1],client:decode(r[2]),clientTid:optional(r[3]),server:decode(r[4]),serverTid:optional(r[5]),aidl:decode(r[6]),interface:decode(r[7]),method:decode(r[8]),sync:r[9]===''?null:r[9]==='1',serverTsNs:optional(r[10],true),serverDurationNs:optional(r[11]),id:optional(r[12])};
  });return {transactions,truncated:rows.length>500};
 }
 export async function queryBinderTransactions(path,{packageName=null,direction='both',locator=locateTraceProcessor,runner=exec}={}){
@@ -586,9 +600,32 @@ export async function queryBinderTransactions(path,{packageName=null,direction='
  SELECT CAST(client_ts AS TEXT) AS ts,CAST(client_dur AS TEXT) AS dur,hex(CAST(COALESCE(client_process,'') AS BLOB)) AS client_hex,
  COALESCE(CAST(client_tid AS TEXT),'') AS client_tid,hex(CAST(COALESCE(server_process,'') AS BLOB)) AS server_hex,
  COALESCE(CAST(server_tid AS TEXT),'') AS server_tid,hex(CAST(COALESCE(aidl_name,'') AS BLOB)) AS aidl_hex,
+ hex(CAST(COALESCE(interface,'') AS BLOB)) AS interface_hex,hex(CAST(COALESCE(method_name,'') AS BLOB)) AS method_hex,
  COALESCE(CAST(is_sync AS TEXT),'') AS is_sync,COALESCE(CAST(server_ts AS TEXT),'') AS server_ts,COALESCE(CAST(CASE WHEN server_dur>=0 THEN server_dur END AS TEXT),'') AS server_dur,COALESCE(CAST(binder_txn_id AS TEXT),'') AS txn_id
  FROM android_binder_txns WHERE client_ts IS NOT NULL AND client_dur >= 0${filter} ORDER BY client_dur DESC,client_ts LIMIT 501`;
  const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Binder 事务查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseBinderTransactions(result.stdout);
+}
+export function parseBinderMethodSummary(csv){
+ const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='client_hex,server_hex,interface_hex,method_hex,txn_count,total_client_ns,total_server_ns,max_client_ns,sync_count')throw new Error('Binder 方法汇总返回列无效');
+ const decode=value=>{if(!/^(?:[0-9a-fA-F]{2})*$/.test(value))throw new Error('Binder 文本编码无效');return Buffer.from(value,'hex').toString('utf8');};
+ const integer=(value,nullable=false)=>{if(value===''&&nullable)return null;if(!/^\d+$/.test(value))throw new Error('Binder 方法汇总数值无效');return value;};
+ const groups=rows.slice(0,200).map(row=>{if(row.length!==9)throw new Error('Binder 方法汇总数据无效');const count=integer(row[4]),syncCount=integer(row[8]);if(!Number.isSafeInteger(Number(count))||!Number.isSafeInteger(Number(syncCount))||Number(syncCount)>Number(count))throw new Error('Binder 方法汇总计数无效');return {client:decode(row[0]),server:decode(row[1]),interface:decode(row[2]),method:decode(row[3]),count:Number(count),totalClientNs:integer(row[5]),totalServerNs:integer(row[6],true),maxClientNs:integer(row[7]),syncCount:Number(syncCount)};});
+ return {groups,truncated:rows.length>200};
+}
+export async function queryBinderMethodSummary(path,{packageName=null,direction='both',locator=locateTraceProcessor,runner=exec}={}){
+ if(packageName!==null&&(typeof packageName!=='string'||packageName.length>255||!/^[a-zA-Z][\w]*(?:\.[\w]+)+$/.test(packageName)))throw new Error('应用包名无效');
+ if(!['both','client','server'].includes(direction))throw new Error('Binder 调用方向无效');
+ const match=column=>{const value=Buffer.from(packageName,'utf8').toString('hex'),prefix=Buffer.from(`${packageName}:`,'utf8').toString('hex');return `(hex(CAST(${column} AS BLOB))=upper('${value}') OR substr(hex(CAST(${column} AS BLOB)),1,${prefix.length})=upper('${prefix}'))`;};
+ const filter=packageName?` AND ${direction==='both'?`(${match('client_process')} OR ${match('server_process')})`:match(direction==='client'?'client_process':'server_process')}`:'';
+ const query=`INCLUDE PERFETTO MODULE android.binder;
+ SELECT hex(CAST(COALESCE(client_process,'') AS BLOB)) AS client_hex,hex(CAST(COALESCE(server_process,'') AS BLOB)) AS server_hex,
+ hex(CAST(COALESCE(interface,'') AS BLOB)) AS interface_hex,hex(CAST(COALESCE(method_name,'') AS BLOB)) AS method_hex,
+ CAST(count(*) AS TEXT) AS txn_count,CAST(sum(client_dur) AS TEXT) AS total_client_ns,
+ COALESCE(CAST(sum(CASE WHEN server_dur>=0 THEN server_dur END) AS TEXT),'') AS total_server_ns,
+ CAST(max(client_dur) AS TEXT) AS max_client_ns,CAST(sum(CASE WHEN is_sync THEN 1 ELSE 0 END) AS TEXT) AS sync_count
+ FROM android_binder_txns WHERE client_ts IS NOT NULL AND client_dur>=0${filter}
+ GROUP BY client_process,server_process,interface,method_name ORDER BY sum(client_dur) DESC,count(*) DESC LIMIT 201`;
+ const binary=await locator();let result;try{result=await runner(binary,['--no-agent','--quiet','query',path,query],{timeout:120000,maxBuffer:4*1024*1024,encoding:'utf8',windowsHide:true});}catch(error){throw new Error(`Binder 方法汇总查询失败：${String(error.stderr||error.message).slice(0,1200)}`);}return parseBinderMethodSummary(result.stdout);
 }
 export function parseBinderBreakdown(csv){
  const rows=parseCsv(csv),header=rows.shift();if(!header||header.join(',')!=='kind,side_hex,reason_hex,ts,dur,count')throw new Error('Binder 分解返回列无效');

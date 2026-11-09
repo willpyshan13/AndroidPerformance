@@ -15,6 +15,9 @@ export async function resolveGradleJavaPath({fallbackJavaPath,env=process.env,pl
  if(platform==='darwin'){
   candidates.push(join(home,'Applications','Android Studio.app','Contents','jbr','Contents','Home'),'/Applications/Android Studio.app/Contents/jbr/Contents/Home');
  }
+ if(platform==='win32'){
+  candidates.push(join(env.ProgramFiles||'C:\\Program Files','Android','Android Studio','jbr'),join(env.LOCALAPPDATA||join(home,'AppData','Local'),'Programs','Android Studio','jbr'));
+ }
  for(const candidate of [...new Set(candidates)]){
   const java=join(candidate,'bin',platform==='win32'?'java.exe':'java'),javac=join(candidate,'bin',platform==='win32'?'javac.exe':'javac');
   try{if((await stat(java)).isFile()&&(await stat(javac)).isFile()){await access(java);await access(javac);return java;}}catch{}

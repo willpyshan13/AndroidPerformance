@@ -14,7 +14,7 @@ import { analyzeHprofUpload, queryHeapWorker } from './hprof-upload.js';
 import { analyzeWithShark, resolveSharkResources } from './shark.js';
 import { analyzePerfUpload } from './perf-upload.js';
 import { symbolizeNativeAddress } from './native-symbolizer.js';
-import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryNetworkFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderBreakdown, querySliceArguments, queryHeapProfile, queryHeapProfileSnapshots } from './trace-analysis.js';
+import { analyzeTraceUpload, locateTraceProcessor, queryTraceFile, queryTraceSql, queryFrameTimeline, queryGpuTraceDiagnostics, queryPowerRailDiagnostics, queryComposeFrameCorrelation, queryJankStatsFrameCorrelation, queryLayoutFrameCorrelation, queryNetworkFrameCorrelation, queryCpuFrameCorrelation, queryStartupTrace, queryStartupBreakdown, queryStartupArtAttribution, queryArtRuntimeDiagnostics, queryThreadStates, queryBinderTransactions, queryBinderMethodSummary, queryBinderBreakdown, querySliceArguments, queryHeapProfile, queryHeapProfileSnapshots } from './trace-analysis.js';
 import { importGpuArtifact, listGpuArtifacts, getGpuArtifact, verifyGpuArtifact } from './gpu.js';
 import { parseBatteryStats, compareBatteryStats } from './battery.js';
 import {createSourceSnapshot,listSourceSnapshots,getSourceSnapshot,readSourceFile,searchSource,resolveSourceSymbol} from './source-workspace.js';
@@ -43,13 +43,13 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
   const traceDir=join(dataDir,'trace-archives');
   const perfDir=join(dataDir,'cpu-archives');
   const perfettoUiRoot=perfettoUiDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'perfetto-ui'):join(root,'tools','perfetto-ui'));
-  const nativeDemangler=nativeDemanglerPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'native-symbolizer','llvm-cxxfilt'):join(root,'tools','native-symbolizer','llvm-cxxfilt'));
+  const nativeDemangler=nativeDemanglerPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'native-symbolizer',process.platform==='win32'?'llvm-cxxfilt.exe':'llvm-cxxfilt'):join(root,'tools','native-symbolizer',process.platform==='win32'?'llvm-cxxfilt.exe':'llvm-cxxfilt'));
   const sourceDir=join(dataDir,'source-workspaces');
   let sourceBusy=false, macrobenchmarkBusy=false, macrobenchmarkArtifacts=new Map();
   let gpuBusy=false;
   let apkBusy = false, heapBusy = false, mappingBusy=false, sharkBusy = false, perfBusy = false, traceBusy = false, heapSession = null, traceSession = null, closed = false;const artTraceCaptures=new Map(),cpuCaptures=new Map();
   const sharkResources=resolveSharkResources({sharkDir:sharkDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'shark-cli'):join(root,'tools','shark-cli')),javaPath:sharkJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(root,'tools','java-runtime','bin',process.platform==='win32'?'java.exe':'java'))});
-  const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java25-runtime','bin','java'):null)});
+  const composeInspectorResources=resolveComposeInspectorResources({inspectorDir:composeInspectorDir||(desktop&&process.resourcesPath?join(process.resourcesPath,'ui-inspector'):join(root,'tools','ui-inspector')),javaPath:composeInspectorJavaPath||(desktop&&process.resourcesPath?join(process.resourcesPath,'java25-runtime','bin',process.platform==='win32'?'java.exe':'java'):null)});
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -239,14 +239,15 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
             }
             if(decoder.decode().includes('\0'))throw new Error('混淆映射必须是 UTF-8 文本');
             if(!size)throw new Error('混淆映射文件为空');await file.close();file=null;await rename(temp,mappingPath);
+            const indexed=await queryHeapWorker(heapSession.worker,'configureMapping',{path:mappingPath});
             const previous=heapSession.mappingPath;heapSession.mappingPath=mappingPath;heapSession.mappingName=fileName;heapSession.mappingBytes=size;if(previous)await rm(previous,{force:true});
-            return json({fileName,size});
-          }catch(error){if(file)await file.close().catch(()=>{});await rm(temp,{force:true});throw error;}finally{mappingBusy=false;}
+            return json({fileName,size,...indexed});
+          }catch(error){if(file)await file.close().catch(()=>{});await rm(temp,{force:true});await rm(mappingPath,{force:true});throw error;}finally{mappingBusy=false;}
         }
         if(path==='/api/heap/mapping/clear'){
           const body=await readBody(req);if(heapBusy||mappingBusy||sharkBusy)return json({error:'堆文件或 Shark 分析正在运行，请等待完成'},409);
           if(!heapSession||body.sessionId!==heapSession.sessionId)throw new Error('堆快照已关闭或已替换，请重新导入');
-          mappingBusy=true;try{if(heapSession.mappingPath)await rm(heapSession.mappingPath,{force:true});heapSession.mappingPath=null;heapSession.mappingName=null;heapSession.mappingBytes=null;return json({cleared:true});}finally{mappingBusy=false;}
+          mappingBusy=true;try{await queryHeapWorker(heapSession.worker,'clearMapping',{});if(heapSession.mappingPath)await rm(heapSession.mappingPath,{force:true});heapSession.mappingPath=null;heapSession.mappingName=null;heapSession.mappingBytes=null;return json({cleared:true});}finally{mappingBusy=false;}
         }
         if(path==='/api/heap/shark-analysis'){
           const body=await readBody(req);
@@ -344,6 +345,11 @@ export function createApp({ adb, dataDir = join(root, 'data'), token = randomByt
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
           if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
           traceBusy=true;try{return json(await queryBinderTransactions(traceSession.path,{packageName:body.packageName??null,direction:body.direction??'both'}));}finally{traceBusy=false;}
+        }
+        if(path==='/api/trace/binder-methods'){
+          if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);
+          if(!traceSession||body.sessionId!==traceSession.sessionId)throw new Error('追踪会话已关闭或已替换，请重新导入');
+          traceBusy=true;try{return json(await queryBinderMethodSummary(traceSession.path,{packageName:body.packageName??null,direction:body.direction??'both'}));}finally{traceBusy=false;}
         }
         if(path==='/api/trace/thread-states'){
           if(traceBusy)return json({error:'已有追踪任务正在处理，请等待完成'},409);

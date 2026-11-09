@@ -646,25 +646,32 @@ export function parseArtMethodTrace(buffer,{maxEvents=ART_TRACE_LIMITS.events,ma
   return {format:'ART method trace',version,streaming,clock,startTimeUs:baseTimeUs.toString(),durationUs:duration.toString(),eventCount:events,threadCount:new Set([...threads.keys(),...stacks.keys()]).size,methodCount:methods.size,completedCalls,incompleteCalls,unmatchedExits,intervalsTruncated:spanSeen>spans.length,methods:methodStatsList,threads:[...new Set([...threads.keys(),...stacks.keys()])].map(tid=>({tid,name:threads.get(tid)||`Thread ${tid}`})).sort((a,b)=>a.tid-b.tid),intervals:spans.map(span=>({...span,startUs:(BigInt(span.startUs)-origin).toString(),endUs:(BigInt(span.endUs)-origin).toString()}))};
 }
 
+function buildProfileFromRecords(records,{emptyMessage='文件中没有调用栈'}={}){
+  const root={name:'所有线程',weight:0,self:0,children:[]},aggregate=new Map(),childrenIndex=new WeakMap();let stacks=0,nodes=1;
+  for(const {frames,weight} of records){
+    if(!Array.isArray(frames)||frames.length>128||frames.some(frame=>typeof frame!=='string'||!frame||frame.length>1000)||!Number.isSafeInteger(weight)||weight<=0)throw new Error('调用栈或权重无效');
+    if(!Number.isSafeInteger(root.weight+weight))throw new Error('权重总和超出安全范围');
+    root.weight+=weight;let node=root;
+    for(const frame of frames){let lookup=childrenIndex.get(node);if(!lookup){lookup=new Map();childrenIndex.set(node,lookup);}let child=lookup.get(frame);if(!child){if(++nodes>100000)throw new Error('调用树超过 100,000 节点限制');child={name:frame,weight:0,self:0,children:[]};lookup.set(frame,child);node.children.push(child);}child.weight+=weight;if(!Number.isSafeInteger(child.weight))throw new Error('权重总和超出安全范围');node=child;
+      const a=aggregate.get(frame)||{name:frame,inclusive:0,self:0};a.inclusive+=weight;if(!Number.isSafeInteger(a.inclusive))throw new Error('函数汇总权重超出安全范围');aggregate.set(frame,a);
+    }
+    node.self+=weight;if(!Number.isSafeInteger(node.self))throw new Error('权重总和超出安全范围');aggregate.get(frames.at(-1)).self+=weight;if(!Number.isSafeInteger(aggregate.get(frames.at(-1)).self))throw new Error('函数汇总权重超出安全范围');stacks++;
+  }
+  if(!stacks)throw new Error(emptyMessage);
+  const sort=node=>{node.children.sort((a,b)=>b.weight-a.weight);for(const child of node.children)sort(child);};sort(root);
+  return {root,stacks,symbols:[...aggregate.values()].sort((a,b)=>b.self-a.self),note:'权重来自 folded stack 文件；可能是采样周期而不是采样次数，不直接表示 CPU 百分比。'};
+}
 export function parseFoldedStacks(text) {
   if(typeof text!=='string'||!text.trim())throw new Error('调用栈文件为空');
   const lines=text.split(/\r?\n/);if(lines.length>100000)throw new Error('调用栈超过 100,000 行限制');
-  const root={name:'所有线程',weight:0,self:0,children:[]},aggregate=new Map(),childrenIndex=new WeakMap();let stacks=0,nodes=1;
-  for(const [i,line] of lines.entries()){
+  function* records(){for(const [i,line] of lines.entries()){
     if(!line.trim()||line.trimStart().startsWith('#'))continue;
     const match=line.match(/^(.+?)\s+(\d+)\s*$/);if(!match)throw new Error(`第 ${i+1} 行不是 folded stack 格式`);
-    const frames=match[1].split(';').map(x=>x.trim()),weight=Number(match[2]);
-    if(frames.length>128||frames.some(f=>!f||f.length>1000)||!Number.isSafeInteger(weight)||weight<=0)throw new Error(`第 ${i+1} 行的调用栈或权重无效`);
-    if(!Number.isSafeInteger(root.weight+weight))throw new Error('权重总和超出安全范围');
-    root.weight+=weight;let node=root;
-    for(const frame of frames){let lookup=childrenIndex.get(node);if(!lookup){lookup=new Map();childrenIndex.set(node,lookup);}let child=lookup.get(frame);if(!child){if(++nodes>100000)throw new Error('调用树超过 100,000 节点限制');child={name:frame,weight:0,self:0,children:[]};lookup.set(frame,child);node.children.push(child);}child.weight+=weight;node=child;
-      const a=aggregate.get(frame)||{name:frame,inclusive:0,self:0};a.inclusive+=weight;if(!Number.isSafeInteger(a.inclusive))throw new Error('函数汇总权重超出安全范围');aggregate.set(frame,a);
-    }
-    node.self+=weight;aggregate.get(frames.at(-1)).self+=weight;stacks++;
-  }
-  if(!stacks)throw new Error('文件中没有调用栈');
-  const sort=node=>{node.children.sort((a,b)=>b.weight-a.weight);for(const child of node.children)sort(child);};sort(root);
-  return {root,stacks,symbols:[...aggregate.values()].sort((a,b)=>b.self-a.self),note:'权重来自 folded stack 文件；可能是采样周期而不是采样次数，不直接表示 CPU 百分比。'};
+    const frames=match[1].split(';').map(value=>value.trim()),weight=Number(match[2]);
+    if(frames.length>128||frames.some(frame=>!frame||frame.length>1000)||!Number.isSafeInteger(weight)||weight<=0)throw new Error(`第 ${i+1} 行的调用栈或权重无效`);
+    yield {frames,weight};
+  }}
+  return buildProfileFromRecords(records());
 }
 
 // Each matching node represents one occurrence in the forward tree. Its
@@ -709,6 +716,21 @@ export function visibleHeapProfileCallTreeRows(roots,expandedIds=new Set()) {
 
 export function defaultHeapProfileCallTreeExpansion(roots) {
   const expanded=new Set();for(const root of roots||[]){if(root.children.length){expanded.add(root.id);for(const child of root.children)if(child.children.length)expanded.add(child.id);}}return expanded;
+}
+
+// Keep exact bytes for labels; finite numeric weights are used only to lay out
+// the relative widths of this bounded (500 node) call tree.
+export function buildHeapAllocationFlameTree(roots,measure='cumulativeAllocatedBytes') {
+  if(!Array.isArray(roots)||roots.length>500)throw new Error('内存分配火焰图记录无效或超出上限');
+  if(!['cumulativeAllocatedBytes','cumulativeUnreleasedBytes','cumulativeAllocatedCount','cumulativeUnreleasedCount'].includes(measure))throw new Error('内存分配火焰图指标无效');
+  const signed=measure.includes('Unreleased'),valueOf=node=>{const value=String(node?.[measure]??'');if(!(signed?/^-?\d{1,20}$/:/^\d{1,20}$/).test(value))throw new Error('内存分配火焰图节点无效');const amount=BigInt(value);if(amount<-(1n<<63n)||amount>(1n<<63n)-1n)throw new Error('内存分配火焰图节点无效');return amount>0n?amount:0n;};
+  const copy=node=>{
+    if(!Array.isArray(node.children))throw new Error('内存分配火焰图节点无效');
+    const value=valueOf(node),children=node.children.filter(child=>valueOf(child)>0n).map(copy).sort((a,b)=>BigInt(a.value)>BigInt(b.value)?-1:BigInt(a.value)<BigInt(b.value)?1:a.id.localeCompare(b.id));
+    return {id:String(node.id),name:String(node.name||'(未知函数)'),value:String(value),weight:Number(value),children};
+  };
+  const children=roots.filter(node=>valueOf(node)>0n).map(copy).sort((a,b)=>BigInt(a.value)>BigInt(b.value)?-1:BigInt(a.value)<BigInt(b.value)?1:a.id.localeCompare(b.id)),total=children.reduce((sum,node)=>sum+BigInt(node.value),0n);
+  return total?{id:'all',name:'全部分配',value:String(total),weight:Number(total),children}:null;
 }
 
 // Positions are normalized to the selected root's event-period weight.
@@ -765,8 +787,9 @@ export function filterCpuProfileByLibrary(timeline,library){
  const samples=[];for(const sample of timeline.samples){if(!Array.isArray(sample.libraries)||sample.libraries.length!==sample.frames.length)continue;const frames=[],libraries=[],vaddrs=[];for(let i=0;i<sample.frames.length;i++)if(sample.libraries[i]===library){frames.push(sample.frames[i]);libraries.push(library);vaddrs.push(sample.vaddrs?.[i]??null);}if(frames.length)samples.push({timeNs:sample.timeNs,period:String(sample.weight),pid:sample.pid,tid:sample.tid,thread:sample.threadName||sample.thread.replace(/-\d+\/\d+$/,''),frames,libraries,vaddrs});}
  if(!samples.length)return {timeline:{available:false,event:timeline.event,clockId:timeline.clockId,skipped:0,truncated:timeline.truncated},profile:null};
  const filteredTimeline=buildSampleTimeline({event:timeline.event,clockId:timeline.clockId,truncated:timeline.truncated,samples,buildIds:timeline.buildIds,addressesTruncated:timeline.addressesTruncated},timeline.bins);
- const folded=filteredTimeline.samples.map(sample=>`${[sample.thread,...sample.frames].join(';')} ${sample.weight}`).join('\n');
- return {timeline:filteredTimeline,profile:parseFoldedStacks(folded)};
+ function* records(){for(const sample of filteredTimeline.samples)yield {frames:[sample.thread,...sample.frames],weight:sample.weight};}
+ const profile=buildProfileFromRecords(records());
+ return {timeline:filteredTimeline,profile};
 }
 // Count observed sample records only, not inferred lost samples or CPU time.
 export function sampleQuality(timeline){
@@ -818,17 +841,30 @@ export function sampleStackTimeline(timeline,{thread=null,rangeMs=null,maxSample
   const upperBound=value=>{let lo=first,hi=last;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<=value)lo=mid+1;else hi=mid;}return lo;};
   first=lowerBound(start);last=upperBound(end);
  }
- const inRange=ordered.slice(first,last),candidates=thread===null?inRange:inRange.filter(sample=>sample.thread===thread);
- if(!candidates.length)return {entries:[],functions:[],totalSamples:0,renderedSamples:0,truncated:false,maxDepth,startTime:null,endTime:null,startMs:rangeMs?.start??null,endMs:rangeMs?.end??null};
- const count=Math.min(candidates.length,maxSamples),entries=[],weights=new Map();
- for(let i=0;i<count;i++){
-  const index=count===candidates.length?i:count===1?Math.floor((candidates.length-1)/2):Math.round(i*(candidates.length-1)/(count-1)),sample=candidates[index],allFrames=sample.frames||[],frames=allFrames.length>maxDepth?allFrames.slice(-maxDepth):allFrames;
-  entries.push({sample,frames,omittedFrames:allFrames.length-frames.length});
-  for(const name of frames){const weight=(weights.get(name)||0)+sample.weight;if(!Number.isSafeInteger(weight))throw new Error('调用栈时间图权重超出安全范围');weights.set(name,weight);}
+ // Count and remember only the range endpoints first. Do not materialize the
+ // potentially huge range or a second thread-filtered copy: the canvas is
+ // bounded, so the projection should be bounded too.
+ let totalSamples=0,startSample=null,endSample=null;
+ for(let i=first;i<last;i++){
+  const sample=ordered[i];if(thread!==null&&sample.thread!==thread)continue;
+  if(!startSample)startSample=sample;endSample=sample;totalSamples++;
+ }
+ if(!totalSamples)return {entries:[],functions:[],totalSamples:0,renderedSamples:0,truncated:false,maxDepth,startTime:null,endTime:null,startMs:rangeMs?.start??null,endMs:rangeMs?.end??null};
+ const count=Math.min(totalSamples,maxSamples),targets=Array.from({length:count},(_,i)=>count===totalSamples?i:count===1?Math.floor((totalSamples-1)/2):Math.round(i*(totalSamples-1)/(count-1))),entries=[],weights=new Map();
+ let ordinal=0,target=0;
+ for(let i=first;i<last&&target<count;i++){
+  const sample=ordered[i];if(thread!==null&&sample.thread!==thread)continue;
+  if(ordinal===targets[target]){
+   const allFrames=sample.frames||[],frames=allFrames.length>maxDepth?allFrames.slice(-maxDepth):allFrames;
+   entries.push({sample,frames,omittedFrames:allFrames.length-frames.length});
+   for(const name of frames){const weight=(weights.get(name)||0)+sample.weight;if(!Number.isSafeInteger(weight))throw new Error('调用栈时间图权重超出安全范围');weights.set(name,weight);}
+   target++;
+  }
+  ordinal++;
  }
  const functions=[...weights].map(([name,weight])=>({name,weight})).sort((a,b)=>b.weight-a.weight||a.name.localeCompare(b.name)).slice(0,8);
  const origin=ordered[0].time;
- return {entries,functions,totalSamples:candidates.length,renderedSamples:entries.length,truncated:entries.length<candidates.length,maxDepth,startTime:candidates[0].time,endTime:candidates.at(-1).time,startMs:Number(candidates[0].time-origin)/1e6,endMs:Number(candidates.at(-1).time-origin)/1e6};
+ return {entries,functions,totalSamples,renderedSamples:entries.length,truncated:entries.length<totalSamples,maxDepth,startTime:startSample.time,endTime:endSample.time,startMs:Number(startSample.time-origin)/1e6,endMs:Number(endSample.time-origin)/1e6};
 }
 export function sampleMarkerRows(timeline,{thread=null,event=null,fromMs=null,toMs=null,stackQuery='',limit=500}={}) {
  if(!timeline?.available||!Array.isArray(timeline.samples)||thread!==null&&typeof thread!=='string'||event!==null&&typeof event!=='string'||fromMs!==null&&(!Number.isFinite(fromMs)||fromMs<0)||toMs!==null&&(!Number.isFinite(toMs)||toMs<0)||fromMs!==null&&toMs!==null&&toMs<fromMs||fromMs!==null&&fromMs>timeline.durationMs||toMs!==null&&toMs>timeline.durationMs||typeof stackQuery!=='string'||stackQuery.length>512||!Number.isInteger(limit)||limit<1||limit>2000)throw new Error('CPU 样本标记筛选参数无效');
@@ -837,23 +873,33 @@ export function sampleMarkerRows(timeline,{thread=null,event=null,fromMs=null,to
  for(const sample of ordered){if(thread!==null&&sample.thread!==thread)continue;const offsetMs=Number(sample.time-origin)/1e6;if(offsetMs<effectiveFrom||offsetMs>effectiveTo)continue;if(query&&!sample.frames.join(' ').toLocaleLowerCase().includes(query))continue;total++;if(rows.length<limit)rows.push({sample,offsetMs});}
  return {rows,total,truncated:total>rows.length,event:timeline.event,fromMs:effectiveFrom,toMs:effectiveTo};
 }
-export function drawSampleStackTimeline(canvas,projection,{devicePixelRatio=globalThis.devicePixelRatio||1}={}) {
+export function drawSampleStackTimeline(canvas,projection,{devicePixelRatio=globalThis.devicePixelRatio||1,Path2DImpl=globalThis.Path2D}={}) {
  if(!canvas||!Array.isArray(projection?.entries)||!projection.entries.length||!Number.isFinite(devicePixelRatio)||devicePixelRatio<=0)throw new Error('调用栈时间图画布无效');
  const rowHeight=8,width=Math.max(1000,Math.min(10000,projection.entries.length*2)),height=Math.max(64,Math.max(1,...projection.entries.map(entry=>entry.frames.length))*rowHeight),dpr=Math.min(devicePixelRatio,2),span=projection.endTime-projection.startTime;
  canvas.width=Math.ceil(width*dpr);canvas.height=Math.ceil(height*dpr);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;
  const context=canvas.getContext('2d');if(!context)throw new Error('浏览器无法创建 CPU 时间图画布');context.setTransform(dpr,0,0,dpr,0,0);context.clearRect(0,0,width,height);
  const functionColors=new Map(projection.functions.map((fn,index)=>[fn.name,`hsl(${(index*43+28)%360} 54% 58%)`]));context.globalAlpha=.72;
  let drawnFrames=0;
- for(let i=0;i<projection.entries.length;i++){const entry=projection.entries[i],position=span===0n?(projection.entries.length===1?.5:i/(projection.entries.length-1)):Number(entry.sample.time-projection.startTime)/Number(span),x=position*(width-1.5);for(let depth=0;depth<entry.frames.length;depth++){const name=entry.frames[depth],y=height-(depth+1)*rowHeight;context.fillStyle=functionColors.get(name)||'#9aa6aa';context.fillRect(x,y,1.5,rowHeight-1);drawnFrames++;}}
+ if(typeof Path2DImpl==='function'){
+  // Canvas fillRect per frame is expensive for deep profiles. Group rectangles
+  // into one retained path per palette entry, then submit at most nine fills.
+  const paths=new Map([...functionColors.keys(),'__other__'].map(name=>[name,new Path2DImpl()])),counts=new Map([...paths.keys()].map(name=>[name,0]));
+  for(let i=0;i<projection.entries.length;i++){
+   const entry=projection.entries[i],position=span===0n?(projection.entries.length===1?.5:i/(projection.entries.length-1)):Number(entry.sample.time-projection.startTime)/Number(span),x=position*(width-1.5);
+   for(let depth=0;depth<entry.frames.length;depth++){const name=entry.frames[depth],key=functionColors.has(name)?name:'__other__',path=paths.get(key),y=height-(depth+1)*rowHeight;path.rect(x,y,1.5,rowHeight-1);counts.set(key,counts.get(key)+1);drawnFrames++;}
+  }
+  for(const [name,path] of paths){if(!counts.get(name))continue;context.fillStyle=functionColors.get(name)||'#9aa6aa';context.fill(path);}
+ }else{
+  for(let i=0;i<projection.entries.length;i++){const entry=projection.entries[i],position=span===0n?(projection.entries.length===1?.5:i/(projection.entries.length-1)):Number(entry.sample.time-projection.startTime)/Number(span),x=position*(width-1.5);for(let depth=0;depth<entry.frames.length;depth++){const name=entry.frames[depth],y=height-(depth+1)*rowHeight;context.fillStyle=functionColors.get(name)||'#9aa6aa';context.fillRect(x,y,1.5,rowHeight-1);drawnFrames++;}}
+ }
  return {width,height,renderedSamples:projection.entries.length,drawnFrames};
 }
 export function profileForTimeBin(timeline,bin,thread=null) {
   if(!timeline?.available||!Number.isInteger(bin)||bin<0||bin>=timeline.bins)throw new Error('时间范围无效');
   if(thread!==null&&typeof thread!=='string')throw new Error('线程筛选无效');
   const candidates=timeline.samplesByBin?.[bin]||timeline.samples.filter(s=>s.bin===bin);
-  const lines=candidates.filter(s=>thread===null||s.thread===thread).map(s=>`${[s.thread,...s.frames].join(';')} ${s.weight}`);
-  if(!lines.length)throw new Error('所选时间范围没有样本');
-  return parseFoldedStacks(lines.join('\n'));
+  function* records(){for(const sample of candidates)if(thread===null||sample.thread===thread)yield {frames:[sample.thread,...sample.frames],weight:sample.weight};}
+  return buildProfileFromRecords(records(),{emptyMessage:'所选时间范围没有样本'});
 }
 
 export function profileForTimeRange(timeline,startMs,endMs,thread=null) {
@@ -863,10 +909,9 @@ export function profileForTimeRange(timeline,startMs,endMs,thread=null) {
   const start=origin+BigInt(Math.round(startMs*1e6)),end=origin+BigInt(Math.round(endMs*1e6));
   const lowerBound=value=>{let lo=0,hi=ordered.length;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<value)lo=mid+1;else hi=mid;}return lo;};
   const upperBound=value=>{let lo=0,hi=ordered.length;while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].time<=value)lo=mid+1;else hi=mid;}return lo;};
-  const first=lowerBound(start),last=upperBound(end),lines=[];
-  for(let i=first;i<last;i++){const s=ordered[i];if(thread===null||s.thread===thread)lines.push(`${[s.thread,...s.frames].join(';')} ${s.weight}`);}
-  if(!lines.length)throw new Error('所选时间范围没有采样点');
-  return parseFoldedStacks(lines.join('\n'));
+  const first=lowerBound(start),last=upperBound(end);
+  function* records(){for(let i=first;i<last;i++){const sample=ordered[i];if(thread===null||sample.thread===thread)yield {frames:[sample.thread,...sample.frames],weight:sample.weight};}}
+  return buildProfileFromRecords(records(),{emptyMessage:'所选时间范围没有采样点'});
 }
 
 function parseComposeCsv(text){

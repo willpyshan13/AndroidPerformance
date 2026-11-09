@@ -296,7 +296,7 @@ test('Heap page labels preserve HPROF evidence while explaining allocation-profi
   const literals=[...new Set([...source.matchAll(/(['"])(.*?)\1/g)].map(match=>match[2]).filter(text=>/[\u3400-\u9fff]/.test(text)&&!/[<>$]/.test(text)))];
   const guidance=[
     '采集通常要求应用可调试，可能暂停目标进程。文件可能包含敏感数据。字段 / 元素字节不包含对象头或对齐，不等于浅大小或保留大小；可分页浏览实例、候选根路径和近似支配图，不能据此证明泄漏。最多索引 100 万个对象，近似支配图计算最多支持 25 万个索引对象。',
-    '按调用栈采样 malloc/free 分配。Native 要求 Android 10+；ART 分配样本要求 Android 12+，仅显示采集期间分配调用，不是存活对象快照。ART 模式不跟踪对象释放，因此只展示累计分配，不提供未释放估计。目标应用还需符合系统 debuggable/profileable 限制；数据源可能增加目标进程开销。采集按应用包名匹配进程，独立命名的子进程可能需要单独配置。',
+    '按调用栈采样 malloc/free 分配。Native 要求 Android 10+；ART 分配样本要求 Android 12+，仅显示采集期间分配调用，不是存活对象快照。ART 模式不跟踪对象释放，因此只展示累计分配与次数，不提供未释放估计。目标应用还需符合系统 debuggable/profileable 限制；数据源可能增加目标进程开销。采集按应用包名匹配进程，独立命名的子进程可能需要单独配置。',
   ];
   assert.deepEqual([...literals,...guidance].filter(text=>/[\u3400-\u9fff]/.test(translate(text.trim(),'en-US'))),[]);
 });
@@ -353,7 +353,7 @@ test('Layout inspector localizes capture controls and reports accessibility/Comp
 });
 
 test('heapprofd allocation call tree is wired to bounded parent-linked rows and expand/collapse controls',async()=>{
-  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),locales=await readFile(new URL('../public/i18n.js',import.meta.url),'utf8');
   assert.match(app,/buildHeapProfileCallTree\(profile\?\.sites\|\|\[\]\)/);
   assert.match(app,/visibleHeapProfileCallTreeRows\(tree,state\.heapProfileExpanded\)/);
   assert.match(app,/data-heap-profile-toggle/);
@@ -365,4 +365,6 @@ test('heapprofd allocation call tree is wired to bounded parent-linked rows and 
   assert.match(app,/heap-profile-snapshot/);
   assert.match(app,/api\('\/heap-profile\/snapshot'/);
   assert.match(app,/profile\.snapshotsTruncated/);
+  for(const text of ['分配火焰图','全部分配','当前范围','显示指标','累计分配字节','累计未释放字节','累计分配次数','累计未释放次数','横向宽度表示该调用路径的当前指标；点击函数可放大查看下级路径。'])assert.ok(locales.includes(text),`missing allocation flame graph translation: ${text}`);
+  assert.match(app,/data-heap-flame-path/);assert.match(app,/state\.heapProfileFlameFocus/);
 });

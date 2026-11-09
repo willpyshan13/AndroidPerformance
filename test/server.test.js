@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile, stat } from 'node:fs/promises';
@@ -32,6 +33,23 @@ test('local workbench serves every static module imported by its browser entry p
  assert.match(appJs,/from '\.\/i18n\.js'/);
  assert.match(appJs,/from '\.\/trace-export\.js'/);
  assert.match(appJs,/from '\.\/shark-export\.js'/);assert.match(appJs,/from '\.\/binder-export\.js'/);
+});
+
+test('desktop status resolves explicitly supplied development tool directories',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-desktop-tool-paths-'));
+ const tools=join(fileURLToPath(new URL('..',import.meta.url)),'tools');
+ const app=createApp({adb:{path:'/fake-adb'},dataDir:dir,token:'desktop-tool-paths',desktop:true,
+  perfettoUiDir:join(tools,'perfetto-ui'),sharkDir:join(tools,'shark-cli'),
+  sharkJavaPath:join(tools,'java-runtime','bin',process.platform==='win32'?'java.exe':'java'),
+  composeInspectorDir:join(tools,'ui-inspector'),composeInspectorJavaPath:join(tools,'java25-runtime','bin',process.platform==='win32'?'java.exe':'java'),
+  nativeDemanglerPath:join(tools,'native-symbolizer',process.platform==='win32'?'llvm-cxxfilt.exe':'llvm-cxxfilt')});
+ app.listen(0,'127.0.0.1');await once(app,'listening');
+ t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const response=await fetch(`http://127.0.0.1:${app.address().port}/api/status`,{headers:{'X-Workbench-Token':'desktop-tool-paths'}});
+ assert.equal(response.status,200);const status=await response.json();
+ assert.equal(status.desktop,true);assert.equal(status.perfettoUiAvailable,true);
+ assert.equal(status.sharkAvailable,true);assert.equal(status.composeInspectorAvailable,true,status.composeInspectorReason||'');
+ assert.ok(status.traceProcessorPath);
 });
 
 test('Macrobenchmark HTTP route forwards the selected Gradle project and prevents overlapping builds',async t=>{

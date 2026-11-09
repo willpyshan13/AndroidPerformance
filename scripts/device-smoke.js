@@ -5,19 +5,21 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { Adb, locateAdb, validateTarget } from '../src/adb.js';
 import { createApp } from '../src/server.js';
-import { parseHar, parseBenchmark, compareBenchmarks, parseFoldedStacks, buildSampleTimeline, sampleStackTimeline } from '../public/offline.js';
+import { parseHar, parseBenchmark, compareBenchmarks, parseFoldedStacks, buildSampleTimeline, sampleStackTimeline, parseArtMethodTrace } from '../public/offline.js';
 
 const args = process.argv.slice(2);
-const option = name => args[args.indexOf(name) + 1];
+const option = name => { const index=args.indexOf(name);return index<0?undefined:args[index+1]; };
 if (!args.includes('--serial') || !args.includes('--package')) {
-  console.error('Usage: npm run test:device -- --serial SERIAL --package PACKAGE [--allow-app-control] [--out DIR]');
+  console.error('Usage: npm run test:device -- --serial SERIAL --package PACKAGE [--allow-app-control] [--exercise-ui] [--only heap-capture-and-analysis|profiling] [--out DIR]');
   process.exit(2);
 }
 const serial = option('--serial'), packageName = option('--package');
 validateTarget(serial, packageName);
 const control = args.includes('--allow-app-control');
+const exerciseUi=control&&args.includes('--exercise-ui');
 const only = option('--only');
-if (only && only !== 'heap-capture-and-analysis') throw new Error(`Unsupported --only check: ${only}`);
+const profilingChecks=new Set(['target-app-launch','cpu-profile-capture','cpu-profile-analysis','art-method-trace-capture-and-analysis','frames-read','frames-text-import','cpu-profile-archive-persistence','temporary-files-cleanup']);
+if (only && !['heap-capture-and-analysis','profiling'].includes(only)) throw new Error(`Unsupported --only check: ${only}`);
 const outDir = resolve(args.includes('--out') ? option('--out') : `data/device-test-${Date.now()}`);
 await mkdir(outDir, { recursive: true });
 const adb = new Adb(await locateAdb());
@@ -26,7 +28,7 @@ const server = createApp({ adb, token, dataDir: join(outDir, 'records') });
 server.listen(0, '127.0.0.1'); await once(server, 'listening');
 const origin = `http://127.0.0.1:${server.address().port}`;
 const query = new URLSearchParams({ serial, package: packageName });
-const report = { startedAt: new Date().toISOString(), serial, packageName, allowAppControl: control, tests: [] };
+const report = { startedAt: new Date().toISOString(), serial, packageName, allowAppControl: control, exerciseUi, only:only||null, tests: [] };
 const evidence = {};
 let capturedPerfData = null;
 async function request(path, body, binary = false) {
@@ -36,7 +38,7 @@ async function request(path, body, binary = false) {
   return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
 }
 async function check(name, work) {
-  if (only && name !== only) { report.tests.push({ name, status: 'skipped', reason: `--only ${only}` }); return; }
+  if (only && (only==='profiling'?!profilingChecks.has(name):name!==only)) { report.tests.push({ name, status: 'skipped', reason: `--only ${only}` }); return; }
   const start = Date.now();
   try {
     const detail = await work();
@@ -67,12 +69,17 @@ try {
   await check('battery-snapshot', async () => {
     const snapshot = await request('/battery/snapshot', { serial, packageName });
     assert.equal(snapshot.source, 'adb'); assert.equal(snapshot.serial, serial);
+    evidence.battery=snapshot;await writeFile(join(outDir,'battery.json'),JSON.stringify(snapshot,null,2));
     return { uid: snapshot.uid, packages: snapshot.packages, power: snapshot.power, network: snapshot.network, wakelocks: snapshot.wakelocks?.length || 0, deviceBattery: snapshot.battery, sessionStartAvailable: snapshot.sessionStart !== null };
   });
   await check('compilation-state', async () => {
     const state = await request(`/compilation?${query}`);
     assert.equal(state.source, 'adb'); assert.equal(state.serial, serial); assert.equal(state.packageName, packageName);
     return { available: state.available, entries: state.entries?.length || 0, reason: state.reason || null };
+  });
+  await check('battery-checkin-export',async()=>{
+    const raw=await request('/battery/checkin',{serial,packageName},true);assert(raw.length>0);
+    await writeFile(join(outDir,'batterystats-checkin.csv'),raw);return {bytes:raw.length};
   });
   await check('cpu-event-discovery', async () => {
     const result = await request('/cpu-events', { serial });
@@ -81,7 +88,14 @@ try {
   });
   await check('cpu-profile-capture', async () => {
     let data;
-    try { data = await request('/cpu-profile', { serial, packageName, captureId: randomUUID(), seconds: 3, events: ['cpu-clock:u'], frequencyHz: 99, callGraph: 'fp' }, true); }
+    const seconds=exerciseUi?8:3;let cycles=0;
+    try {
+      let component=null;if(exerciseUi){const resolved=await adb.shell(serial,['cmd','package','resolve-activity','--brief',packageName]);component=resolved.trim().split(/\r?\n/).find(s=>/^[\w.]+\/[\w.$]+$/.test(s));assert(component,'无法解析用于页面活动测试的启动组件');}
+      let done=false,workloadError=null;const capture=request('/cpu-profile', { serial, packageName, captureId: randomUUID(), seconds, events: ['cpu-clock:u'], frequencyHz: 99, callGraph: 'fp' }, true).finally(()=>{done=true;});
+      const workload=exerciseUi?(async()=>{while(!done){await adb.shell(serial,['input','keyevent','3']);await new Promise(r=>setTimeout(r,300));await adb.shell(serial,['am','start','-W','-n',component]);cycles++;await new Promise(r=>setTimeout(r,300));}})().catch(error=>{workloadError=error;}):Promise.resolve();
+      try{data=await capture;}finally{done=true;await workload;}
+      if(workloadError)throw workloadError;
+    }
     catch (error) {
       if (/doesn't exist or isn't debuggable\/profileable/i.test(error.message)) return { status: 'unsupported', reason: error.message };
       throw error;
@@ -89,7 +103,7 @@ try {
     assert(data.length > 256); assert.equal(data.subarray(0, 8).toString('ascii'), 'PERFILE2');
     capturedPerfData = data;
     await writeFile(join(outDir, 'cpu.perf.data'), data);
-    return { bytes: data.length, signature: data.subarray(0, 8).toString('ascii'), sampleEvent: 'cpu-clock:u', durationSeconds: 3 };
+    return { bytes: data.length, signature: data.subarray(0, 8).toString('ascii'), sampleEvent: 'cpu-clock:u', durationSeconds: seconds,uiResumeCycles:cycles };
   });
   await check('cpu-profile-analysis', async () => {
     assert(capturedPerfData, 'CPU 采样没有生成可分析的 perf.data');
@@ -114,6 +128,12 @@ try {
     const result = await request('/gpu/capabilities', { serial });
     assert.equal(result.source, 'adb'); assert.equal(result.serial, serial);
     return { vulkanVersion: result.vulkanVersion, glesVersion: result.glesVersion, featureListAvailable: result.featureListAvailable, warnings: result.warnings };
+  });
+  if(control)await check('art-method-trace-capture-and-analysis',async()=>{
+    const data=await request('/cpu-profile/art-trace',{serial,packageName,captureId:randomUUID(),seconds:3,samplingIntervalUs:1000},true);
+    await writeFile(join(outDir,'art-method.trace'),data);const parsed=parseArtMethodTrace(data);
+    const {intervals,methods,...summary}=parsed;await writeFile(join(outDir,'art-method-analysis.json'),JSON.stringify({...summary,methods:methods.slice(0,1000),intervals:intervals.slice(0,2000)},null,2));
+    return {bytes:data.length,version:parsed.version,events:parsed.eventCount,methods:parsed.methodCount,threads:parsed.threadCount,completedCalls:parsed.completedCalls};
   });
   await check('live-monitor', async () => {
     const samples = [];
@@ -154,9 +174,11 @@ try {
     await check('heap-capture-and-analysis', async () => {
       const data = await request('/heap', { serial, packageName }, true);
       assert(data.subarray(0, 32).toString('ascii').startsWith('JAVA PROFILE 1.0.'));
+      await writeFile(join(outDir,'heap.hprof'),data);
       const response = await fetch(`${origin}/api/heap/analyze`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'X-Heap-Role': 'current' }, body: data });
       const analysis = await response.json();
       if (!response.ok) throw new Error(analysis.error || 'HPROF 分析失败');
+      await writeFile(join(outDir,'heap-analysis.json'),JSON.stringify(analysis,null,2));
       assert(analysis.objects > 0); assert(analysis.sessionId);
       const dominators = await request('/heap/dominators', { sessionId: analysis.sessionId, limit: 25 });
       assert(dominators.indexed > 0); assert(dominators.reachable > 0); assert(Array.isArray(dominators.items));
@@ -164,6 +186,7 @@ try {
       if (analysis.sharkAvailable) {
         const sharkResponse = await fetch(`${origin}/api/heap/shark-analysis`, { method: 'POST', headers: { 'X-Workbench-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: analysis.sessionId }) });
         shark = await sharkResponse.json();
+        await writeFile(join(outDir,'heap-shark.json'),JSON.stringify(shark,null,2));
         if (!sharkResponse.ok) throw new Error(shark.error || 'Shark 分析失败');
         assert.equal(shark.success, true);
       }
@@ -231,7 +254,7 @@ try {
 } finally {
   report.finishedAt = new Date().toISOString();
   report.summary = report.tests.reduce((s, t) => ({ ...s, [t.status]: (s[t.status] || 0) + 1 }), {});
-  if (only && !report.tests.some(t => t.name === only && ['pass','fail','unsupported'].includes(t.status))) {
+  if (only && !report.tests.some(t => (only==='profiling'?profilingChecks.has(t.name):t.name===only) && ['pass','fail','unsupported'].includes(t.status))) {
     report.tests.push({ name: only, status: 'fail', error: 'Selected device smoke check did not run; pass --allow-app-control.' });
     report.summary.fail = (report.summary.fail || 0) + 1;
   }

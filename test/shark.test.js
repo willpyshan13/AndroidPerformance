@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,chmod,rm,stat} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,chmod,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -52,15 +52,25 @@ test('HTTP Shark analysis is bound to the current retained HPROF session',async 
  const f=await fixture(t),app=createApp({adb:{path:'adb'},token:'test',sharkDir:join(f.root,'shark-cli'),sharkJavaPath:f.java});
  app.listen(0,'127.0.0.1');await once(app,'listening');t.after(()=>new Promise(resolve=>app.close(resolve)));
  const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'test'};
- const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:heap}),session=await uploaded.json();assert.equal(uploaded.status,200);assert.equal(session.sharkAvailable,true);
+ const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:heap}),session=await uploaded.json();assert.equal(uploaded.status,200,JSON.stringify(session));assert.equal(session.sharkAvailable,true);
  const mapping=Buffer.from('com.example.Screen -> a:\n    void draw() -> b\n');
  const mapped=await fetch(`${base}/heap/mapping`,{method:'POST',headers:{...headers,'X-Heap-Session':session.sessionId,'X-Heap-Mapping-Name':encodeURIComponent('mapping.txt')},body:mapping}),mappingResult=await mapped.json();
- assert.equal(mapped.status,200,JSON.stringify(mappingResult));assert.equal(mappingResult.size,mapping.length);assert.equal(mappingResult.fileName,'mapping.txt');
+ assert.equal(mapped.status,200,JSON.stringify(mappingResult));assert.equal(mappingResult.size,mapping.length);assert.equal(mappingResult.fileName,'mapping.txt');assert.equal(mappingResult.classes,1);assert.equal(mappingResult.methods,1);
  const analysis=await fetch(`${base}/heap/shark-analysis`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})}),result=await analysis.json();
  assert.equal(analysis.status,200,JSON.stringify(result));assert.equal(result.success,true);assert.match(result.report,/HEAP ANALYSIS RESULT/);assert.match(result.report,/-m/);assert.match(result.report,/mapping-[\w-]+\.txt/);
  const cleared=await fetch(`${base}/heap/mapping/clear`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.sessionId})});assert.equal(cleared.status,200);assert.equal((await cleared.json()).cleared,true);
  const invalid=await fetch(`${base}/heap/mapping`,{method:'POST',headers:{...headers,'X-Heap-Session':session.sessionId,'X-Heap-Mapping-Name':encodeURIComponent('bad.bin')},body:mapping});assert.equal(invalid.status,400);
  const stale=await fetch(`${base}/heap/shark-analysis`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({sessionId:'stale'})});assert.equal(stale.status,400);
+});
+
+test('R8 mapping remains available for GC-root deobfuscation when Shark is not configured',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'apw-hprof-mapping-without-shark-')),app=createApp({adb:{path:'adb'},dataDir:dir,token:'mapping-without-shark',sharkDir:join(dir,'missing-shark-resources')});
+ app.listen(0,'127.0.0.1');await once(app,'listening');t.after(async()=>{await new Promise(resolve=>app.close(resolve));await rm(dir,{recursive:true,force:true});});
+ const base=`http://127.0.0.1:${app.address().port}/api`,headers={'X-Workbench-Token':'mapping-without-shark'};
+ const uploaded=await fetch(`${base}/heap/analyze`,{method:'POST',headers,body:heap}),session=await uploaded.json();assert.equal(uploaded.status,200);assert.equal(session.sharkAvailable,false);
+ const mapping=Buffer.from('com.example.Screen -> a:\n    void draw() -> b\n'),mapped=await fetch(`${base}/heap/mapping`,{method:'POST',headers:{...headers,'X-Heap-Session':session.sessionId,'X-Heap-Mapping-Name':'mapping.txt'},body:mapping}),result=await mapped.json();
+ assert.equal(mapped.status,200,JSON.stringify(result));assert.equal(result.classes,1);assert.equal(result.methods,1);
+ const source=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.match(source,/button\('heap-mapping-select',state\.heapMapping\?/);assert.doesNotMatch(source,/h\.sharkAvailable\?button\('heap-mapping-select'/);
 });
 
 test('official Android HPROF is analyzed by the prepared Shark CLI',async t=>{

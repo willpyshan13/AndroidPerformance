@@ -72,7 +72,7 @@ export async function resolveSourceSymbol(root,id,symbol,{demanglerPath=null,dem
   let demangled;
   try{
    if(demangler)demangled=await demangler(symbol);
-   else {const mangled=String(symbol).trim().replace(/\+0x[\da-f]+$/i,'');const result=await execFileAsync(demanglerPath,[mangled],{encoding:'utf8',timeout:2000,maxBuffer:8192,windowsHide:true});demangled=result.stdout.split(/\r?\n/,1)[0];}
+   else {const mangled=String(symbol).trim().replace(/\+0x[\da-f]+$/i,'');const result=await execFileAsync(demanglerPath,['--no-strip-underscore',mangled],{encoding:'utf8',timeout:2000,maxBuffer:8192,windowsHide:true});demangled=result.stdout.split(/\r?\n/,1)[0];}
   }catch{throw error;}
   const normalized=normalizeDemangledItaniumName(demangled);if(!normalized)throw error;
   parsed=parseSourceSymbol(normalized);

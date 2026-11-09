@@ -34,9 +34,9 @@ export async function locateAdb() {
     process.resourcesPath && join(process.resourcesPath, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb'),
     join(dirname(dirname(fileURLToPath(import.meta.url))), 'tools/platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb'),
     process.env.ANDROID_HOME && join(process.env.ANDROID_HOME, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb'),
-    process.env.ANDROID_SDK_ROOT && join(process.env.ANDROID_SDK_ROOT, 'platform-tools', 'adb'),
+    process.env.ANDROID_SDK_ROOT && join(process.env.ANDROID_SDK_ROOT, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb'),
     join(homedir(), 'Library/Android/sdk/platform-tools/adb'),
-    join(homedir(), 'Android/Sdk/platform-tools/adb'),
+    join(homedir(), 'Android/Sdk/platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb'),
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Android/Sdk/platform-tools/adb.exe')].filter(Boolean);
   for (const candidate of candidates) { try { await access(candidate); return candidate; } catch {} }
   return 'adb';
@@ -443,7 +443,12 @@ export class Adb {
         const raw=(await this.shell(serial,['wc','-c',remote],{timeout:10000,maxBuffer:1024})).trim(),match=raw.match(/^(\d+)(?:\s|$)/),size=match?Number(match[1]):NaN;
         if(!Number.isSafeInteger(size)||size<4||size>256*1024*1024)throw new Error('ART trace 文件为空或超过 256 MiB 上限');
         await this.run(['-s',serial,'pull',remote,local],{timeout:120000,signal});
-        const data=await readFile(local);if(data.length!==size||data.subarray(0,4).toString('ascii')!=='SLOW')throw new Error('设备未返回有效的 ART method trace');
+        const data=await readFile(local);let binaryOffset=0;
+        if(data.subarray(0,8).toString('ascii')==='*version'){
+          const header=data.subarray(0,Math.min(data.length,32*1024*1024)),lf=header.indexOf(Buffer.from('*end\n')),crlf=header.indexOf(Buffer.from('*end\r\n'));
+          binaryOffset=lf>=0?lf+5:crlf>=0?crlf+6:-1;
+        }
+        if(data.length!==size||binaryOffset<0||data.subarray(binaryOffset,binaryOffset+4).toString('ascii')!=='SLOW')throw new Error('设备未返回有效的 ART method trace');
         return data;
       }catch(error){throw new Error(`ART 方法跟踪失败：${error.message}；目标应用通常需要 debuggable 或 profileable，且必须处于运行状态。`);}
       finally{

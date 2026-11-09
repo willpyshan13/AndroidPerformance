@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
-test('native desktop package targets stage platform-matched SDK and Trace Processor tools',async()=>{
+test('native desktop packages target macOS ARM64 and Windows x64 without publishing builds',async()=>{
  const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),locales=await readFile(new URL('../public/i18n.js',import.meta.url),'utf8');
  assert.match(app,/heap-shark-export-txt/);assert.match(app,/heap-shark-export-json/);assert.match(app,/state\.heapSharkReport=null/);
  for(const text of ['导出原始报告 TXT','导出报告 JSON','界面只显示报告前 2 MiB；导出文件保留完整已捕获输出。','Shark 原始报告已导出','Shark 报告 JSON 已导出'])assert.ok(locales.includes(text),`missing Shark localization: ${text}`);
@@ -15,19 +15,19 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  assert.equal(pkg.scripts['prepare:native-symbolizer'],'node scripts/prepare-native-symbolizer.js');assert.equal(pkg.scripts['smoke:native-symbolizer'],'node scripts/native-symbolizer-smoke.js');assert.ok(pkg.build.mac.extraResources.some(resource=>resource.from==='tools/native-symbolizer'&&resource.to==='native-symbolizer'));
  assert.ok(pkg.build.files.includes('android-agent/LEAKCANARY_AGENT_README.md'));assert.ok(pkg.build.files.includes('android-agent/optional-androidx/**'));assert.ok(pkg.build.asarUnpack.includes('android-agent/optional-androidx/**'));assert.ok(pkg.build.files.includes('android-agent/optional-jankstats/**'));assert.ok(pkg.build.asarUnpack.includes('android-agent/optional-jankstats/**'));
  assert.equal(pkg.author.name,'Android Performance Workbench');assert.match(pkg.author.email,/^[^@]+@users\.noreply\.github\.com$/);
- assert.equal(pkg.build.win,undefined);assert.equal(pkg.build.linux,undefined);assert.equal(pkg.build.nsis,undefined);
- assert.deepEqual(Object.keys(pkg.scripts).filter(name=>name.startsWith('package:')),['package:mac']);assert.match(pkg.scripts['package:mac'],/--publish never/);assert.equal(pkg.scripts['package:dmg'],undefined);
+ assert.ok(pkg.build.win);assert.equal(pkg.build.linux,undefined);assert.deepEqual(pkg.build.win.target,['nsis','msi']);
+ assert.deepEqual(Object.keys(pkg.scripts).filter(name=>name.startsWith('package:')),['package:mac','package:win']);assert.match(pkg.scripts['package:mac'],/--publish never/);assert.match(pkg.scripts['package:win'],/--publish never/);assert.equal(pkg.scripts['package:dmg'],undefined);
  assert.equal(pkg.scripts['smoke:apk-tools'],'node scripts/apk-tools-smoke.js');
  assert.equal(pkg.scripts['prepare:inspector-runtime'],'node scripts/prepare-inspector-runtime.js');
  const inspectorSource=JSON.parse(await readFile(new URL('../tools/ui-inspector/source.json',import.meta.url),'utf8'));
  assert.equal(inspectorSource.minimumJavaVersion,25);assert.equal(inspectorSource.classFileVersion,69);
  const inspectorRuntimePrep=await readFile(new URL('../scripts/prepare-inspector-runtime.js',import.meta.url),'utf8');
  assert.match(inspectorRuntimePrep,/Temurin JRE/);assert.match(inspectorRuntimePrep,/createHash\('sha256'\)/);assert.match(inspectorRuntimePrep,/72ebd76b502c849e88dea39afae51baf5f82f2b5b1b6389c28ea707b20451bce/);
- const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
- assert.equal((workflow.match(/paths-ignore:\n\s+- '\*\*\/\*\.md'/g)||[]).length,2,'Markdown-only updates should not rebuild the macOS app');
- assert.match(workflow,/APK_SMOKE_OUTPUT_PATH: \$\{\{ github\.workspace \}\}\/dist\/apw-smoke\.apk/);assert.match(workflow,/APW_SMOKE_APK_PATH: \$\{\{ github\.workspace \}\}\/dist\/apw-smoke\.apk/);
- assert.match(workflow,/jobs:\n  macos-arm64:\n    runs-on: macos-15/);assert.doesNotMatch(workflow,/^  (?:tests|package):/m);assert.equal((workflow.match(/^      - run: npm ci$/gm)||[]).length,1);assert.equal((workflow.match(/prepare:trace-processor/g)||[]).length,1);assert.match(workflow,/uses: actions\/cache@v6/);assert.match(workflow,/key: macos-arm64-tools-v2-\$\{\{ hashFiles/);assert.match(workflow,/tools\/native-symbolizer/);assert.match(workflow,/node scripts\/native-symbolizer-smoke\.js/);assert.match(workflow,/name: Install NDK for macOS simpleperf\s+if: steps\.prepared-tools\.outputs\.cache-hit != 'true'\s+shell: bash\s+run: sdkmanager 'ndk;27\.2\.12479018'/);assert.doesNotMatch(workflow,/sdkmanager[^\n]*ndk;26\.1\.10909125/);assert.match(workflow,/node scripts\/run-npm-task\.js package:mac\n/);assert.doesNotMatch(workflow,/package:dmg|actions\/upload-artifact|create-release/);assert.doesNotMatch(workflow,/node scripts\/run-npm-task\.js package:mac:installers/);assert.doesNotMatch(workflow,/runner: (?:windows-latest|ubuntu-[0-9]|macos-15-intel)|Install Windows MSI|Linux arm64|AppImage runtime/);
- assert.match(workflow,/prepare:inspector-runtime/);
+ const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8');
+ const windowsWorkflow=await readFile(new URL('../.github/workflows/windows-x64-checks.yml',import.meta.url),'utf8');
+ assert.equal((workflow.match(/paths-ignore:\n\s+- '\*\*\/\*\.md'/g)||[]).length,2,'Markdown-only updates should skip automated checks');
+ assert.match(workflow,/jobs:\n  macos-arm64:\n    runs-on: macos-15/);assert.equal((workflow.match(/^      - run: npm ci$/gm)||[]).length,1);assert.equal((workflow.match(/prepare:trace-processor/g)||[]).length,1);assert.match(workflow,/uses: actions\/cache@v6/);assert.match(workflow,/key: macos-arm64-tools-v2-\$\{\{ hashFiles/);assert.match(workflow,/tools\/java25-runtime/);assert.match(workflow,/run: npm test/);assert.match(workflow,/run: npm run check/);assert.match(workflow,/run: node scripts\/run-npm-task\.js package:mac/);assert.match(workflow,/run: node scripts\/mac-desktop-smoke\.js/);assert.doesNotMatch(workflow,/actions\/upload-artifact|create-release/);
+ assert.match(windowsWorkflow,/windows-x64:\n    runs-on: windows-2025/);assert.match(windowsWorkflow,/run: npm run package:win/);assert.match(windowsWorkflow,/run: node scripts\/desktop-smoke\.js/);assert.match(windowsWorkflow,/node scripts\/run-npm-task\.js prepare:inspector-runtime/);assert.doesNotMatch(windowsWorkflow,/actions\/upload-artifact|create-release/);
  const simpleperfPrep=await readFile(new URL('../scripts/prepare-simpleperf.js',import.meta.url),'utf8'),legacySource=JSON.parse(await readFile(new URL('../tools/simpleperf-legacy/source.json',import.meta.url),'utf8'));
  assert.match(simpleperfPrep,/legacyBundle=join\(root,'tools\/simpleperf-legacy'\)/);assert.match(simpleperfPrep,/if\(!legacy\)[\s\S]*source\.json/);assert.equal(legacySource.sdkPackage,'ndk;26.1.10909125');assert.equal(legacySource.license,'Apache-2.0');
  for(const arch of ['arm','arm64','x86','x86_64'])assert.ok((await readFile(new URL(`../tools/simpleperf-legacy/android/${arch}/simpleperf`,import.meta.url))).length>0,`missing versioned legacy simpleperf for ${arch}`);
@@ -45,24 +45,27 @@ test('native desktop package targets stage platform-matched SDK and Trace Proces
  const startupSmokeMain=await readFile(new URL('../desktop/main.js',import.meta.url),'utf8'),startupAppSource=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.match(startupSmokeMain,/smokeHeapProfileWindowsInRenderer/);assert.match(startupSmokeMain,/heapProfileWindows/);assert.match(startupSmokeMain,/milestone capture should be visible and disabled in demo mode/);assert.match(startupSmokeMain,/system milestone capture should be visible and disabled in demo mode/);assert.match(startupSmokeMain,/system_startup_evidence_json/);assert.match(startupAppSource,/captureAgentMilestones:state\.startupCaptureAgentMilestones/);assert.match(startupAppSource,/captureSystemMilestones:state\.startupCaptureSystemMilestones/);assert.match(startupAppSource,/startup-agent-iterations/);assert.match(startupAppSource,/startup-system-iterations/);
  assert.match(macSmoke,/powerUidEnergySmoke/);assert.match(macSmoke,/per-UID power diagnostics smoke/);
  const check=pkg.scripts.check;assert.match(check,/node --check scripts\/mac-desktop-smoke\.js/);assert.match(check,/node --check scripts\/device-smoke\.js/);
- assert.match(workflow,/packages: 'build-tools;35\.0\.0 platforms;android-35'/);assert.match(workflow,/name: Analyze a generated APK with the SDK AAPT2[\s\S]*?APK_SMOKE_LOG_PATH:/);assert.doesNotMatch(workflow,/matrix\.(?:linuxArm64|label|command)|windows-desktop-smoke/);
+ assert.doesNotMatch(workflow,/matrix\.(?:linuxArm64|label|command)|windows-desktop-smoke/);
  const apkSmoke=await readFile(new URL('../scripts/apk-tools-smoke.js',import.meta.url),'utf8');assert.match(apkSmoke,/Using AAPT2: \$\{aapt2Path\}/);
  const linuxArmSmoke=await readFile(new URL('../scripts/linux-arm64-package-smoke.js',import.meta.url),'utf8');assert.match(linuxArmSmoke,/name\.endsWith\('\.rpm'\)/);assert.match(linuxArmSmoke,/rpm', \['-qp', '--qf', '%\{ARCH\}'/);assert.match(linuxArmSmoke,/architecture === 'aarch64'/);assert.match(linuxArmSmoke,/rpmFilesList/);assert.match(linuxArmSmoke,/resources\/apk-tools\/aapt2/);
  const deviceSmoke=await readFile(new URL('../scripts/device-smoke.js',import.meta.url),'utf8');assert.match(deviceSmoke,/target-app-launch/);assert.match(deviceSmoke,/heap-capture-and-analysis/);assert.match(deviceSmoke,/api\/heap\/shark-analysis/);assert.match(deviceSmoke,/heap\/dominators/);assert.match(deviceSmoke,/--only/);assert.match(deviceSmoke,/classes\?\.length/);
- assert.match(workflow,/Launch packaged macOS app and verify desktop startup/);assert.match(smoke,/menuLabels/);assert.match(smoke,/quickActionRoutes/);assert.match(smoke,/routeChecks/);assert.match(smoke,/apkAnalysisSmoke/);assert.match(smoke,/APK analysis UI smoke/);
- const taskRunner=await readFile(new URL('../scripts/run-npm-task.js',import.meta.url),'utf8');assert.match(taskRunner,/APW_TASK_LOG_PATH/);assert.match(taskRunner,/appendFile\(path/);assert.match(workflow,/APW_TASK_LOG_PATH: \$\{\{ github\.workspace \}\}\/dist\/resource-preparation\.log/);assert.match(workflow,/dist\/resource-preparation\.log/);
+ assert.match(smoke,/menuLabels/);assert.match(smoke,/quickActionRoutes/);assert.match(smoke,/routeChecks/);assert.match(smoke,/apkAnalysisSmoke/);assert.match(smoke,/APK analysis UI smoke/);
+ const taskRunner=await readFile(new URL('../scripts/run-npm-task.js',import.meta.url),'utf8');assert.match(taskRunner,/APW_TASK_LOG_PATH/);assert.match(taskRunner,/appendFile\(path/);
  const desktopMain=await readFile(new URL('../desktop/main.js',import.meta.url),'utf8');assert.match(desktopMain,/smokeApkAnalyzerInRenderer/);assert.match(desktopMain,/APW_SMOKE_EXPECTED_PACKAGE \|\| 'dev\.apw\.smoke'/);assert.match(desktopMain,/Signing structure/);assert.match(desktopMain,/manifestFileFilter/);assert.match(desktopMain,/jsonReport:true/);assert.match(desktopMain,/localSave:true/);assert.match(desktopMain,/sessionHistory:true/);assert.match(desktopMain,/replay:apkReplay/);assert.match(desktopMain,/heap-dominators/);assert.match(desktopMain,/dominatorGraph\?\.ok/);assert.match(desktopMain,/smokeNetworkAgentDeviceInRenderer/);assert.match(desktopMain,/APW_SMOKE_NETWORK_SERIAL/);assert.match(desktopMain,/networkAgentDeviceSmoke\?\.ok/);assert.match(desktopMain,/smokeTraceAnalysisReportInRenderer/);assert.match(desktopMain,/traceAnalysisReportSmoke/);assert.match(desktopMain,/matchingResult:!!sql\?\.rows/);assert.match(desktopMain,/binderSummaryIncluded/);
  assert.ok(pkg.build.files.includes('desktop/menu.js'),'the localized native menu module must be packaged');
  assert.ok(pkg.build.files.includes('desktop/locale.js'),'the native dialog localization module must be packaged');
  assert.doesNotMatch(pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n'),/tools\/java-runtime=>java-runtime/);
  const resources=platform=>pkg.build[platform].extraResources.map(item=>`${item.from}=>${item.to}:${(item.filter||[]).join(',')}`);
  const mac=resources('mac').join('\n');
- for(const platform of ['win','linux','nsis'])assert.equal(pkg.build[platform],undefined,`${platform} desktop distribution is out of scope`);
+ assert.ok(pkg.build.win.extraResources.some(resource=>resource.from==='tools/platform-tools'&&resource.to==='platform-tools'));
+ assert.ok(pkg.build.win.extraResources.some(resource=>resource.from==='tools/java25-runtime'&&resource.to==='java25-runtime'));
+ assert.equal(pkg.build.linux,undefined,'Linux desktop distribution remains out of scope');
  for(const entry of ['tools/platform-tools=>platform-tools','tools/apk-tools=>apk-tools','tools/trace-processor=>trace-processor','tools/simpleperf=>simpleperf'])assert.ok(mac.includes(entry),`macOS app omits ${entry}`);
  const sharedResources=pkg.build.extraResources.map(item=>`${item.from}=>${item.to}`).join('\n');
  for(const entry of ['tools/perfetto-ui=>perfetto-ui','tools/shark-cli=>shark-cli','tools/ui-inspector=>ui-inspector'])assert.ok(sharedResources.includes(entry),`app omits ${entry}`);
  assert.match(mac,/tools\/java-runtime=>java-runtime/);
  assert.match(mac,/tools\/java25-runtime=>java25-runtime/);
+ const win=resources('win').join('\n');for(const entry of ['tools/platform-tools=>platform-tools','tools/apk-tools=>apk-tools','tools/trace-processor=>trace-processor','tools/simpleperf=>simpleperf','tools/native-symbolizer=>native-symbolizer','tools/java-runtime.tar.gz=>java-runtime.tar.gz'])assert.ok(win.includes(entry),`Windows app omits ${entry}`);
  const simpleperf=await readFile(new URL('../scripts/prepare-simpleperf.js',import.meta.url),'utf8');assert.match(simpleperf,/process\.platform==='win32'\?'windows'/);assert.match(simpleperf,/libsimpleperf_report\.dll/);assert.match(simpleperf,/libwinpthread-1\.dll/);assert.match(simpleperf,/LOCALAPPDATA/);assert.match(simpleperf,/target,'legacy\/android',arch,'simpleperf'/);assert.match(simpleperf,/manifest\.sdkPackage/);assert.match(simpleperf,/legacyBinary=legacy\.path\?/);assert.match(simpleperf,/source\.json/);
  const pythonPrep=await readFile(new URL('../scripts/prepare-python-runtime.js',import.meta.url),'utf8');assert.match(pythonPrep,/astral-sh\/python-build-standalone/);assert.match(pythonPrep,/createHash\('sha256'\)/);assert.match(pythonPrep,/install_only_stripped/);assert.match(pythonPrep,/python3\.11/);assert.equal(pkg.scripts['prepare:simpleperf'],'node scripts/prepare-simpleperf.js && node scripts/prepare-python-runtime.js');
  const perfUpload=await readFile(new URL('../src/perf-upload.js',import.meta.url),'utf8');assert.match(perfUpload,/pythonPath=process\.env\.APW_PYTHON_PATH/);assert.match(perfUpload,/platform==='win32'\?\['python','py'\]:\['python3','python'\]/);assert.match(perfUpload,/command==='py'\?\['-3'\]:\[\]/);
@@ -82,12 +85,11 @@ test('large HPROF device fixture remains reproducible without entering desktop p
  assert.ok(!JSON.stringify(pkg.build).includes('hprof-load'));
 });
 
-test('failed package smoke keeps sanitized diagnostics local to CI logs',async()=>{
- const workflow=await readFile(new URL('../.github/workflows/desktop-packages.yml',import.meta.url),'utf8');
+test('macOS CI package smoke retains local diagnostics without publishing artifacts',async()=>{
+ const workflow=await readFile(new URL('../.github/workflows/macos-arm-checks.yml',import.meta.url),'utf8');
  const apkSmoke=await readFile(new URL('../scripts/apk-tools-smoke.js',import.meta.url),'utf8');
  const desktopSmoke=await readFile(new URL('../scripts/desktop-smoke.js',import.meta.url),'utf8');
- assert.match(workflow,/id: apk-smoke-sdk/);assert.doesNotMatch(workflow,/id: (?:apk-smoke-arm64|desktop-installer-smoke)/);
- assert.doesNotMatch(workflow,/actions\/upload-artifact|android-performance-smoke-diagnostics/);
+ assert.match(workflow,/id: apk-smoke-sdk/);assert.match(workflow,/scripts\/mac-desktop-smoke\.js/);assert.doesNotMatch(workflow,/actions\/upload-artifact|android-performance-smoke-diagnostics|create-release/);
  assert.match(apkSmoke,/aapt2-dump-xmltree/);assert.match(apkSmoke,/aapt2-link-fixture/);assert.match(apkSmoke,/aapt2-modern-resource-table/);assert.match(apkSmoke,/aapt2-modern-table\.apk/);assert.match(apkSmoke,/aapt2-manifest-output/);assert.match(apkSmoke,/failure_code=\$\{failureCode\}/);assert.match(apkSmoke,/APK smoke diagnostic/);assert.match(apkSmoke,/replace\(\/\(\?:\[A-Za-z\]:\\\\\|\\\/\)\[\^\\s:\]\+\/g, '<path>'\)/);
  assert.match(desktopSmoke,/windows-msi-install-/);assert.match(desktopSmoke,/windows-nsis-uninstaller-missing/);assert.match(desktopSmoke,/error\.errors\.map/);assert.match(desktopSmoke,/failure_code=\$\{code\}/);
 });
@@ -106,4 +108,16 @@ test('packaged desktop smoke exercises local source selection, snapshot, search,
  assert.match(macSmoke,/source workspace smoke/);
  assert.match(macSmoke,/LeakCanary Debug Agent ZIP smoke/);assert.match(desktopMain,/smokeLeakCanaryAgentPackageInRenderer/);assert.match(desktopMain,/optional-androidx\/src\/debug\/java\/dev\/androidperformance\/agent\/ApwAndroidXFragmentLeakAgent\.java/);
  assert.match(desktopMain,/smokeJankStatsAgentPackageInRenderer/);assert.match(desktopMain,/JANKSTATS_AGENT_README\.md[\s\S]*optional-androidx\/src\/debug\/java\/dev\/androidperformance\/agent\/ApwAndroidXFragmentLeakAgent\.java/);
+});
+
+test('unpackaged desktop runs resolve the bundled tool directories instead of Electron resources',async()=>{
+ // process.resourcesPath points at Electron's own bundle outside a packaged app, so every bundled
+ // tool must be resolved from tools/ explicitly or the dev app silently loses the embedded
+ // Perfetto UI, Shark reports and the Compose inspector.
+ const main=await readFile(new URL('../desktop/main.js',import.meta.url),'utf8');
+ assert.match(main,/const bundledTools=app\.isPackaged\?\{\}:\{perfettoUiDir:join\(here,'\.\.','tools','perfetto-ui'\)/);
+ for(const tool of ['sharkDir','composeInspectorDir','nativeDemanglerPath'])assert.match(main,new RegExp(`${tool}:join\\(here,'\\.\\.','tools'`));
+ assert.match(main,/server = createApp\(\{[^}]*\.\.\.bundledTools[^}]*\}\)/);
+ const macSmoke=await readFile(new URL('../scripts/mac-desktop-smoke.js',import.meta.url),'utf8');
+ assert.match(macSmoke,/settings\.json'\), JSON\.stringify\(\{ language: 'en-US'/,'the packaged smoke must pin the UI language because its assertions read English labels');
 });

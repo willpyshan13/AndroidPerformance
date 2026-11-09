@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseFoldedStacks,layoutFlame,buildSampleTimeline,cpuLibraryOptions,filterCpuProfileByLibrary,sampleMarkerRows,buildHeapProfileCallTree,visibleHeapProfileCallTreeRows,defaultHeapProfileCallTreeExpansion} from '../public/offline.js';
+import {parseFoldedStacks,layoutFlame,buildSampleTimeline,cpuLibraryOptions,filterCpuProfileByLibrary,sampleMarkerRows,buildHeapProfileCallTree,visibleHeapProfileCallTreeRows,defaultHeapProfileCallTreeExpansion,buildHeapAllocationFlameTree} from '../public/offline.js';
 import {Adb} from '../src/adb.js';
 import {parseSimpleperfDiagnostics} from '../src/simpleperf-diagnostics.js';
 test('simpleperf record diagnostics preserve distinct counters and leave absent values unknown',()=>{
@@ -37,6 +37,20 @@ test('heap allocation call tree safely roots cycles and rejects duplicate IDs or
  assert.throws(()=>buildHeapProfileCallTree(Array(501).fill({id:'1'})),/上限/);
  assert.throws(()=>buildHeapProfileCallTree([{id:'bad',cumulativeAllocatedBytes:'1'}]),/节点无效/);
 });
+test('heap allocation flame graph keeps byte precision and call-path proportions',()=>{
+ const tree=buildHeapProfileCallTree([
+  {id:'1',parentId:null,name:'root',cumulativeAllocatedBytes:'100'},
+  {id:'2',parentId:'1',name:'caller',cumulativeAllocatedBytes:'75'},
+  {id:'3',parentId:'2',name:'leaf',cumulativeAllocatedBytes:'50'},
+  {id:'4',parentId:'1',name:'other',cumulativeAllocatedBytes:'25'}
+ ]);
+ const flame=buildHeapAllocationFlameTree(tree),graph=layoutFlame(flame);
+ assert.equal(flame.value,'100');assert.deepEqual(graph.frames.slice(1).map(frame=>[frame.node.name,frame.node.value,frame.width]),[['root','100',1],['caller','75',0.75],['leaf','50',0.5],['other','25',0.25]]);
+ const large=buildHeapAllocationFlameTree(buildHeapProfileCallTree([{id:'1',name:'large',cumulativeAllocatedBytes:'9223372036854775807'}]));assert.equal(large.children[0].value,'9223372036854775807');assert.equal(layoutFlame(large).frames[1].width,1);
+ const countTree=buildHeapProfileCallTree([{id:'1',parentId:null,name:'root',cumulativeAllocatedCount:'20'},{id:'2',parentId:'1',name:'child',cumulativeAllocatedCount:'15'}]),counts=buildHeapAllocationFlameTree(countTree,'cumulativeAllocatedCount');assert.equal(counts.value,'20');assert.deepEqual(layoutFlame(counts).frames.slice(1).map(frame=>[frame.node.name,frame.node.value,frame.width]),[['root','20',1],['child','15',0.75]]);
+ const noPositiveRetained=buildHeapAllocationFlameTree([{id:'1',name:'negative estimate',cumulativeUnreleasedBytes:'-4',children:[]}],'cumulativeUnreleasedBytes');assert.equal(noPositiveRetained,null);
+ assert.equal(buildHeapAllocationFlameTree([]),null);assert.throws(()=>buildHeapAllocationFlameTree([{id:'1',cumulativeAllocatedBytes:'bad',children:[]}]),/节点无效/);assert.throws(()=>buildHeapAllocationFlameTree([], 'unsupported'),/指标无效/);
+});
 test('CPU library filtering keeps samples containing that library and aggregates only its frames',()=>{
  const input={event:'cpu-clock',samples:[
   {timeNs:'1000000',period:'10',pid:1,tid:2,thread:'main',frames:['app','lib call','app caller'],libraries:['/system/bin/app_process64','/data/app/libsample.so','/system/bin/app_process64']},
@@ -62,6 +76,14 @@ test('ART method trace capture starts sampling, stops, validates the file, and c
 test('ART method trace capture rejects bad duration and removes a partial remote trace after start failure',async()=>{
  const calls=[];const adb=new Adb('adb',async(_path,args)=>{calls.push(args);if(args.join(' ').includes("'profile' 'start'"))throw new Error('not debuggable');return {stdout:''};});
  await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',2),/3–30 秒/);assert.equal(calls.length,0);await assert.rejects(adb.captureArtMethodTrace('ABC','com.example.app',5,1000,async()=>{}),/not debuggable/);assert.ok(calls.some(args=>args.join(' ').includes("'rm' '-f'")));assert.equal(adb.busy.size,0);
+});
+test('ART device capture accepts a standard text key followed by the SLOW binary header',async()=>{
+ const {writeFile}=await import('node:fs/promises');
+ for(const newline of ['\n','\r\n']){
+  const trace=Buffer.from(['*version','3','clock=dual','*end','SLOW\x03\x00\x20\x00'].join(newline));
+  const adb=new Adb('adb',async(_path,args)=>{if(args.join(' ').includes("'wc'"))return {stdout:`${trace.length} trace`};if(args.includes('pull'))await writeFile(args.at(-1),trace);return {stdout:''};});
+  assert.deepEqual(await adb.captureArtMethodTrace('ABC','com.example.app',3,1000,async()=>{}),trace);assert.equal(adb.busy.size,0);
+ }
 });
 test('ART method trace cancellation stops the device profiler and removes its temporary file',async()=>{
  const calls=[],controller=new AbortController(),adb=new Adb('adb',async(_path,args)=>{calls.push(args);return {stdout:''};});
@@ -182,6 +204,18 @@ test('time filtering can isolate one recorded thread without mixing other thread
  assert.equal(profileForTimeBin(timeline,0,'main-1/1').root.weight,3);assert.equal(profileForTimeBin(timeline,0).root.weight,10);
  assert.equal(profileForTimeRange(timeline,0,1,'worker-1/2').root.weight,12);assert.throws(()=>profileForTimeRange(timeline,0,1,'missing'),/没有采样点/);assert.throws(()=>profileForTimeBin(timeline,0,3),/线程筛选/);
 });
+test('time-window call trees consume frame arrays directly without serializing every selected stack',async()=>{
+ const {buildSampleTimeline,profileForTimeBin,profileForTimeRange}=await import('../public/offline.js');
+ const first=['root','hot'],second=['root','cold'];first.join=()=>{throw new Error('must not serialize sample stack');};second.join=first.join;
+ const timeline=buildSampleTimeline({samples:[
+  {timeNs:'1000000',period:'7',thread:'main',pid:1,tid:1,frames:first},
+  {timeNs:'1000000',period:'5',thread:'main',pid:1,tid:1,frames:second},
+  {timeNs:'3000000',period:'3',thread:'worker',pid:1,tid:2,frames:['root','other']}
+ ]},2);
+ const range=profileForTimeRange(timeline,0,0,'main-1/1');assert.equal(range.root.weight,12);assert.equal(range.stacks,2);assert.equal(range.root.children[0].children[0].weight,12);assert.equal(range.symbols.find(row=>row.name==='hot').self,7);
+ const bin=profileForTimeBin(timeline,0);assert.equal(bin.root.weight,12);assert.equal(bin.stacks,2);assert.equal(bin.symbols.find(row=>row.name==='cold').self,5);
+ assert.throws(()=>profileForTimeRange(timeline,2,2,'missing'),/没有采样点/);
+});
 test('sample stack chart aggregates leaf weights by time and keeps remaining functions visible',async()=>{
  const {buildSampleTimeline,sampleStackChart}=await import('../public/offline.js');
  const timeline=buildSampleTimeline({samples:[
@@ -211,9 +245,11 @@ test('sample stack timeline preserves chronology, thread identity, top function 
  const single=sampleStackTimeline(timeline,{maxSamples:1});assert.equal(single.entries[0].sample.timeNs,'2000000');
  const thread=sampleStackTimeline(timeline,{thread:'worker-1/2'});assert.deepEqual(thread.entries.map(x=>x.sample.thread),['worker-1/2','worker-1/2']);assert.equal(thread.truncated,false);
  assert.throws(()=>sampleStackTimeline(timeline,{maxDepth:65}),/无效/);assert.throws(()=>sampleStackTimeline(timeline,{thread:2}),/无效/);
- let rectangles=0;const canvasContext={setTransform(){},clearRect(){},fillRect(){rectangles++;},set globalAlpha(_value){},set fillStyle(_value){}};
- const canvas={width:0,height:0,style:{},getContext:()=>canvasContext},drawn=drawSampleStackTimeline(canvas,chart,{devicePixelRatio:2});
- assert.deepEqual(drawn,{width:1000,height:64,renderedSamples:2,drawnFrames:4});assert.equal(canvas.width,2000);assert.equal(canvas.height,128);assert.equal(rectangles,4);assert.equal(canvas.style.width,'1000px');
+ let rectangles=0,fills=0,fillRects=0;class Path{rect(){rectangles++;}}
+ const canvasContext={setTransform(){},clearRect(){},fillRect(){fillRects++;},fill(){fills++;},set globalAlpha(_value){},set fillStyle(_value){}};
+ const canvas={width:0,height:0,style:{},getContext:()=>canvasContext},drawn=drawSampleStackTimeline(canvas,chart,{devicePixelRatio:2,Path2DImpl:Path});
+ assert.deepEqual(drawn,{width:1000,height:64,renderedSamples:2,drawnFrames:4});assert.equal(canvas.width,2000);assert.equal(canvas.height,128);assert.equal(rectangles,4);assert.equal(fills,chart.functions.length);assert.equal(fillRects,0);assert.equal(canvas.style.width,'1000px');
+ const legacyCanvas={width:0,height:0,style:{},getContext:()=>canvasContext};drawSampleStackTimeline(legacyCanvas,chart,{devicePixelRatio:1,Path2DImpl:null});assert.equal(fillRects,4);
  assert.throws(()=>drawSampleStackTimeline(canvas,{entries:[]}),/无效/);
  const many=buildSampleTimeline({samples:Array.from({length:50000},(_,i)=>({timeNs:String(1000000+i*1000000),period:String(i%7+1),thread:`worker-${i%4}`,pid:1,tid:i%4+1,frames:['root',`fn-${i%31}`]}))});
  const bounded=sampleStackTimeline(many);assert.equal(bounded.totalSamples,50000);assert.equal(bounded.renderedSamples,2000);assert.equal(bounded.truncated,true);
@@ -222,6 +258,18 @@ test('sample stack timeline preserves chronology, thread identity, top function 
  const threadViewport=sampleStackTimeline(many,{rangeMs:{start:10,end:20},thread:'worker-2-1/3'});assert.equal(threadViewport.totalSamples,3);assert.deepEqual(threadViewport.entries.map(entry=>entry.sample.timeNs),['11000000','15000000','19000000']);
  assert.throws(()=>sampleStackTimeline(many,{rangeMs:{start:-1,end:2}}),/无效/);assert.throws(()=>sampleStackTimeline(many,{rangeMs:{start:1,end:50000}}),/无效/);
  const deepFrames=Array.from({length:100},(_,index)=>`frame-${index}`),deepTimeline=buildSampleTimeline({samples:[{timeNs:'1000000',period:'1',thread:'deep',pid:1,tid:1,frames:deepFrames}]}),deepProjection=sampleStackTimeline(deepTimeline,{maxDepth:64});assert.equal(deepProjection.entries[0].frames.length,64);assert.equal(deepProjection.entries[0].omittedFrames,36);assert.equal(deepProjection.entries[0].sample.frames.length,100);assert.equal(sampleStackTimeline(deepTimeline,{maxDepth:64}).entries[0].sample.frames.at(-1),'frame-99');
+});
+
+test('large stack timeline bounds projection allocations without copying the filtered sample range',async()=>{
+ const {buildSampleTimeline,sampleStackTimeline}=await import('../public/offline.js');
+ const input={samples:Array.from({length:50000},(_,index)=>({timeNs:String(1_000_000+index*1_000_000),period:'10',thread:`worker-${index%4}`,pid:1,tid:index%4,frames:['root','leaf']}))};
+ const timeline=buildSampleTimeline(input);let rangeCopies=0;
+ timeline.samplesByTime.slice=()=>{rangeCopies++;throw new Error('must not copy the full time range');};
+ timeline.samplesByTime.filter=()=>{rangeCopies++;throw new Error('must not copy the filtered time range');};
+ const projection=sampleStackTimeline(timeline,{thread:'worker-2-1/2',rangeMs:{start:0,end:49999},maxSamples:2000});
+ assert.equal(rangeCopies,0);assert.equal(projection.totalSamples,12500);assert.equal(projection.renderedSamples,2000);assert.equal(projection.truncated,true);
+ assert.equal(projection.entries[0].sample.thread,'worker-2-1/2');assert.equal(projection.entries.at(-1).sample.thread,'worker-2-1/2');
+ assert.equal(projection.entries[0].sample.timeNs,'3000000');assert.equal(projection.entries.at(-1).sample.timeNs,'49999000000');
 });
 test('reverse callers aggregate inclusive weights, respect scope and count recursion explicitly',async()=>{
  const {reverseCallTree}=await import('../public/offline.js');

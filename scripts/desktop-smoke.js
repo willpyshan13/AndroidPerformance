@@ -97,6 +97,13 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
   const readyFile = join(tempRoot, `${label}-ready.json`);
   const executable = join(installDir, `${pkg.build.productName}.exe`);
   await access(executable);
+  const inspectorJava=join(installDir,'resources','java25-runtime','bin','java.exe');
+  const inspectorVersion=spawnSync(inspectorJava,['-version'],{encoding:'utf8',timeout:15_000,windowsHide:true});
+  if(inspectorVersion.error||inspectorVersion.status!==0||!/version "25(?:\.|\+)/.test(`${inspectorVersion.stdout}\n${inspectorVersion.stderr}`))throw new Error(`${label}: bundled Inspector Java 25 failed to start`);
+  for(const tool of ['llvm-symbolizer','llvm-cxxfilt']){
+    const result=spawnSync(join(installDir,'resources','native-symbolizer',`${tool}.exe`),tool==='llvm-cxxfilt'?['--no-strip-underscore','_ZN3apw11SmokeWorker3runEv']:['--version'],{encoding:'utf8',timeout:15_000,windowsHide:true});
+    if(result.error||result.status!==0||tool==='llvm-cxxfilt'&&!result.stdout.includes('apw::SmokeWorker::run()'))throw new Error(`${label}: bundled ${tool} failed: ${result.stderr||result.error?.message}`);
+  }
   const simpleperfDir=join(installDir,'resources','simpleperf');
   await stat(join(simpleperfDir,'bin','windows','x86_64','libsimpleperf_report.dll'));
   await stat(join(simpleperfDir,'bin','android','arm64','simpleperf'));

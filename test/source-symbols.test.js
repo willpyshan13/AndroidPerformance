@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod,demangleItaniumSymbol,normalizeDemangledItaniumName} from '../src/source-symbols.js';
+import {maskSource,parseSourceSymbol,findSourceDeclarations,findNativeSourceDeclarations,deobfuscateJavaMethod,indexJavaMapping,resolveJavaMappingFrame,demangleItaniumSymbol,normalizeDemangledItaniumName} from '../src/source-symbols.js';
 
 test('symbol declarations ignore comments, strings and ordinary call sites',()=>{
  const text=`package com.example;
@@ -129,4 +129,19 @@ com.example.Worker -> c:
  assert.equal(deobfuscateJavaMethod(mapping,'a.b.b(Foo.java:8)').length,0);
  assert.equal(deobfuscateJavaMethod(mapping,'c.a()')[0].originalMethod,'run');
  assert.equal(deobfuscateJavaMethod('com.example.Outer$Inner -> a.b$c:\n    void draw() -> a','a.b$c.a()')[0].originalClass,'com.example.Outer$Inner');
+});
+
+test('indexed Java mappings resolve stack frames without rescanning the mapping text',()=>{
+ const mapping=`com.example.Screen -> a.b:
+    1:1:void render():42:42 -> a
+    2:4:void other():50:52 -> a
+com.example.Worker -> c:
+    void run() -> a`;
+ const index=indexJavaMapping(mapping);
+ assert.equal(index.classes.size,2);assert.equal(index.methodCount,3);
+ assert.equal(resolveJavaMappingFrame(index,{className:'a.b',methodName:'a',lineNumber:1})[0].originalMethod,'render');
+ assert.deepEqual(resolveJavaMappingFrame(index,{className:'a.b',methodName:'a',lineNumber:3}).map(item=>item.originalMethod),['other']);
+ assert.deepEqual(resolveJavaMappingFrame(index,{className:'a.b',methodName:'a',lineNumber:-1}).map(item=>item.originalMethod),['render','other']);
+ assert.equal(resolveJavaMappingFrame(index,{className:'c',methodName:'a',lineNumber:-2})[0].obfuscatedLine,null);
+ assert.deepEqual(resolveJavaMappingFrame(index,{className:'a.b',methodName:'missing',lineNumber:1}),[]);
 });

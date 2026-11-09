@@ -44,6 +44,14 @@ test('indexed heap supports paging, object lookup and following references',()=>
   assert.throws(()=>heap.objectDetail('0000001e'),/不在快照/);
   assert.throws(()=>heap.classInstances(child.id,-1),/分页/);
 });
+test('indexed HPROF snapshot keeps a pageable index above 500,000 objects without truncation',()=>{
+ const count=500010,classId=10,objectBase=1000,records=Buffer.alloc(count*17);
+ for(let i=0,offset=0;i<count;i++,offset+=17){records[offset]=0x21;records.writeUInt32BE(objectBase+i,offset+1);records.writeUInt32BE(0,offset+5);records.writeUInt32BE(classId,offset+9);records.writeUInt32BE(0,offset+13);}
+ const data=Buffer.concat([header,string(1,'com/example/LargeObject'),load(classId,1),record(0x1c,records),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(data,{indexed:true,includeExamples:false}),classKey=classId.toString(16).padStart(8,'0');
+ assert.equal(heap.summary.objects,count);assert.equal(heap.summary.indexTruncated,false);
+ const page=heap.classInstances(classKey,count-3,3);assert.equal(page.total,count);assert.deepEqual(page.items.map(item=>item.id),[objectBase+count-3,objectBase+count-2,objectBase+count-1].map(id=>id.toString(16).padStart(8,'0')));
+});
 test('object arrays expose references beyond the first page with exact indices',()=>{
  const elements=Array.from({length:205},(_,i)=>n4(i===150?33:0));
  const body=Buffer.concat([Buffer.from([0x22]),n4(20),n4(0),n4(elements.length),n4(10),...elements]);
@@ -86,6 +94,24 @@ test('ART string previews require marker fields, matching count and supported ar
  const file=Buffer.concat([header,string(1,'java/lang/String'),string(2,'java/lang/Object'),string(5,'count'),string(6,'value'),string(7,'shadow$_klass_'),string(8,'shadow$_monitor_'),load(10,1),load(11,2),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
  const heap=parseHprof(file,{indexed:true});assert.equal(heap.objectDetail('00000014').stringPreview.text,'Hi');assert.equal(heap.objectDetail('00000015').stringPreview.text,'中');assert.equal(heap.objectDetail('00000016').stringPreview,null);assert.equal(heap.objectDetail('00000017').stringPreview,null);
 });
+test('OpenJDK Compact Strings decode Latin-1 and big-endian UTF-16 byte arrays',()=>{
+ const instance=(id,value,coder)=>Buffer.concat([Buffer.from([0x21]),n4(id),n4(0),n4(10),n4(9),n4(value),Buffer.from([coder]),n4(0)]);
+ const array=(id,bytes)=>Buffer.concat([Buffer.from([0x23]),n4(id),n4(0),n4(bytes.length),Buffer.from([8]),bytes]);
+ const body=Buffer.concat([
+  classDump(10,0,[[5,2],[6,8],[7,10]]),
+  instance(20,30,0),instance(21,31,1),instance(22,32,2),instance(23,33,1),
+  array(30,Buffer.from([0x63,0x61,0x66,0xe9])),
+  array(31,Buffer.from([0x4e,0x2d,0xd8,0x3d,0xde,0x00])),
+  array(32,Buffer.from([0x41])),array(33,Buffer.from([0x00]))
+ ]);
+ const file=Buffer.concat([header,string(1,'java/lang/String'),string(5,'value'),string(6,'coder'),string(7,'hash'),load(10,1),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(file,{indexed:true});
+ assert.deepEqual(heap.objectDetail('00000014').stringPreview,{text:'café',length:4,truncated:false,storageId:'0000001e'});
+ assert.deepEqual(heap.objectDetail('00000015').stringPreview,{text:'中😀',length:3,truncated:false,storageId:'0000001f'});
+ assert.equal(heap.objectDetail('00000016').stringPreview,null);
+ assert.equal(heap.objectDetail('00000017').stringPreview,null);
+ assert.deepEqual(heap.searchStrings({query:'😀'}).items.map(item=>item.text),['中😀']);
+});
 test('root path follows recorded instance references and distinguishes unreachable marker',()=>{
  const body=Buffer.concat([classDump(10,0,[[5,2]]),Buffer.from([0x21]),n4(20),n4(0),n4(10),n4(4),n4(30),Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),Buffer.from([0xff]),n4(20),Buffer.from([0x90]),n4(30)]);
  const file=Buffer.concat([header,string(1,'RootClass'),string(5,'child'),load(10,1),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
@@ -94,6 +120,58 @@ test('root path follows recorded instance references and distinguishes unreachab
  const incoming=heap.incomingReferences('0000001e');assert.equal(incoming.total,1);assert.deepEqual(incoming.items.map(r=>[r.id,r.className,r.label]),[['00000014','RootClass','child']]);assert.equal(incoming.indexOrGraphIncomplete,false);
  assert.deepEqual(heap.incomingReferences('0000001e',{offset:1,limit:1}).items,[]);assert.throws(()=>heap.incomingReferences('0000001e',{limit:101}),/分页/);assert.throws(()=>heap.incomingReferences('bad'),/对象 ID/);
  assert.match(path.note,/不区分强、弱/);
+});
+test('GC root details preserve root kinds and thread/frame context',()=>{
+ const root=(tag,tail=Buffer.alloc(0))=>Buffer.concat([Buffer.from([tag]),n4(30),tail]);
+ const body=Buffer.concat([
+  Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),
+  root(0x01,n4(300)),root(0x02,Buffer.concat([n4(77),n4(2)])),root(0x03,Buffer.concat([n4(77),n4(3)])),
+  root(0x04,n4(77)),root(0x05),root(0x06,n4(77)),root(0x07),root(0x08,Buffer.concat([n4(77),n4(9)])),
+  root(0x89),root(0x8a),root(0x8b),root(0x8c),root(0x8d),root(0x8e,Buffer.concat([n4(77),n4(4)])),root(0xff),
+  root(0x90)
+ ]);
+ const threadStart=record(0x0a,Buffer.concat([n4(77),n4(40),n4(50),n4(51),n4(52)]));
+ const file=Buffer.concat([header,string(50,'RenderThread'),threadStart,record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(file,{indexed:true}),details=heap.rootPath('0000001e').rootDetails;
+ assert.equal(details.length,15);assert.equal(heap.summary.roots,15);
+ assert.deepEqual(details.find(root=>root.tag===0x01),{tag:0x01,kind:'JNI 全局引用',jniGlobalRefId:'0000012c'});
+ assert.deepEqual(details.find(root=>root.tag===0x03),{tag:0x03,kind:'Java 栈帧',threadSerial:77,frameNumber:3,threadName:'RenderThread'});
+ assert.deepEqual(details.find(root=>root.tag===0x08),{tag:0x08,kind:'线程对象',threadSerial:77,stackTraceSerial:9,threadName:'RenderThread',stackTraceUnavailable:true});
+ assert.deepEqual(details.find(root=>root.tag===0x8e),{tag:0x8e,kind:'JNI Monitor',threadSerial:77,stackDepth:4,threadName:'RenderThread'});
+ assert.equal(details.some(root=>root.tag===0x90),false);
+});
+test('GC root context resolves Java stack trace frames and class serials',()=>{
+ const frame=(id,method,signature,source,line)=>record(0x04,Buffer.concat([n4(id),n4(method),n4(signature),n4(source),n4(10),n4(line)]));
+ const threadStart=record(0x0a,Buffer.concat([n4(77),n4(40),n4(50),n4(51),n4(52)]));
+ const stackTrace=record(0x05,Buffer.concat([n4(9),n4(77),n4(2),n4(100),n4(101)]));
+ const body=Buffer.concat([Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),Buffer.from([0x03]),n4(30),n4(77),n4(1)]);
+ const file=Buffer.concat([
+  header,string(50,'RenderThread'),string(60,'com/example/Screen'),string(61,'onCreate'),string(62,'()V'),string(63,'Screen.java'),string(64,'render'),string(65,'(I)V'),string(66,'Screen.kt'),
+  threadStart,frame(100,61,62,63,42),frame(101,64,65,66,87),load(10,60),stackTrace,
+  record(0x1c,body),record(0x2c,Buffer.alloc(0))
+ ]);
+ const root=parseHprof(file,{indexed:true}).rootPath('0000001e').rootDetails[0];
+ assert.equal(root.threadName,'RenderThread');assert.equal(root.stackTraceSerial,9);assert.equal(root.frameNumber,1);
+ assert.deepEqual(root.frame,{id:'00000065',className:'com.example.Screen',methodName:'render',signature:'(I)V',sourceFile:'Screen.kt',lineNumber:87});
+ assert.deepEqual(root.stackTrace,[
+  {id:'00000064',className:'com.example.Screen',methodName:'onCreate',signature:'()V',sourceFile:'Screen.java',lineNumber:42},
+  {id:'00000065',className:'com.example.Screen',methodName:'render',signature:'(I)V',sourceFile:'Screen.kt',lineNumber:87}
+ ]);
+});
+test('loaded R8 mappings enrich GC root stack frames while preserving obfuscated symbols',()=>{
+ const threadStart=record(0x0a,Buffer.concat([n4(77),n4(40),n4(50),n4(51),n4(52)]));
+ const stackTrace=record(0x05,Buffer.concat([n4(9),n4(77),n4(1),n4(100)]));
+ const body=Buffer.concat([Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),Buffer.from([0x03]),n4(30),n4(77),n4(0)]);
+ const obfuscatedFrame=record(0x04,Buffer.concat([n4(100),n4(61),n4(62),n4(63),n4(10),n4(1)]));
+ const file=Buffer.concat([header,string(50,'RenderThread'),string(60,'a/b'),string(61,'a'),string(62,'()V'),string(63,'a.java'),threadStart,obfuscatedFrame,load(10,60),stackTrace,record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(file,{indexed:true});
+ assert.equal(heap.rootPath('0000001e').rootDetails[0].stackTrace[0].mappingCandidates,undefined);
+ assert.deepEqual(heap.setMappingText('com.example.Screen -> a.b:\n    1:1:void render():42:42 -> a'),{classes:1,methods:1});
+ const mapped=heap.rootPath('0000001e').rootDetails[0].stackTrace[0];
+ assert.equal(mapped.className,'a.b');assert.equal(mapped.methodName,'a');
+ assert.equal(mapped.mappingCandidates[0].originalClass,'com.example.Screen');assert.equal(mapped.mappingCandidates[0].originalMethod,'render');assert.equal(mapped.mappingCandidates[0].originalStart,42);
+ assert.deepEqual(heap.clearMapping(),{cleared:true});
+ assert.equal(heap.rootPath('0000001e').rootDetails[0].stackTrace[0].mappingCandidates,undefined);
 });
 test('missing class layouts make a negative root search explicitly incomplete',()=>{
  const heap=parseHprof(fixture(),{indexed:true});const result=heap.rootPath('00000004');
@@ -110,6 +188,20 @@ test('root search can exclude known non-strong referent edges without excluding 
  const body=Buffer.concat([classDump(10,0,[[5,2]]),Buffer.from([0x21]),n4(20),n4(0),n4(10),n4(4),n4(30),Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),Buffer.from([0xff]),n4(20)]);
  const file=Buffer.concat([header,string(1,'Example'),string(5,'referent'),load(10,1),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
  const heap=parseHprof(file,{indexed:true});assert.equal(heap.rootPath('0000001e',{excludeNonStrong:true}).found,true);assert.throws(()=>heap.rootPath('0000001e',{excludeNonStrong:'true'}),/过滤参数/);
+});
+test('Android FinalizerReference referents are labeled but retained in reachability searches',()=>{
+ const body=Buffer.concat([
+  classDump(10,0,[[5,2]]),classDump(11,10,[]),
+  Buffer.from([0x21]),n4(20),n4(0),n4(11),n4(4),n4(30),
+  Buffer.from([0x23]),n4(30),n4(0),n4(1),Buffer.from([8,99]),
+  Buffer.from([0xff]),n4(20)
+ ]);
+ const file=Buffer.concat([header,string(1,'java.lang.ref.Reference'),string(2,'java.lang.ref.FinalizerReference'),string(5,'referent'),load(10,1),load(11,2),record(0x1c,body),record(0x2c,Buffer.alloc(0))]);
+ const heap=parseHprof(file,{indexed:true});
+ assert.equal(heap.incomingReferences('0000001e').items[0].referenceKind,'FinalizerReference');
+ const path=heap.rootPath('0000001e',{excludeNonStrong:true});
+ assert.equal(path.found,true);assert.equal(path.path[0].referenceKind,'FinalizerReference');
+ assert.equal(heap.dominatorTree({excludeNonStrong:true}).excludedEdges,0);
 });
 test('GC root paths include class static fields and expose class object details',()=>{
  const dump=Buffer.concat([Buffer.from([0x20]),n4(10),n4(0),n4(0),Buffer.alloc(20),n4(0),n2(0),n2(1),n4(5),Buffer.from([2]),n4(30),n2(0)]);

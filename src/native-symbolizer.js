@@ -1,14 +1,15 @@
 import {access,open,realpath,stat} from 'node:fs/promises';
 import {constants} from 'node:fs';
-import {basename,dirname,join,relative,sep} from 'node:path';
+import {basename,dirname,isAbsolute,join,relative,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 
 const run=promisify(execFile),MAX_ELF=512*1024*1024,MAX_NOTE=1024*1024;
-const root=()=>process.resourcesPath?join(process.resourcesPath,'native-symbolizer','llvm-symbolizer'):join(dirname(dirname(fileURLToPath(import.meta.url))),'tools','native-symbolizer','llvm-symbolizer');
+const executable=name=>process.platform==='win32'?`${name}.exe`:name;
+const root=()=>process.resourcesPath?join(process.resourcesPath,'native-symbolizer',executable('llvm-symbolizer')):join(dirname(dirname(fileURLToPath(import.meta.url))),'tools','native-symbolizer',executable('llvm-symbolizer'));
 export async function locateLlvmSymbolizer({path=process.env.LLVM_SYMBOLIZER_PATH}={}){
- const candidates=[path,root()];for(const candidate of candidates.filter(Boolean))try{await access(candidate,constants.X_OK);return candidate;}catch{}
+ const candidates=[path,root()];for(const candidate of candidates.filter(Boolean))try{if(process.platform==='win32')await access(candidate);else await access(candidate,constants.X_OK);return candidate;}catch{}
  throw new Error('未找到 LLVM symbolizer；请运行 npm run prepare:native-symbolizer 或设置 LLVM_SYMBOLIZER_PATH');
 }
 
@@ -49,7 +50,7 @@ export async function readElfBuildId(handle,fileSize){
 }
 
 export async function symbolizeNativeAddress({symfs,dso,address,expectedBuildId,locator=locateLlvmSymbolizer,runner=run}={}){
- if(typeof symfs!=='string'||symfs.length>4096||!symfs.startsWith('/')||/[\x00-\x1f\x7f]/.test(symfs))throw new Error('Native 符号目录必须为有效绝对路径');
+ if(typeof symfs!=='string'||symfs.length>4096||!isAbsolute(symfs)||/[\x00-\x1f\x7f]/.test(symfs))throw new Error('Native 符号目录必须为有效绝对路径');
  if(typeof dso!=='string'||dso.length>4096||!dso.startsWith('/')||dso.split(/[\\/]/).some(part=>part==='..')||/[\x00-\x1f\x7f]/.test(dso))throw new Error('Native 动态库路径无效');
  if(typeof address!=='string'||!(/^(?:0x)?[0-9a-f]{1,16}$/i).test(address))throw new Error('Native 指令地址无效');
  if(typeof expectedBuildId!=='string'||! /^[0-9a-f]{8,128}$/i.test(expectedBuildId))throw new Error('采样记录未包含该 ELF 的 Build ID；不能安全验证符号文件');

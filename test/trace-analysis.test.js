@@ -1,13 +1,60 @@
+import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
 import {access,readFile} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
-import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,queryPowerRailDiagnostics,queryTraceFile,correlateJankFramesToTimeline,queryJankStatsFrameCorrelation,locateTraceProcessor} from '../src/trace-analysis.js';
+import {analyzeTraceUpload,buildReadOnlyTraceQuery,parseCsv,parseBinderTransactions,parseBinderMethodSummary,queryBinderTransactions,queryBinderMethodSummary,parseTraceSummary,queryTraceSql,queryGpuTraceDiagnostics,queryPowerRailDiagnostics,queryTraceFile,correlateJankFramesToTimeline,queryJankStatsFrameCorrelation,locateTraceProcessor} from '../src/trace-analysis.js';
 const req=(chunks,headers={})=>{const r=Readable.from(chunks);r.headers=headers;return r;};
 test('CSV handles escaped quotes and embedded newlines',()=>{
  assert.deepEqual(parseCsv('"a","b"\r\n"x, y","z""q\nq"\n'),[['a','b'],['x, y','z"q\nq']]);
  assert.throws(()=>parseCsv('"unclosed'),/截断/);
+});
+test('Binder transaction parser preserves decoded interface and method names',()=>{
+ const result=parseBinderTransactions('ts,dur,client_hex,client_tid,server_hex,server_tid,aidl_hex,interface_hex,method_hex,is_sync,server_ts,server_dur,txn_id\n100,250,617070,7,73797374656d5f736572766572,8,7061636b6167652e49466f6f,7061636b6167652e49466f6f,67657456616c7565,1,110,120,9007199254740993\n');
+ assert.deepEqual(result,{transactions:[{tsNs:'100',durationNs:'250',client:'app',clientTid:'7',server:'system_server',serverTid:'8',aidl:'package.IFoo',interface:'package.IFoo',method:'getValue',sync:true,serverTsNs:'110',serverDurationNs:'120',id:'9007199254740993'}],truncated:false});
+ assert.throws(()=>parseBinderTransactions('ts,dur,client_hex,client_tid,server_hex,server_tid,aidl_hex,is_sync,server_ts,server_dur,txn_id\n'),/列无效/);
+});
+test('Binder method summary parses exact nanosecond totals and bounds groups',async()=>{
+ const header='client_hex,server_hex,interface_hex,method_hex,txn_count,total_client_ns,total_server_ns,max_client_ns,sync_count';
+ const result=parseBinderMethodSummary(`${header}\n617070,73797374656d5f736572766572,7061636b6167652e49466f6f,67657456616c7565,3,9007199254740993,400,500,2\n`);
+ assert.deepEqual(result,{groups:[{client:'app',server:'system_server',interface:'package.IFoo',method:'getValue',count:3,totalClientNs:'9007199254740993',totalServerNs:'400',maxClientNs:'500',syncCount:2}],truncated:false});
+ assert.throws(()=>parseBinderMethodSummary(`${header}\n,,,,1,-1,,1,0\n`),/数值无效/);
+ let query='';await queryBinderMethodSummary('/tmp/fake.trace',{packageName:'com.example.app',direction:'client',locator:async()=>'/trace-processor',runner:async(_bin,args)=>{query=args[4];return {stdout:`${header}\n`};}});
+ assert.match(query,/GROUP BY client_process,server_process,interface,method_name/);assert.match(query,/WHERE client_ts IS NOT NULL AND client_dur>=0 AND \(hex\(CAST\(client_process AS BLOB\)\)/);
+ assert.match(query,/LIMIT 201$/);
+});
+test('Trace Processor summarizes non-empty Binder methods with interface names and client filtering',async(t)=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const traceEvents=[
+  {ph:'M',name:'process_name',pid:100,args:{name:'com.example.client'}},{ph:'M',name:'thread_name',pid:100,tid:101,args:{name:'ClientThread'}},
+  {ph:'M',name:'process_name',pid:200,args:{name:'com.example.server'}},{ph:'M',name:'thread_name',pid:200,tid:201,args:{name:'ServerThread'}},
+  {ph:'M',name:'process_name',pid:300,args:{name:'com.example.other'}},{ph:'M',name:'thread_name',pid:300,tid:301,args:{name:'OtherClientThread'}}
+ ];
+ const transaction=(id,clientPid,clientTid,start,duration,serverStart,serverDuration,method)=>{
+  const serverPid=200,serverTid=201;traceEvents.push(
+   {ph:'X',cat:'binder',name:'binder transaction',ts:start,dur:duration,pid:clientPid,tid:clientTid,bind_id:id,flow_out:true},
+   {ph:'X',cat:'binder',name:'binder reply',ts:serverStart,dur:serverDuration,pid:serverPid,tid:serverTid,bind_id:id,flow_in:true},
+   {ph:'X',cat:'aidl',name:`AIDL::java::demo.IFoo::${method}::server`,ts:serverStart+1,dur:Math.min(15,serverDuration),pid:serverPid,tid:serverTid}
+  );
+ };
+ transaction(1,100,101,1000,100,1030,50,'getValue');
+ transaction(2,100,101,2000,150,2040,80,'getValue');
+ transaction(3,100,101,3000,200,3050,100,'getStatus');
+ transaction(4,300,301,4000,500,4060,200,'getValue');
+ const dir=await mkdtemp(join(tmpdir(),'binder-method-summary-')),path=join(dir,'sample.json');try{
+  await writeFile(path,JSON.stringify({traceEvents}));const result=await queryBinderMethodSummary(path,{packageName:'com.example.client',direction:'client'});
+  assert.equal(result.truncated,false);assert.deepEqual(result.groups,[
+   {client:'com.example.client',server:'com.example.server',interface:'demo.IFoo',method:'getValue',count:2,totalClientNs:'250000',totalServerNs:'130000',maxClientNs:'150000',syncCount:2},
+   {client:'com.example.client',server:'com.example.server',interface:'demo.IFoo',method:'getStatus',count:1,totalClientNs:'200000',totalServerNs:'100000',maxClientNs:'200000',syncCount:1}
+  ]);
+  const transactions=await queryBinderTransactions(path,{packageName:'com.example.client',direction:'client'});assert.equal(transactions.truncated,false);assert.deepEqual(transactions.transactions.map(({client,server,aidl,interface:iface,method,sync,tsNs,durationNs,serverTsNs,serverDurationNs})=>({client,server,aidl,interface:iface,method,sync,tsNs,durationNs,serverTsNs,serverDurationNs})),[
+   {client:'com.example.client',server:'com.example.server',aidl:'AIDL::java::demo.IFoo::getStatus::server',interface:'demo.IFoo',method:'getStatus',sync:true,tsNs:'3000000',durationNs:'200000',serverTsNs:'3050000',serverDurationNs:'100000'},
+   {client:'com.example.client',server:'com.example.server',aidl:'AIDL::java::demo.IFoo::getValue::server',interface:'demo.IFoo',method:'getValue',sync:true,tsNs:'2000000',durationNs:'150000',serverTsNs:'2040000',serverDurationNs:'80000'},
+   {client:'com.example.client',server:'com.example.server',aidl:'AIDL::java::demo.IFoo::getValue::server',interface:'demo.IFoo',method:'getValue',sync:true,tsNs:'1000000',durationNs:'100000',serverTsNs:'1030000',serverDurationNs:'50000'}
+  ]);
+ }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('custom trace SQL is read-only, bounded and returns escaped CSV cells',async()=>{
  const query=buildReadOnlyTraceQuery("WITH x AS (SELECT 'DROP; UPDATE' AS label) SELECT label FROM x;");assert.match(query,/LIMIT 501$/);assert.match(buildReadOnlyTraceQuery('INCLUDE PERFETTO MODULE android.startup.time_to_display; SELECT * FROM slice'),/^INCLUDE PERFETTO MODULE .*;\s+SELECT \* FROM/);
@@ -49,22 +96,68 @@ test('network request intervals map through trace clock snapshots and match only
 test('GPU trace diagnostics parse render stages, frequency and per-process memory without assuming absent sources',async()=>{
  const result=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async(_bin,args)=>{
   const sql=args[4];
-  if(sql.includes('gpu_slice'))return {stdout:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid\n100,2500000,64726177,4d616c69207130,1,42,636f6d2e6578616d706c65,123,7\n'};
+  if(sql.includes('gpu_slice'))return {stdout:'ts_ns,dur_ns,name_hex,queue_hex,category,submission_id,process_hex,pid,upid,context_id,render_target,render_target_name,render_pass,render_pass_name,command_buffer,command_buffer_name,frame_id,hw_queue_id,render_subpasses\n100,2500000,64726177,4d616c69207130,1,42,636f6d2e6578616d706c65,123,7,5,8,73757266616365,10,6d61696e,11,636d64,12,0,7375627061737330\n'};
   if(sql.includes('android_gpu_frequency'))return {stdout:'ts_ns,dur_ns,gpu_id,frequency\n200,500000,0,600000\n'};
   if(sql.includes('android_gpu_memory_per_process'))return {stdout:'ts_ns,dur_ns,upid,process_hex,bytes\n300,1000000,7,636f6d2e6578616d706c65,1048576\n'};
+  if(sql.includes('FROM frame_slice'))return {stdout:'id,ts_ns,dur_ns,layer_hex,frame_number,queue_to_acquire_ns,acquire_to_latch_ns,latch_to_present_ns\n9,300,16000000,6170706c61796572,42,1000000,2000000,3000000\n'};
   throw new Error('unexpected query');
  }});
- assert.deepEqual(result.renderStages.rows,[{tsNs:'100',durationNs:'2500000',name:'draw',queue:'Mali q0',category:1,submissionId:'42',process:'com.example',pid:123,upid:'7'}]);
+ assert.deepEqual(result.renderStages.rows,[{tsNs:'100',durationNs:'2500000',name:'draw',queue:'Mali q0',category:1,submissionId:'42',process:'com.example',pid:123,upid:'7',contextId:'5',renderTarget:'8',renderTargetName:'surface',renderPass:'10',renderPassName:'main',commandBuffer:'11',commandBufferName:'cmd',frameId:'12',hardwareQueueId:'0',renderSubpasses:'subpass0'}]);
  assert.deepEqual(result.frequencies.rows,[{tsNs:'200',durationNs:'500000',gpuId:'0',frequency:'600000'}]);
  assert.deepEqual(result.memory.rows,[{tsNs:'300',durationNs:'1000000',upid:'7',process:'com.example',bytes:'1048576'}]);
+ assert.deepEqual(result.graphicsFrames.rows,[{id:'9',tsNs:'300',durationNs:'16000000',layer:'applayer',frameNumber:'42',queueToAcquireNs:'1000000',acquireToLatchNs:'2000000',latchToPresentNs:'3000000'}]);
+ assert.equal(result.graphicsFrames.available,true);
  const missing=await queryGpuTraceDiagnostics('/tmp/example.trace',{locator:async()=>'/trace-processor',runner:async()=>{throw Object.assign(new Error('no data'),{stderr:'table unavailable'});}});
  assert.equal(missing.renderStages.available,false);assert.match(missing.renderStages.reason,/table unavailable/);assert.deepEqual(missing.memory.rows,[]);
 });
 test('bundled Trace Processor exposes GPU diagnostics tables on traces without GPU data',async()=>{
  const stream=createReadStream(new URL('../fixtures/trace-sample.json',import.meta.url));stream.headers={};
  const {session}=await analyzeTraceUpload(stream,{retain:true});
- try{const result=await queryGpuTraceDiagnostics(session.path);assert.equal(result.renderStages.available,true);assert.equal(result.frequencies.available,true);assert.equal(result.memory.available,true);assert.deepEqual(result.renderStages.rows,[]);assert.deepEqual(result.frequencies.rows,[]);assert.deepEqual(result.memory.rows,[]);}
+ try{const result=await queryGpuTraceDiagnostics(session.path);assert.equal(result.renderStages.available,true);assert.equal(result.frequencies.available,true);assert.equal(result.memory.available,true);assert.equal(result.graphicsFrames.available,true);assert.deepEqual(result.renderStages.rows,[]);assert.deepEqual(result.frequencies.rows,[]);assert.deepEqual(result.memory.rows,[]);assert.deepEqual(result.graphicsFrames.rows,[]);}
  finally{await session.cleanup();}
+});
+test('Trace Processor reads non-empty SurfaceFlinger graphics frame pipeline phases',async(t)=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const v=n=>{n=BigInt(n);const bytes=[];do{let byte=Number(n&127n);n>>=7n;if(n)byte|=128;bytes.push(byte);}while(n);return Buffer.from(bytes);};
+ const num=(field,value)=>Buffer.concat([v(field*8),v(value)]),msg=(field,value)=>Buffer.concat([v(field*8+2),v(value.length),value]);
+ const packet=(timestamp,frameNumber,type)=>{const event=Buffer.concat([num(1,frameNumber),num(2,type),msg(3,Buffer.from('Synthetic Surface')),num(5,77)]);return msg(1,Buffer.concat([num(8,timestamp),msg(57,msg(1,event))]));};
+ const data=Buffer.concat([packet(1000000,12,1),packet(2000000,12,2),packet(3000000,12,4),packet(5000000,12,5),packet(9000000,12,8)]);
+ const dir=await mkdtemp(join(tmpdir(),'graphics-frame-pipeline-')),path=join(dir,'sample.trace');try{
+  await writeFile(path,data);const result=await queryGpuTraceDiagnostics(path);assert.equal(result.graphicsFrames.available,true,JSON.stringify(result.graphicsFrames));assert.ok(result.graphicsFrames.rows.length>0,JSON.stringify(result));
+  assert.equal(result.graphicsFrames.rows.length,1,JSON.stringify(result.graphicsFrames));const frame=result.graphicsFrames.rows[0];assert.equal(frame.layer,'Synthetic Surface');assert.equal(frame.frameNumber,'12');assert.equal(frame.tsNs,'9000000');assert.equal(frame.queueToAcquireNs,'1000000');assert.equal(frame.acquireToLatchNs,'2000000');assert.equal(frame.latchToPresentNs,'4000000');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('Trace Processor reads non-empty GPU RenderStage context and submission metadata',async(t)=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const v=n=>{n=BigInt(n);const bytes=[];do{let byte=Number(n&127n);n>>=7n;if(n)byte|=128;bytes.push(byte);}while(n);return Buffer.from(bytes);};
+ const num=(field,value)=>Buffer.concat([v(field*8),v(value)]),msg=(field,value)=>Buffer.concat([v(field*8+2),v(value.length),value]);
+ const desc=name=>msg(1,Buffer.from(name));
+ const contextSpec=Buffer.concat([num(1,42),num(2,123)]);
+ const specs=Buffer.concat([msg(1,contextSpec),msg(2,desc('GPU queue 0')),msg(3,desc('Render stage'))]);
+ const event=Buffer.concat([num(1,9),num(2,2500000),num(3,0),num(4,0),num(5,42),msg(7,specs),num(8,8),num(9,10),num(10,77)]);
+ const packet=msg(1,Buffer.concat([num(8,1000000),msg(53,event)]));
+ const dir=await mkdtemp(join(tmpdir(),'gpu-render-stage-')),path=join(dir,'sample.trace');try{
+  await writeFile(path,packet);const result=await queryGpuTraceDiagnostics(path);assert.equal(result.renderStages.available,true,JSON.stringify(result.renderStages));assert.equal(result.renderStages.rows.length,1,JSON.stringify(result.renderStages));
+  const stage=result.renderStages.rows[0];assert.equal(stage.tsNs,'1000000');assert.equal(stage.durationNs,'2500000');assert.equal(stage.name,'Render stage');assert.equal(stage.queue,'GPU queue 0');assert.equal(stage.category,-1);assert.equal(stage.submissionId,'77');assert.equal(stage.contextId,'42');assert.equal(stage.renderTarget,'8');assert.equal(stage.renderPass,'10');assert.equal(stage.pid,123);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('Trace Processor resolves interned GPU RenderStage names and graphics context',async(t)=>{
+ try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const v=n=>{n=BigInt(n);const bytes=[];do{let byte=Number(n&127n);n>>=7n;if(n)byte|=128;bytes.push(byte);}while(n);return Buffer.from(bytes);};
+ const num=(field,value)=>Buffer.concat([v(field*8),v(value)]),msg=(field,value)=>Buffer.concat([v(field*8+2),v(value.length),value]),str=(field,value)=>msg(field,Buffer.from(value));
+ const specification=(iid,name,category)=>Buffer.concat([num(1,iid),str(2,name),num(4,category)]);
+ const graphicsContext=Buffer.concat([num(1,42),num(2,321),num(3,1)]);
+ const internedData=Buffer.concat([msg(23,graphicsContext),msg(24,specification(1,'Modern GPU queue',1)),msg(24,specification(2,'Modern render stage',1))]);
+ const sequence=1,internedPacket=msg(1,Buffer.concat([num(8,1),num(10,sequence),num(13,1),msg(12,internedData)]));
+ const event=Buffer.concat([num(1,19),num(2,3750000),num(5,42),num(8,18),num(9,27),num(10,88),num(12,39),num(13,1),num(14,2),num(15,1)]);
+ const eventPacket=msg(1,Buffer.concat([num(8,2000000),num(10,sequence),msg(53,event)]));
+ const dir=await mkdtemp(join(tmpdir(),'gpu-interned-render-stage-')),path=join(dir,'sample.trace');try{
+  await writeFile(path,Buffer.concat([internedPacket,eventPacket]));const result=await queryGpuTraceDiagnostics(path);assert.equal(result.renderStages.available,true,JSON.stringify(result.renderStages));assert.equal(result.renderStages.rows.length,1,JSON.stringify(result.renderStages));
+  const stage=result.renderStages.rows[0];assert.equal(stage.tsNs,'2000000');assert.equal(stage.durationNs,'3750000');assert.equal(stage.name,'Modern render stage');assert.equal(stage.queue,'Modern GPU queue');assert.equal(stage.category,1);assert.equal(stage.submissionId,'88');assert.equal(stage.contextId,'42');assert.equal(stage.renderTarget,'18');assert.equal(stage.renderPass,'27');assert.equal(stage.commandBuffer,'39');assert.equal(stage.frameId,null);assert.equal(stage.hardwareQueueId,'1');assert.equal(stage.pid,321);
+ }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('power diagnostics keep subsystem rails separate and parse per-UID energy estimates',async()=>{
  const railCsv='"ts_ns","dur_ns","rail_hex","subsystem_hex","raw_name_hex","energy_delta_uws","average_power_mw"\n"1000000000","250000000","435055","736f63","534f435f5241494c","1250.5","5.002"\n';
@@ -108,11 +201,11 @@ test('bundled Trace Processor imports ODPM per-UID energy samples and interval d
 });
 test('heap allocation profile parser preserves signed samples and callsite metadata',async()=>{
  const {parseHeapProfileSummary,queryHeapProfile}=await import('../src/trace-analysis.js');
- const csv='"id","parent_id","name_hex","mapping_hex","source_hex","line_number","self_unreleased_bytes","cumulative_unreleased_bytes","self_allocated_bytes","cumulative_allocated_bytes"\n"1","","6D616C6C6F63","6C6962632E736F2E","","","-1024","-100","2048","4096"\n"2","1","6D7946756E63","6170702E736F","7372632F4D61696E2E637070","42","512","924","1024","2048"\n';
- const r=parseHeapProfileSummary(csv,'native');assert.equal(r.available,true);assert.equal(r.sites[0].name,'malloc');assert.equal(r.sites[0].selfUnreleasedBytes,'-1024');assert.equal(r.sites[1].source,'src/Main.cpp');assert.equal(r.sites[1].line,'42');assert.equal(r.totalAllocatedBytes,'4096');assert.equal(r.totalUnreleasedBytes,'-100');
+ const csv='"id","parent_id","name_hex","mapping_hex","source_hex","line_number","self_unreleased_bytes","cumulative_unreleased_bytes","self_allocated_bytes","cumulative_allocated_bytes","self_unreleased_count","cumulative_unreleased_count","self_allocated_count","cumulative_allocated_count"\n"1","","6D616C6C6F63","6C6962632E736F2E","","","-1024","-100","2048","4096","-1","-1","2","4"\n"2","1","6D7946756E63","6170702E736F","7372632F4D61696E2E637070","42","512","924","1024","2048","1","2","3","5"\n';
+ const r=parseHeapProfileSummary(csv,'native');assert.equal(r.available,true);assert.equal(r.sites[0].name,'malloc');assert.equal(r.sites[0].selfUnreleasedBytes,'-1024');assert.equal(r.sites[1].source,'src/Main.cpp');assert.equal(r.sites[1].line,'42');assert.equal(r.totalAllocatedBytes,'4096');assert.equal(r.totalUnreleasedBytes,'-100');assert.equal(r.totalAllocatedCount,'4');assert.equal(r.totalUnreleasedCount,'-1');
  const art=parseHeapProfileSummary(csv,'art');assert.equal(art.totalAllocatedBytes,'4096');assert.equal(art.totalUnreleasedBytes,null);assert.equal(art.sites[0].selfUnreleasedBytes,null);assert.equal(art.sites[1].cumulativeUnreleasedBytes,null);assert.equal(art.sites[1].cumulativeAllocatedBytes,'2048');
- assert.throws(()=>parseHeapProfileSummary(csv,'other'),/模式无效/);assert.throws(()=>parseHeapProfileSummary(csv.replace('"2048"','"-2"'),'art'),/数值无效/);assert.throws(()=>parseHeapProfileSummary('bad\n'),/列无效/);
- let sql;const queried=await queryHeapProfile('/private/trace',{mode:'art',locator:async()=>'/trusted/trace_processor',runner:async(binary,args)=>{assert.equal(binary,'/trusted/trace_processor');sql=args.at(-1);return {stdout:csv};}});assert.equal(queried.mode,'art');assert.match(sql,/INCLUDE PERFETTO MODULE android\.memory\.heap_profile\.summary_tree/);assert.match(sql,/ORDER BY cumulative_alloc_size DESC LIMIT 501/);
+ assert.throws(()=>parseHeapProfileSummary(csv,'other'),/模式无效/);assert.throws(()=>parseHeapProfileSummary(csv.replace('"2048"','"-2"'),'art'),/数值无效/);assert.throws(()=>parseHeapProfileSummary(csv.replace('"4"','"-2"'),'art'),/数值无效/);assert.throws(()=>parseHeapProfileSummary('bad\n'),/列无效/);
+ let sql;const queried=await queryHeapProfile('/private/trace',{mode:'art',locator:async()=>'/trusted/trace_processor',runner:async(binary,args)=>{assert.equal(binary,'/trusted/trace_processor');sql=args.at(-1);return {stdout:csv};}});assert.equal(queried.mode,'art');assert.match(sql,/INCLUDE PERFETTO MODULE callstacks\.stack_profile/);assert.match(sql,/h\.heap_name='com\.android\.art'/);assert.match(sql,/SUM\(MAX\(a\.count,0\)\) AS self_alloc_count/);assert.match(sql,/ORDER BY cumulative_alloc_size DESC LIMIT 501/);
 });
 test('heap profile snapshots preserve time/process identity and bound per-dump queries',async()=>{
  const {parseHeapProfileSnapshots,queryHeapProfileSnapshots,queryHeapProfile}=await import('../src/trace-analysis.js');
@@ -122,35 +215,45 @@ test('heap profile snapshots preserve time/process identity and bound per-dump q
  assert.equal(parseHeapProfileSnapshots(artCsv,'art').snapshots[0].heapName,'com.android.art');assert.throws(()=>parseHeapProfileSnapshots(nativeCsv.replace('"1000000000"','"-1"'),'native'),/数值无效/);
  let listingSql;const listed=await queryHeapProfileSnapshots('/private/trace',{mode:'art',locator:async()=>'/trusted/tp',runner:async(_bin,args)=>{listingSql=args.at(-1);return {stdout:artCsv};}});
  assert.match(listingSql,/h\.heap_name='com\.android\.art'/);assert.equal(listed.snapshots.length,1);
- const tree='id,parent_id,name_hex,mapping_hex,source_hex,line_number,self_unreleased_bytes,cumulative_unreleased_bytes,self_allocated_bytes,cumulative_allocated_bytes\n"11","","726f6f74","6170702e736f","","","512","512","1024","1024"\n';
+ const tree='id,parent_id,name_hex,mapping_hex,source_hex,line_number,self_unreleased_bytes,cumulative_unreleased_bytes,self_allocated_bytes,cumulative_allocated_bytes,self_unreleased_count,cumulative_unreleased_count,self_allocated_count,cumulative_allocated_count\n"11","","726f6f74","6170702e736f","","","512","512","1024","1024","2","2","3","3"\n';
  let treeSql;const selected=await queryHeapProfile('/private/trace',{mode:'native',snapshotId:'2',locator:async()=>'/trusted/tp',runner:async(_bin,args)=>{treeSql=args.at(-1);return {stdout:tree};}});
- assert.equal(selected.totalAllocatedBytes,'1024');assert.match(treeSql,/h\.id=2/);assert.match(treeSql,/TREE ACCUMULATE UP/);assert.match(treeSql,/LIMIT 501/);await assert.rejects(queryHeapProfile('/private/trace',{snapshotId:'2 OR 1=1',locator:async()=>'/trusted/tp',runner:async()=>{throw new Error('must not execute');}}),/快照标识无效/);
+ assert.equal(selected.totalAllocatedBytes,'1024');assert.match(treeSql,/h\.id=2/);assert.match(treeSql,/heap_name!='com\.android\.art'/);assert.match(treeSql,/SUM\(a\.count\) AS self_count/);assert.match(treeSql,/TREE ACCUMULATE UP/);assert.match(treeSql,/LIMIT 501/);await assert.rejects(queryHeapProfile('/private/trace',{snapshotId:'2 OR 1=1',locator:async()=>'/trusted/tp',runner:async()=>{throw new Error('must not execute');}}),/快照标识无效/);
 });
 test('Trace Processor heap allocation windows return distinct parent-linked call trees',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const {mkdtemp,writeFile,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path'),{queryHeapProfileSnapshots,queryHeapProfile}=await import('../src/trace-analysis.js');
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path'),{queryHeapProfileSnapshots,queryHeapProfile,queryArtRuntimeDiagnostics}=await import('../src/trace-analysis.js');
  const v=n=>{n=BigInt(n);const bytes=[];do{let byte=Number(n&127n);n>>=7n;if(n)byte|=128;bytes.push(byte);}while(n);return Buffer.from(bytes);},num=(field,n)=>Buffer.concat([v(field*8),v(n)]),msg=(field,data)=>Buffer.concat([v(field*8+2),v(data.length),data]),str=(field,value)=>msg(field,Buffer.from(value));
  // Trace Processor needs the process name as ProcessDescriptor.process_name and rejects ProfilePacket mappings without an interned build id.
  const processPacket=msg(1,msg(2,msg(1,Buffer.concat([num(1,1234),str(3,'com.example.app')]))));
  const clockPacket=ts=>msg(1,Buffer.concat([num(8,ts),msg(6,Buffer.concat([3,4,6].map(id=>msg(1,Buffer.concat([num(1,id),num(2,ts)]))).concat([num(2,6)])))]));
  const intern=(id,value)=>msg(1,Buffer.concat([num(1,id),str(2,value)])),mapping=msg(4,Buffer.concat([num(1,1),num(2,4),num(7,1)])),frame=(id,name)=>msg(2,Buffer.concat([num(1,id),num(2,name),num(3,1),num(4,id*100)])),callstack=(id,frames)=>msg(3,Buffer.concat([num(1,id),...frames.map(frameId=>num(2,frameId))]));
  let packetIndex=0;
- const packet=(ts,startTs,leafAlloc,leafFree,rootAlloc)=>{
-  const samples=[msg(2,Buffer.concat([num(1,1),num(2,rootAlloc),num(3,0)])),msg(2,Buffer.concat([num(1,2),num(2,leafAlloc),num(3,leafFree)]))];
-  const processDump=Buffer.concat([num(1,1234),...samples,str(11,'libc.malloc'),num(9,ts),num(15,startTs)]);
+ const packet=(ts,startTs,leafAlloc,leafFree,rootAlloc,heapName='libc.malloc',rootCount=2,leafCount=3,leafFreeCount=1)=>{
+  const samples=[msg(2,Buffer.concat([num(1,1),num(2,rootAlloc),num(3,0),num(5,rootCount),num(6,0)])),msg(2,Buffer.concat([num(1,2),num(2,leafAlloc),num(3,leafFree),num(5,leafCount),num(6,leafFreeCount)]))];
+  const processDump=Buffer.concat([num(1,1234),...samples,str(11,heapName),num(9,ts),num(15,startTs)]);
   const profile=Buffer.concat([intern(1,'libdemo.so'),intern(2,'rootFn'),intern(3,'leafFn'),intern(4,'BUILD-ID'),mapping,frame(1,2),frame(2,3),callstack(1,[1]),callstack(2,[1,2]),msg(5,processDump),num(7,packetIndex++)]);
   return msg(1,Buffer.concat([num(8,ts),num(10,1),msg(37,profile)]));
  };
  const dir=await mkdtemp(join(tmpdir(),'apw-heap-profile-windows-')),path=join(dir,'heap.trace');
  try{
-  const data=Buffer.concat([processPacket,clockPacket(900_000_000),packet(1_000_000_000,900_000_000,300,100,200),packet(2_000_000_000,1_000_000_000,700,200,400)]);await writeFile(path,data);
+  const data=Buffer.concat([processPacket,clockPacket(900_000_000),packet(1_000_000_000,900_000_000,300,100,200),packet(2_000_000_000,1_000_000_000,700,200,400,'libc.malloc',4,6,2)]);await writeFile(path,data);
   const index=await queryHeapProfileSnapshots(path,{mode:'native'});assert.equal(index.snapshots.length,2,JSON.stringify(index));assert.ok(index.snapshots.every(item=>item.pid===1234&&item.heapName==='libc.malloc'));
   assert.deepEqual(index.snapshots.map(item=>[item.startNs,item.endNs]),[['900000000','1000000000'],['1000000000','2000000000']]);
   const first=await queryHeapProfile(path,{mode:'native',snapshotId:index.snapshots[0].id}),second=await queryHeapProfile(path,{mode:'native',snapshotId:index.snapshots[1].id});
   // Dumps are cumulative samples; each window only aggregates the allocation delta recorded inside it.
-  assert.equal(first.totalAllocatedBytes,'500');assert.equal(second.totalAllocatedBytes,'600');assert.equal(first.totalUnreleasedBytes,'400');assert.equal(second.totalUnreleasedBytes,'500');
-  const leaf=first.sites.find(site=>site.name==='leafFn'),root=first.sites.find(site=>site.name==='rootFn');assert.ok(leaf);assert.equal(leaf.parentId,root.id);assert.equal(leaf.selfAllocatedBytes,'300');assert.equal(leaf.cumulativeAllocatedBytes,'300');
+  assert.equal(first.totalAllocatedBytes,'500');assert.equal(second.totalAllocatedBytes,'600');assert.equal(first.totalUnreleasedBytes,'400');assert.equal(second.totalUnreleasedBytes,'500');assert.equal(first.totalAllocatedCount,'5');assert.equal(second.totalAllocatedCount,'5');assert.equal(first.totalUnreleasedCount,'4');assert.equal(second.totalUnreleasedCount,'4');
+  const leaf=first.sites.find(site=>site.name==='leafFn'),root=first.sites.find(site=>site.name==='rootFn');assert.ok(leaf);assert.equal(leaf.parentId,root.id);assert.equal(leaf.selfAllocatedBytes,'300');assert.equal(leaf.cumulativeAllocatedBytes,'300');assert.equal(leaf.selfAllocatedCount,'3');assert.equal(leaf.cumulativeAllocatedCount,'3');
   assert.equal(second.sites.find(site=>site.name==='leafFn').selfAllocatedBytes,'400');
+
+  // ART allocation traces use the same Perfetto heap-profile tables but must
+  // not expose native-style unreleased estimates in the parsed call tree.
+  const artPath=join(dir,'art-heap.trace');
+  const artData=Buffer.concat([processPacket,clockPacket(900_000_000),packet(1_000_000_000,900_000_000,300,100,200,'com.android.art'),packet(2_000_000_000,1_000_000_000,700,200,400,'com.android.art')]);await writeFile(artPath,artData);
+  const artIndex=await queryHeapProfileSnapshots(artPath,{mode:'art'});assert.equal(artIndex.snapshots.length,2,JSON.stringify(artIndex));assert.ok(artIndex.snapshots.every(item=>item.heapName==='com.android.art'));
+  assert.deepEqual((await queryHeapProfileSnapshots(artPath,{mode:'native'})).snapshots,[]);
+  const artProfile=await queryHeapProfile(artPath,{mode:'art',snapshotId:artIndex.snapshots[0].id});assert.equal(artProfile.mode,'art');assert.equal(artProfile.totalAllocatedBytes,'500');assert.equal(artProfile.totalUnreleasedBytes,null);assert.equal(artProfile.totalAllocatedCount,'5');assert.equal(artProfile.totalUnreleasedCount,null);
+  const artLeaf=artProfile.sites.find(site=>site.name==='leafFn');assert.ok(artLeaf);assert.equal(artLeaf.selfAllocatedBytes,'300');assert.equal(artLeaf.cumulativeAllocatedBytes,'300');assert.equal(artLeaf.selfAllocatedCount,'3');assert.equal(artLeaf.cumulativeAllocatedCount,'3');assert.equal(artLeaf.selfUnreleasedBytes,null);assert.equal(artLeaf.cumulativeUnreleasedBytes,null);
+  const runtimeDiagnostics=await queryArtRuntimeDiagnostics(artPath);assert.equal(runtimeDiagnostics.allocationProfile.totalAllocatedCount,'5');assert.equal(runtimeDiagnostics.allocationProfile.sites.find(site=>site.name==='leafFn').cumulativeAllocatedCount,'3');
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('trace upload uses fixed query and cleans temporary files',async()=>{
@@ -169,7 +272,7 @@ test('provided Android trace produces module-backed Binder transaction summary',
 });
 test('Trace Processor heap-profile query reports no samples for an ordinary trace',async(t)=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const {queryHeapProfile,queryHeapProfileSnapshots}=await import('../src/trace-analysis.js'),path=new URL('../fixtures/trace-sample.json',import.meta.url).pathname;
+ const {queryHeapProfile,queryHeapProfileSnapshots}=await import('../src/trace-analysis.js'),path=fileURLToPath(new URL('../fixtures/trace-sample.json',import.meta.url));
  const listing=await queryHeapProfileSnapshots(path,{mode:'native'});assert.deepEqual(listing.snapshots,[]);
  const result=await queryHeapProfile(path,{mode:'native'}),selected=await queryHeapProfile(path,{mode:'native',snapshotId:'1'});
  for(const profile of [result,selected]){assert.equal(profile.available,false);assert.deepEqual(profile.sites,[]);assert.equal(profile.mode,'native');}
@@ -204,7 +307,7 @@ test('trace windows include overlapping events and reject invalid or injected bo
  const {queryTraceFile,traceWindowQuery}=await import('../src/trace-analysis.js');
  assert.throws(()=>traceWindowQuery('1; DROP TABLE slice','9'),/无效/);assert.throws(()=>traceWindowQuery('9','1'),/无效/);
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const result=await queryTraceFile(new URL('../fixtures/trace-sample.json',import.meta.url).pathname,{startNs:'32000000',endNs:'46000000'});
+ const result=await queryTraceFile(fileURLToPath(new URL('../fixtures/trace-sample.json',import.meta.url)),{startNs:'32000000',endNs:'46000000'});
  assert.deepEqual(result.sliceEvents.map(e=>e.name),['render','binder transaction']);assert.equal(result.slices.length,3);
 });
 test('track filtering is applied by Trace Processor before the event limit',async(t)=>{
@@ -213,7 +316,7 @@ test('track filtering is applied by Trace Processor before the event limit',asyn
  assert.ok(!sql.includes(injected));assert.match(sql,/CAST\(X'[0-9a-f]+' AS TEXT\)/);
  assert.throws(()=>traceWindowQuery('1','2','a'.repeat(201)),/筛选词/);
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const path=new URL('../fixtures/trace-sched.txt',import.meta.url).pathname;
+ const path=fileURLToPath(new URL('../fixtures/trace-sched.txt',import.meta.url));
  const result=await queryTraceFile(path,{startNs:'1000000000',endNs:'1030000000',trackFilter:'WORKER'});
  assert.deepEqual(result.schedEvents.map(e=>e.thread),['worker','worker']);
  assert.equal(result.threads.find(x=>x.name.includes('worker')).count,2);
@@ -226,7 +329,7 @@ test('slice name filter is literal, case insensitive, and leaves aggregate and s
  assert.throws(()=>traceWindowQuery('1','2','','a'.repeat(201)),/切片筛选词/);
  assert.throws(()=>traceWindowQuery('1','2','',42),/切片筛选词/);
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const path=new URL('../fixtures/trace-sample.json',import.meta.url).pathname;
+ const path=fileURLToPath(new URL('../fixtures/trace-sample.json',import.meta.url));
  const result=await queryTraceFile(path,{startNs:'1000000',endNs:'47000000',sliceFilter:'RENDER'});
  assert.deepEqual(result.sliceEvents.map(x=>x.name),['render']);assert.equal(result.slices.length,3);
  const empty=await queryTraceFile(path,{startNs:'1000000',endNs:'47000000',sliceFilter:injection});assert.deepEqual(empty.sliceEvents,[]);
@@ -313,7 +416,7 @@ test('startup trace preserves precise timestamps and missing display times',asyn
 });
 test('bundled Trace Processor executes Android startup metric on a non-Android trace',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const {queryStartupTrace}=await import('../src/trace-analysis.js');const result=await queryStartupTrace(new URL('../fixtures/trace-sample.json',import.meta.url).pathname);assert.deepEqual(result.startups,[]);
+ const {queryStartupTrace}=await import('../src/trace-analysis.js');const result=await queryStartupTrace(fileURLToPath(new URL('../fixtures/trace-sample.json',import.meta.url)));assert.deepEqual(result.startups,[]);
 });
 
 test('official Android 12 cold startup fixture yields TTID and TTFD',async t=>{
@@ -333,7 +436,7 @@ test('startup breakdown preserves exclusive interval evidence and rejects invali
 });
 test('startup ART attribution clips observed GC, JIT, class loading and dex2oat slices to TTID/TTFD phases',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const path=new URL('../fixtures/trace-startup-art.json',import.meta.url).pathname,{queryStartupArtAttribution,parseStartupArtAttribution}=await import('../src/trace-analysis.js');
+ const path=fileURLToPath(new URL('../fixtures/trace-startup-art.json',import.meta.url)),{queryStartupArtAttribution,parseStartupArtAttribution}=await import('../src/trace-analysis.js');
  const process=await queryTraceSql(path,{sql:'SELECT CAST(upid AS TEXT) AS upid FROM process WHERE pid=101'});assert.equal(process.rows.length,1);
  const startup={tsNs:'2000000',ttidNs:'7000000',ttfdNs:'15000000',upid:process.rows[0][0]},result=await queryStartupArtAttribution(path,{startup});
  assert.deepEqual(result.groups.map(x=>[x.phase,x.category,x.totalOverlapNs,x.count]),[
@@ -348,7 +451,7 @@ test('startup ART attribution clips observed GC, JIT, class loading and dex2oat 
 });
 test('ART runtime diagnostics reads GC metrics and categorized ART slices from a trace',async t=>{
  try{await locateTraceProcessor();}catch{t.skip('未准备 Trace Processor');return;}
- const path=new URL('../fixtures/trace-startup-art.json',import.meta.url).pathname,{queryArtRuntimeDiagnostics,parseArtRuntimeDiagnostics}=await import('../src/trace-analysis.js');
+ const path=fileURLToPath(new URL('../fixtures/trace-startup-art.json',import.meta.url)),{queryArtRuntimeDiagnostics,parseArtRuntimeDiagnostics}=await import('../src/trace-analysis.js');
  const result=await queryArtRuntimeDiagnostics(path);
  assert.equal(result.available,true);assert.equal(result.gcCount,0);assert.equal(result.gcReclaimedMb,null);
  assert.deepEqual(result.activities.map(x=>[x.category,x.count,x.totalDurationNs]),[

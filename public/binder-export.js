@@ -11,15 +11,35 @@ function boundedTransactions(value){
   if(!row||typeof row!=='object')throw new Error('Binder 事务结果无效');
   const durationNs=optionalId(row.durationNs),serverDurationNs=optionalId(row.serverDurationNs);
   if(durationNs===null||BigInt(durationNs)<0n||(serverDurationNs!==null&&BigInt(serverDurationNs)<0n))throw new Error('Binder 事务耗时无效');
-  return {tsNs:optionalId(row.tsNs),durationNs,client:text(row.client),clientTid:optionalId(row.clientTid),server:text(row.server),serverTid:optionalId(row.serverTid),aidl:text(row.aidl),sync:row.sync===true?true:row.sync===false?false:null,serverTsNs:optionalId(row.serverTsNs),serverDurationNs,id:optionalId(row.id)};
+  return {tsNs:optionalId(row.tsNs),durationNs,client:text(row.client),clientTid:optionalId(row.clientTid),server:text(row.server),serverTid:optionalId(row.serverTid),aidl:text(row.aidl),interface:text(row.interface),method:text(row.method),sync:row.sync===true?true:row.sync===false?false:null,serverTsNs:optionalId(row.serverTsNs),serverDurationNs,id:optionalId(row.id)};
  });
 }
 
 export function binderTransactionsCsv(transactions){
  const rows=boundedTransactions(transactions);
- const columns=['client_timestamp_ns','client_duration_ns','client_process','client_tid','server_process','server_tid','aidl_interface','synchronous','server_timestamp_ns','server_duration_ns','transaction_id'];
- const data=rows.map(row=>[row.tsNs,row.durationNs,row.client,row.clientTid,row.server,row.serverTid,row.aidl,row.sync===null?'':String(row.sync),row.serverTsNs,row.serverDurationNs,row.id]);
+ const columns=['client_timestamp_ns','client_duration_ns','client_process','client_tid','server_process','server_tid','aidl_interface','binder_interface','binder_method','synchronous','server_timestamp_ns','server_duration_ns','transaction_id'];
+ const data=rows.map(row=>[row.tsNs,row.durationNs,row.client,row.clientTid,row.server,row.serverTid,row.aidl,row.interface,row.method,row.sync===null?'':String(row.sync),row.serverTsNs,row.serverDurationNs,row.id]);
  return formatTraceQueryCsv(columns,data);
+}
+
+function boundedMethodGroups(value){
+ if(!Array.isArray(value)||value.length>200)throw new Error('Binder 方法汇总无效或超过导出限制');
+ return value.map(row=>{
+  if(!row||typeof row!=='object')throw new Error('Binder 方法汇总无效');
+  const integer=(item,nullable=false)=>{if(item===null&&nullable)return null;if(typeof item!=='string'||!/^\d{1,19}$/.test(item))throw new Error('Binder 方法汇总数值无效');return item;};
+  const count=Number(row.count),syncCount=Number(row.syncCount);
+  if(!Number.isSafeInteger(count)||count<0||!Number.isSafeInteger(syncCount)||syncCount<0||syncCount>count)throw new Error('Binder 方法汇总计数无效');
+  return {client:text(row.client),server:text(row.server),interface:text(row.interface),method:text(row.method),count,totalClientNs:integer(row.totalClientNs),totalServerNs:integer(row.totalServerNs,true),maxClientNs:integer(row.maxClientNs),syncCount};
+ });
+}
+export function binderMethodSummaryCsv(groups){
+ const rows=boundedMethodGroups(groups),columns=['client_process','server_process','binder_interface','binder_method','transaction_count','total_client_duration_ns','total_server_duration_ns','max_client_duration_ns','sync_transaction_count'];
+ return formatTraceQueryCsv(columns,rows.map(row=>[row.client,row.server,row.interface,row.method,String(row.count),row.totalClientNs,row.totalServerNs,row.maxClientNs,String(row.syncCount)]));
+}
+export function binderMethodSummaryJson(result,{traceFileName=null,packageName=null,direction='both'}={}){
+ if(!result||!['both','client','server'].includes(direction))throw new Error('Binder 方法汇总无效');
+ const groups=boundedMethodGroups(result.groups);
+ return `${JSON.stringify({schemaVersion:1,kind:'perfetto-binder-method-summary',traceFileName:text(traceFileName),packageName:text(packageName),direction,limit:200,truncated:result.truncated===true,generatedAt:new Date().toISOString(),count:groups.length,groups},null,2)}\n`;
 }
 
 export function binderTransactionsJson(result,{traceFileName=null}={}){

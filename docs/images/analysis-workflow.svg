@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="390" viewBox="0 0 1200 390" role="img" aria-labelledby="title desc">
+  <title id="title">Android performance investigation workflow</title>
+  <desc id="desc">Choose a workload, collect or import evidence, analyze and correlate it, then save and compare results.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f8fc"/><stop offset="1" stop-color="#eaf1f7"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#168c83"/><stop offset="1" stop-color="#1c6f99"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#17324a" flood-opacity=".12"/></filter>
+    <style>.sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.head{font-size:25px;font-weight:700;fill:#142337}.sub{font-size:14px;fill:#5e7187}.num{font-size:14px;font-weight:750;fill:#fff}.title{font-size:18px;font-weight:700;fill:#192b40}.body{font-size:13px;fill:#5b6d82}.foot{font-size:11px;fill:#718196}</style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0 0L8 5L0 10" fill="none" stroke="#4e8c91" stroke-width="1.8"/></marker>
+  </defs>
+  <rect width="1200" height="390" rx="24" fill="url(#bg)"/>
+  <text x="54" y="58" class="sans head">推荐的排查流程</text>
+  <text x="55" y="83" class="sans sub">先复现，再采集；用多种证据互相印证，并保留本次实验的上下文。</text>
+  <path d="M285 214H347M573 214H635M861 214H923" stroke="#4e8c91" stroke-width="2.5" stroke-dasharray="5 6" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)"><rect x="54" y="122" width="232" height="182" rx="18" fill="#fff"/><rect x="342" y="122" width="232" height="182" rx="18" fill="#fff"/><rect x="630" y="122" width="232" height="182" rx="18" fill="#fff"/><rect x="918" y="122" width="232" height="182" rx="18" fill="#fff"/></g>
+  <circle cx="88" cy="158" r="18" fill="url(#green)"/><text x="88" y="163" text-anchor="middle" class="sans num">1</text>
+  <text x="117" y="164" class="sans title">定义场景</text><text x="76" y="207" class="sans body">选择目标应用与复现步骤</text><text x="76" y="231" class="sans body">明确要观察的指标</text><text x="76" y="274" class="sans foot">启动 · 滚动 · 页面切换 · 内存</text>
+  <circle cx="376" cy="158" r="18" fill="url(#green)"/><text x="376" y="163" text-anchor="middle" class="sans num">2</text>
+  <text x="405" y="164" class="sans title">采集或导入</text><text x="364" y="207" class="sans body">ADB 采集实时数据与追踪</text><text x="364" y="231" class="sans body">或导入 APK / HPROF / HAR</text><text x="364" y="274" class="sans foot">演示模式可离线浏览样例</text>
+  <circle cx="664" cy="158" r="18" fill="url(#green)"/><text x="664" y="163" text-anchor="middle" class="sans num">3</text>
+  <text x="693" y="164" class="sans title">定位与交叉核对</text><text x="652" y="207" class="sans body">从时间线定位区间或热点</text><text x="652" y="231" class="sans body">用追踪、帧、源码等证据核对</text><text x="652" y="274" class="sans foot">时间重叠不代表因果</text>
+  <circle cx="952" cy="158" r="18" fill="url(#green)"/><text x="952" y="163" text-anchor="middle" class="sans num">4</text>
+  <text x="981" y="164" class="sans title">保存与比较</text><text x="940" y="207" class="sans body">保存采集记录与原始文件</text><text x="940" y="231" class="sans body">导出报告，与基线或历史比较</text><text x="940" y="274" class="sans foot">数据默认保留在本机</text>
+  <text x="55" y="352" class="sans foot">分析结论会标明数据来源、覆盖范围和限制；候选线索不自动等于根因。</text>
+</svg>

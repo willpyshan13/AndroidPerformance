@@ -384,7 +384,7 @@ function createWindow() {
   window = new BrowserWindow({
     width: 1440, height: 1000, minWidth: 960, minHeight: 680,
     title: 'Android Performance', backgroundColor: '#f5f7f9', show: false,
-    icon: join(here, 'resources', 'icon.png'),
+    icon: join(here, 'resources', process.platform==='win32'?'icon.ico':'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, spellcheck: false },
   });
   if (process.env.APW_SMOKE_READY_FILE) {
@@ -494,11 +494,15 @@ if (singleInstance) {
       ? await ensureWindowsJavaRuntime(join(process.resourcesPath,'java-runtime.tar.gz'),join(app.getPath('userData'),'runtime','java-runtime'))
       : app.isPackaged?join(process.resourcesPath,'java-runtime'):join(here,'..','tools','java-runtime');
     const javaPath=join(javaRuntimeDir,'bin',process.platform==='win32'?'java.exe':'java');
-    const composeInspectorJavaPath=app.isPackaged?join(process.resourcesPath,'java25-runtime','bin','java'):join(here,'..','tools','java25-runtime','bin','java');
+    const composeInspectorJavaPath=app.isPackaged?join(process.resourcesPath,'java25-runtime','bin',process.platform==='win32'?'java.exe':'java'):join(here,'..','tools','java25-runtime','bin',process.platform==='win32'?'java.exe':'java');
+    // Outside a packaged bundle process.resourcesPath points at Electron's own resources, so the
+    // bundled tool directories only exist under tools/; resolve them explicitly to keep the
+    // unpackaged app on par with the shipped one (embedded Perfetto UI, Shark, Compose inspector).
+    const bundledTools=app.isPackaged?{}:{perfettoUiDir:join(here,'..','tools','perfetto-ui'),sharkDir:join(here,'..','tools','shark-cli'),composeInspectorDir:join(here,'..','tools','ui-inspector'),nativeDemanglerPath:join(here,'..','tools','native-symbolizer',process.platform==='win32'?'llvm-cxxfilt.exe':'llvm-cxxfilt')};
     let adbPath = await locateAdb();
     try { const settings = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8')); if (typeof settings.adbPath === 'string') adbPath = settings.adbPath; if(typeof settings.agiPath==='string')agiPath=settings.agiPath;appearanceLanguage=normalizeAppearance(settings).language; } catch {}
     runtimeAdb = new Adb(adbPath);
-    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath, javaPath });
+    server = createApp({ adb: runtimeAdb, dataDir: recordsDir, desktop: true, sharkJavaPath: javaPath, composeInspectorJavaPath, javaPath, ...bundledTools });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     origin = `http://127.0.0.1:${server.address().port}`;
     installMenu(appearanceLanguage); createWindow();

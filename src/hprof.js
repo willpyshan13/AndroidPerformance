@@ -1,4 +1,5 @@
 import {dominatorsCsr} from './dominators.js';
+import {indexJavaMapping,resolveJavaMappingFrame} from './source-symbols.js';
 import {createHash} from 'node:crypto';
 // HPROF record layout follows Android's perflib parser and the HotSpot heap dump format.
 const MAX_FILE = 256 * 1024 * 1024;
@@ -35,8 +36,13 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   const sizes={2:idSize,4:1,5:2,6:4,7:8,8:1,9:2,10:4,11:8};
   function typeSize(t){const n=sizes[t];if(!n)throw new Error(`不支持的 HPROF 值类型 ${t}`);return n;}
   const strings=new Map(), classNames=new Map(), stats=new Map(), definitions=new Map(), sampleData=new Map();
+  const classSerialNames=new Map(),threadNameIds=new Map(),stackFrames=new Map(),stackTraces=new Map(),threadStackTraces=new Map();
+  let javaMappingIndex=null;const mappedFrames=new Map();
+  const MAX_STACK_FRAMES=200000,MAX_TRACE_RECORDS=100000,MAX_FRAMES_PER_TRACE=256;
+  let storedTraceFrames=0,stackFramesTruncated=false,stackTracesTruncated=false;
   let sampledClasses=0;
-  const index = indexed ? new Map() : null, byClass = indexed ? new Map() : null, rootIds = indexed ? new Map() : null;
+  const index = indexed ? new Map() : null, byClass = indexed ? new Map() : null, rootIds = indexed ? new Map() : null, rootDetails = indexed ? new Map() : null;
+  const rootKinds={0xff:'未知根',0x01:'JNI 全局引用',0x02:'JNI 局部引用',0x03:'Java 栈帧',0x04:'Native 栈',0x05:'驻留类',0x06:'线程阻塞',0x07:'Monitor',0x08:'线程对象',0x89:'驻留字符串',0x8a:'待 finalize 对象',0x8b:'Debugger 根',0x8c:'Reference 清理根',0x8d:'VM 内部根',0x8e:'JNI Monitor'};
   const indexLimit=1000000;let indexTruncated=false;
   function addIndex(key, object, offset, length, kind, type=null) {
     if(!index)return;
@@ -54,10 +60,14 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     while(pos<end){
       const tag=u1();
       if ([0xff,0x05,0x07,0x89,0x8a,0x8b,0x8c,0x8d,0x90,0x01,0x02,0x03,0x08,0x8e,0x04,0x06].includes(tag)) {
-        const root=id();
-        if(tag===0x01)skip(idSize);else if([0x02,0x03,0x08,0x8e].includes(tag))skip(8);else if([0x04,0x06].includes(tag))skip(4);
+        const root=id(),detail={tag,kind:rootKinds[tag]};
+        if(tag===0x01)detail.jniGlobalRefId=id();
+        else if(tag===0x02||tag===0x03){detail.threadSerial=u4();detail.frameNumber=u4();}
+        else if(tag===0x04||tag===0x06)detail.threadSerial=u4();
+        else if(tag===0x08){detail.threadSerial=u4();detail.stackTraceSerial=u4();}
+        else if(tag===0x8e){detail.threadSerial=u4();detail.stackDepth=u4();}
         // UNREACHABLE is a diagnostic marker, not a GC root.
-        if(tag!==0x90){roots++;if(rootIds){let tags=rootIds.get(root);if(!tags){tags=[];rootIds.set(root,tags);}if(!tags.includes(tag))tags.push(tag);}}
+        if(tag!==0x90){roots++;if(rootIds){let tags=rootIds.get(root);if(!tags){tags=[];rootIds.set(root,tags);}if(!tags.includes(tag))tags.push(tag);let details=rootDetails.get(root);if(!details){details=[];rootDetails.set(root,details);}details.push(detail);}}
       }
       else if(tag===0xfe){skip(4+idSize);}
       else if(tag===0x20){
@@ -81,7 +91,10 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   while(pos<data.length){
     end=data.length;need(9);const tag=u1();skip(4);const length=u4();need(length);end=pos+length;
     if(tag===1){const key=id();strings.set(key,data.subarray(pos,end).toString('utf8'));pos=end;}
-    else if(tag===2){skip(4);const cls=id();skip(4);classNames.set(cls,id());}
+    else if(tag===2){const serial=u4(),cls=id();skip(4);const nameId=id();classNames.set(cls,nameId);classSerialNames.set(serial,nameId);}
+    else if(tag===0x0a){const serial=u4();skip(idSize);threadNameIds.set(serial,id());skip(idSize*2);}
+    else if(tag===0x04){const frameId=id(),methodId=id(),signatureId=id(),sourceId=id(),classSerial=u4();need(4);const lineNumber=data.readInt32BE(pos);pos+=4;if(stackFrames.size<MAX_STACK_FRAMES)stackFrames.set(frameId,{id:frameId,methodId,signatureId,sourceId,classSerial,lineNumber});else stackFramesTruncated=true;}
+    else if(tag===0x05){const serial=u4(),threadSerial=u4(),frameCount=u4();need(frameCount*idSize);const available=Math.max(0,MAX_STACK_FRAMES-storedTraceFrames),take=Math.min(frameCount,MAX_FRAMES_PER_TRACE,available),frameIds=[];for(let i=0;i<take;i++)frameIds.push(id());skip((frameCount-take)*idSize);const trace={serial,threadSerial,frameCount,frameIds,truncated:frameCount>take};storedTraceFrames+=take;if(stackTraces.size<MAX_TRACE_RECORDS){stackTraces.set(serial,trace);threadStackTraces.set(threadSerial,serial);}else stackTracesTruncated=true;}
     else if(tag===0x0c||tag===0x1c){heapRecords++;if(tag===0x1c)segmented=true;heap();}
     else if(tag===0x2c){if(length!==0)throw new Error('HPROF 结束记录长度无效');heapEnd=true;}
     pos=end;
@@ -89,6 +102,30 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   if(!heapRecords)throw new Error('文件没有 HPROF 堆数据');
   if(segmented&&!heapEnd)throw new Error('HPROF 分段数据缺少结束记录，文件可能已截断');
   const nullId='0'.repeat(idSize*2);
+  function setMappingText(text){
+    if(typeof text!=='string'||Buffer.byteLength(text,'utf8')>128*1024*1024)throw new Error('混淆映射文件不能超过 128 MiB');
+    javaMappingIndex=indexJavaMapping(text);mappedFrames.clear();return {classes:javaMappingIndex.classes.size,methods:javaMappingIndex.methodCount};
+  }
+  function clearMapping(){javaMappingIndex=null;mappedFrames.clear();return {cleared:true};}
+  function mappedFrame(frameId,frame){
+    if(!javaMappingIndex)return frame;
+    if(mappedFrames.has(frameId))return mappedFrames.get(frameId);
+    const mappingCandidates=resolveJavaMappingFrame(javaMappingIndex,frame),result=mappingCandidates.length?{...frame,mappingCandidates}:frame;
+    mappedFrames.set(frameId,result);return result;
+  }
+  function rootInfo(objectId){return (rootDetails?.get(objectId)||[]).slice(0,16).map(root=>{
+    const info={...root,...(root.threadSerial!==undefined&&threadNameIds.has(root.threadSerial)?{threadName:strings.get(threadNameIds.get(root.threadSerial))||null}:{})};
+    const traceSerial=root.stackTraceSerial??threadStackTraces.get(root.threadSerial),trace=traceSerial===undefined?null:stackTraces.get(traceSerial);
+    if(trace){
+      info.stackTraceSerial=traceSerial;info.stackTraceTruncated=trace.truncated;
+      info.stackTrace=trace.frameIds.map(frameId=>{const frame=stackFrames.get(frameId);if(!frame)return {id:frameId,unavailable:true};const classNameId=classSerialNames.get(frame.classSerial);return mappedFrame(frameId,{id:frameId,className:classNameId===undefined?null:(strings.get(classNameId)||'').replaceAll('/','.'),methodName:strings.get(frame.methodId)||null,signature:strings.get(frame.signatureId)||null,sourceFile:strings.get(frame.sourceId)||null,lineNumber:frame.lineNumber});});
+      info.stackFrameDataIncomplete=stackFramesTruncated||info.stackTrace.some(frame=>frame.unavailable);
+      if(Number.isInteger(root.frameNumber))info.frame=info.stackTrace[root.frameNumber]||null;
+      if(Number.isInteger(root.stackDepth))info.frame=info.stackTrace[root.stackDepth]||null;
+    }else if(traceSerial!==undefined)info.stackTraceUnavailable=true;
+    if((rootDetails?.get(objectId)?.length||0)>16)info.rootRecordsTruncated=true;
+    return info;
+  });}
   function decodeSample(cls, sample = sampleData.get(cls), fieldOffset=0, fieldLimit=64) {
     if(!sample)return null;
     const chain=[],seen=new Set();let cursor=cls,complete=true;
@@ -117,22 +154,34 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
   }
   const primitive={4:'boolean[]',5:'char[]',6:'float[]',7:'double[]',8:'byte[]',9:'short[]',10:'int[]',11:'long[]'};
   const classes=[...stats].map(([key,row])=>({id:key,name:key.startsWith('primitive:')?primitive[Number(key.slice(10))]||key:(strings.get(classNames.get(key))||`未知类 ${key}`).replaceAll('/','.'),...row,...(!indexed&&includeExamples?{example:decodeSample(key)}:{})})).sort((a,b)=>b.payloadBytes-a.payloadBytes||b.count-a.count);
-  const summary={format:data.subarray(0,zero).toString('ascii'),idSize,fileBytes:data.length,objects,arrays,roots,heapRecords,classes,indexedObjects:index?.size??null,indexTruncated,note:'字节数为 HPROF 记录中的实例字段或数组元素数据，不是对象浅大小或保留大小；不包含对象头和对齐。'};
+  const summary={format:data.subarray(0,zero).toString('ascii'),idSize,fileBytes:data.length,objects,arrays,roots,heapRecords,classes,indexedObjects:index?.size??null,indexTruncated,stackMetadata:{frameRecords:stackFrames.size,traceRecords:stackTraces.size,storedTraceFrames,frameRecordLimitReached:stackFramesTruncated,traceRecordLimitReached:stackTracesTruncated},note:'字节数为 HPROF 记录中的实例字段或数组元素数据，不是对象浅大小或保留大小；不包含对象头和对齐。'};
   if(!indexed)return summary;
   const names=new Map(classes.map(c=>[c.id,c.name]));
   function stringPreview(item){
     const decoded=decodeSample(item.cls,item);
     if(decoded.warning||decoded.totalFields>64)return null;
     const get=(name,type)=>{const found=decoded.fields.filter(f=>f.declaringClass==='java.lang.String'&&f.name===name&&f.type===type);return found.length===1?found[0].value:undefined;};
-    const value=get('value',2),offset=get('offset',10),count=get('count',10),array=index.get(value);
-    if(!array||array.kind!=='primitiveArray'||!Number.isSafeInteger(count)||count<0)return null;
+    const value=get('value',2),offset=get('offset',10),count=get('count',10),coder=get('coder',8),array=index.get(value);
+    if(!array||array.kind!=='primitiveArray')return null;
     // ART emits a synthetic value array and normalized character count in
     // HPROF: https://android.googlesource.com/platform/art/+/f169e27/runtime/hprof/hprof.cc
     const art=offset===undefined&&decoded.fields.some(f=>f.declaringClass==='java.lang.Object'&&f.name==='shadow$_klass_'&&f.type===2)&&decoded.fields.some(f=>f.declaringClass==='java.lang.Object'&&f.name==='shadow$_monitor_'&&f.type===10);
-    const first=art?0:offset;
-    if(!Number.isSafeInteger(first)||first<0||(!art&&array.type!==5)||(art&&(![5,8].includes(array.type)||array.length!==count))||first+count>array.length)return null;
-    const length=Math.min(count,512),units=[];for(let i=0;i<length;i++){const unit=array.type===5?data.readUInt16BE(array.offset+(first+i)*2):data[array.offset+first+i];if(array.type===8&&unit>127)return null;units.push(unit);}
-    return {text:String.fromCharCode(...units),length:count,truncated:count>length,storageId:value};
+    let first,length,readUnit;
+    if(!art&&offset===undefined&&count===undefined&&coder!==undefined){
+      // OpenJDK Compact Strings store Latin-1 (coder 0) or big-endian
+      // UTF-16 (coder 1) directly in byte[] value, without offset/count.
+      if(array.type!==8||![0,1].includes(coder))return null;
+      const bytesPerUnit=coder===0?1:2;if(array.length%bytesPerUnit!==0)return null;
+      first=0;length=array.length/bytesPerUnit;
+      readUnit=i=>coder===0?data[array.offset+i]:data.readUInt16BE(array.offset+i*2);
+    }else{
+      if(!Number.isSafeInteger(count)||count<0)return null;
+      first=art?0:offset;length=count;
+      if(!Number.isSafeInteger(first)||first<0||(!art&&array.type!==5)||(art&&(![5,8].includes(array.type)||array.length!==count))||first+count>array.length)return null;
+      readUnit=i=>{const unit=array.type===5?data.readUInt16BE(array.offset+(first+i)*2):data[array.offset+first+i];return array.type===8&&unit>127?null:unit;};
+    }
+    const previewLength=Math.min(length,512),units=[];for(let i=0;i<previewLength;i++){const unit=readUnit(i);if(unit===null)return null;units.push(unit);}
+    return {text:String.fromCharCode(...units),length,truncated:length>previewLength,storageId:value};
   }
   function duplicateStrings(){
     const stringClasses=classes.filter(c=>c.name==='java.lang.String'),groups=new Map();let scanned=0,unavailable=0,tooLong=0,indexedTotal=0;
@@ -307,11 +356,12 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     return {items,scanned,destroyed,unavailable,incompleteClasses,indexTruncated,limitReached,truncated:indexTruncated||limitReached||destroyed>items.length};
   }
   let reverseGraph=null;
-  const referenceKindCodes={WeakReference:1,SoftReference:2,PhantomReference:3};
-  const referenceKindNames=[null,'WeakReference','SoftReference','PhantomReference'];
+  const referenceKindCodes={WeakReference:1,SoftReference:2,PhantomReference:3,FinalizerReference:4};
+  const referenceKindNames=[null,'WeakReference','SoftReference','PhantomReference','FinalizerReference'];
   const edgeFlags=(referenceKind,arrayIndex)=>((referenceKindCodes[referenceKind]||0)<<1)|(arrayIndex?1:0);
   const edgeLabel=(label,flags)=>(flags&1)?`[${label}]`:label;
   const edgeReferenceKind=flags=>referenceKindNames[flags>>1]||null;
+  const isNonStrongReference=kind=>['WeakReference','SoftReference','PhantomReference'].includes(kind);
   function buildReverseGraph(){
     if(reverseGraph)return reverseGraph;
     const edges=new Map(), layouts=new Map();let edgeCount=0,incomplete=indexTruncated, skipped=0, missingTargets=0, limited=false;
@@ -330,7 +380,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
         if(seen.has(cursor)||seen.size>=100){valid=false;break;}seen.add(cursor);
         const def=definitions.get(cursor);if(!def){valid=false;break;}
         const name=(strings.get(classNames.get(cursor))||'').replaceAll('/','.');
-        if(!referenceKind&&['java.lang.ref.WeakReference','java.lang.ref.SoftReference','java.lang.ref.PhantomReference'].includes(name))referenceKind=name.split('.').at(-1);
+        if(!referenceKind&&['java.lang.ref.WeakReference','java.lang.ref.SoftReference','java.lang.ref.PhantomReference','java.lang.ref.FinalizerReference'].includes(name))referenceKind=name.split('.').at(-1);
         for(const field of def.fields){const label=strings.get(field.name)||field.name;if(field.type===2)fields.push({offset,label,referent:name==='java.lang.ref.Reference'&&label==='referent'});offset+=typeSize(field.type);}
         cursor=def.parent;
       }
@@ -357,8 +407,8 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('分页参数无效');
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
     objectDetail(target);const graph=buildReverseGraph(),refs=graph.edges.get(target)||[];let total=0;const items=[];
-    for(let i=0;i<refs.length;i+=3){const flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;if(total>=offset&&items.length<limit){const id=refs[i],item=index.get(id);items.push({id,kind:item.kind,className:item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类'),label:edgeLabel(refs[i+1],flags),referenceKind});}total++;}
-    return {target,offset,total,items,excludeNonStrong,rootTags:rootIds.get(target)||[],edgeCount:graph.edgeCount,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,missingTargets:graph.missingTargets,edgeLimitReached:graph.limited};
+    for(let i=0;i<refs.length;i+=3){const flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&isNonStrongReference(referenceKind))continue;if(total>=offset&&items.length<limit){const id=refs[i],item=index.get(id);items.push({id,kind:item.kind,className:item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类'),label:edgeLabel(refs[i+1],flags),referenceKind});}total++;}
+    return {target,offset,total,items,excludeNonStrong,rootTags:rootIds.get(target)||[],rootDetails:rootInfo(target),edgeCount:graph.edgeCount,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,missingTargets:graph.missingTargets,edgeLimitReached:graph.limited};
   }
   function rootPath(target,{excludeNonStrong=false}={}){
     if(typeof excludeNonStrong!=='boolean')throw new Error('引用过滤参数无效');
@@ -366,13 +416,13 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     const graph=buildReverseGraph(), queue=[target], visited=new Set(queue), towardTarget=new Map();let root=null;
     for(let n=0;n<queue.length&&n<50000;n++){
       const node=queue[n];if(rootIds.has(node)){root=node;break;}
-      const refs=graph.edges.get(node)||[];for(let i=0;i<refs.length;i+=3){const id=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;if(!visited.has(id)){visited.add(id);towardTarget.set(id,{id:node,label:edgeLabel(refs[i+1],flags),referenceKind});queue.push(id);}}
+      const refs=graph.edges.get(node)||[];for(let i=0;i<refs.length;i+=3){const id=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&isNonStrongReference(referenceKind))continue;if(!visited.has(id)){visited.add(id);towardTarget.set(id,{id:node,label:edgeLabel(refs[i+1],flags),referenceKind});queue.push(id);}}
     }
     const path=[];
     if(root){let node=root;while(node){const item=index.get(node);const next=towardTarget.get(node);path.push({id:node,className:item?.kind==='class'?(strings.get(classNames.get(node))||names.get(node)||node).replaceAll('/','.'):(names.get(item?.cls)||item?.cls||'未知类'),via:next?.label||null,referenceKind:next?.referenceKind||null});node=next?.id;}}
-    return {found:!!root,path,excludeNonStrong,rootTags:root?rootIds.get(root):[],visited:visited.size,edgeCount:graph.edgeCount,
+    return {found:!!root,path,excludeNonStrong,rootTags:root?rootIds.get(root):[],rootDetails:root?rootInfo(root):[],visited:visited.size,edgeCount:graph.edgeCount,
       incomplete:true,searchLimitReached:!root&&queue.length>50000,indexOrGraphIncomplete:graph.incomplete,skipped:graph.skipped,edgeLimitReached:graph.limited,
-      note:excludeNonStrong?'已排除可识别的 WeakReference、SoftReference 和 PhantomReference 的 referent 字段；其他引用语义和运行时关系可能未覆盖，结果不能证明对象存活原因或内存泄漏。':'候选路径涵盖已索引对象的实例字段、对象数组、类对象和静态字段；不区分强、弱引用进行搜索，已识别的弱、软、虚引用会标注；可能缺少运行时关系，不能证明对象存活原因或内存泄漏。'};
+      note:excludeNonStrong?'已排除可识别的 WeakReference、SoftReference 和 PhantomReference 的 referent 字段；FinalizerReference 会标注但保留在路径中，因为运行时可能暂存待 finalize 对象。其他引用语义和运行时关系可能未覆盖，结果不能证明对象存活原因或内存泄漏。':'候选路径涵盖已索引对象的实例字段、对象数组、类对象和静态字段；不区分强、弱引用进行搜索，已识别的弱、软、虚引用会标注；FinalizerReference 会单独标注；可能缺少运行时关系，不能证明对象存活原因或内存泄漏。'};
   }
   function rootPaths(targets,{excludeNonStrong=false}={}){
     if(!Array.isArray(targets)||targets.length>500||targets.some(id=>typeof id!=='string'||!new RegExp(`^[a-f0-9]{${idSize*2}}$`).test(id)))throw new Error('对象路径列表无效');
@@ -380,18 +430,18 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     if(!targets.length)return {items:[],reachable:0,indexed:index.size,edgeCount:0,excludeNonStrong,incomplete:false,missingTargets:0,skipped:0,edgeLimitReached:false,searchLimitReached:false};
     for(const target of targets)objectDetail(target);
     const graph=buildReverseGraph(),outgoing=new Map();
-    for(const [target,refs] of graph.edges)for(let i=0;i<refs.length;i+=3){const source=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&referenceKind)continue;let list=outgoing.get(source);if(!list){list=[];outgoing.set(source,list);}list.push(target,refs[i+1],flags);}
+    for(const [target,refs] of graph.edges)for(let i=0;i<refs.length;i+=3){const source=refs[i],flags=refs[i+2],referenceKind=edgeReferenceKind(flags);if(excludeNonStrong&&isNonStrongReference(referenceKind))continue;let list=outgoing.get(source);if(!list){list=[];outgoing.set(source,list);}list.push(target,refs[i+1],flags);}
     const parents=new Map(),queue=[];for(const id of rootIds.keys())if(index.has(id)&&!parents.has(id)){parents.set(id,null);queue.push(id);}
     for(let cursor=0;cursor<queue.length&&cursor<50000;cursor++){
       const parent=queue[cursor],edges=outgoing.get(parent)||[];for(let i=0;i<edges.length;i+=3){const id=edges[i],flags=edges[i+2];if(parents.has(id))continue;parents.set(id,{id:parent,label:edgeLabel(edges[i+1],flags),referenceKind:edgeReferenceKind(flags)});queue.push(id);}
     }
     const className=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||names.get(item.id)||item.id).replaceAll('/','.'):names.get(item.cls)||item.cls||'未知类';
     const results=targets.map(target=>{
-      if(!parents.has(target))return {target,found:false,path:[],rootTags:[],visited:parents.size,searchLimitReached:queue.length>50000};
+      if(!parents.has(target))return {target,found:false,path:[],rootTags:[],rootDetails:[],visited:parents.size,searchLimitReached:queue.length>50000};
       const chain=[];let node=target;
       while(node){chain.push(node);node=parents.get(node)?.id||null;}
       chain.reverse();const path=chain.map((id,i)=>{const item=index.get(id),next=i+1<chain.length?parents.get(chain[i+1]):null;return {id,className:className(item),via:next?.label||null,referenceKind:next?.referenceKind||null};});
-      return {target,found:true,path,rootTags:rootIds.get(chain[0])||[],visited:parents.size,searchLimitReached:queue.length>50000};
+      return {target,found:true,path,rootTags:rootIds.get(chain[0])||[],rootDetails:rootInfo(chain[0]),visited:parents.size,searchLimitReached:queue.length>50000};
     });
     return {items:results,reachable:parents.size,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,incomplete:graph.incomplete,missingTargets:graph.missingTargets,skipped:graph.skipped,edgeLimitReached:graph.limited,searchLimitReached:queue.length>50000};
   }
@@ -411,7 +461,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     }
     const paths=watchers.length?rootPaths(watchers.slice(0,500).map(item=>item.targetId),{excludeNonStrong:true}):{items:[],reachable:0,indexed:index.size,edgeCount:0,excludeNonStrong:true,incomplete:false,missingTargets:0,skipped:0,edgeLimitReached:false,searchLimitReached:false},pathByTarget=new Map(paths.items.map(item=>[item.target,item]));
     const items=watchers.slice(0,500).map(watcher=>({...watcher,path:pathByTarget.get(watcher.targetId)||null}));
-    return {...paths,graphAnalyzed:watchers.length>0,items,markerClasses:markerClasses.map(c=>c.name),scanned,liveReferences:watchers.length,cleared,unavailable,scanLimitReached,truncated:scanLimitReached||watchers.length>500||indexTruncated,indexTruncated,note:'LeakCanary KeyedWeakReference 只标识 heap dump 中仍可读取的 watched object。路径仅排除可识别的 WeakReference、SoftReference 和 PhantomReference referent 字段，使用本工具已索引的对象关系，不包含 Shark 的 Android reference matchers、object inspectors、泄漏指纹或 retained size；找到强路径不是泄漏结论，未找到强路径也可能由数据不完整造成。'};
+    return {...paths,graphAnalyzed:watchers.length>0,items,markerClasses:markerClasses.map(c=>c.name),scanned,liveReferences:watchers.length,cleared,unavailable,scanLimitReached,truncated:scanLimitReached||watchers.length>500||indexTruncated,indexTruncated,note:'LeakCanary KeyedWeakReference 只标识 heap dump 中仍可读取的 watched object。路径仅排除可识别的 WeakReference、SoftReference 和 PhantomReference referent 字段；FinalizerReference 会标注但保留，因为运行时可能暂存待 finalize 对象。分析使用本工具已索引的对象关系，不包含 Shark 的 Android reference matchers、object inspectors、泄漏指纹或 retained size；找到强路径不是泄漏结论，未找到强路径也可能由数据不完整造成。'};
   }
   let dominatorCache=null;
   function dominatorTree({parentId=null,offset=0,limit=100,excludeNonStrong=false}={}){
@@ -426,12 +476,12 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
       for(const rootId of rootIds.keys()){const root=index.get(rootId)?.dominatorIndex;if(root)degree[0]++;else missingRoots++;}
       if(!degree[0])throw new Error('快照没有可索引的 GC 根，无法计算支配关系');
       let excludedEdges=0,edgeCount=degree[0];
-      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&edgeReferenceKind(refs[j+2])){excludedEdges++;continue;}const from=index.get(refs[j])?.dominatorIndex;if(from){degree[from]++;edgeCount++;}}}
+      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&isNonStrongReference(edgeReferenceKind(refs[j+2]))){excludedEdges++;continue;}const from=index.get(refs[j])?.dominatorIndex;if(from){degree[from]++;edgeCount++;}}}
       if(edgeCount>0x7fffffff)throw new Error('支配图边数超过计算上限');
       const offsets=new Int32Array(items.length+1);for(let i=0;i<degree.length;i++)offsets[i+1]=offsets[i]+degree[i];
       const edges=new Int32Array(edgeCount),cursor=offsets.slice(0,degree.length);
       for(const rootId of rootIds.keys()){const root=index.get(rootId)?.dominatorIndex;if(root)edges[cursor[0]++]=root;}
-      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&edgeReferenceKind(refs[j+2]))continue;const from=index.get(refs[j])?.dominatorIndex;if(from)edges[cursor[from]++]=to;}}
+      for(const [target,refs] of graph.edges){const to=index.get(target)?.dominatorIndex;if(!to)continue;for(let j=0;j<refs.length;j+=3){if(excludeNonStrong&&isNonStrongReference(edgeReferenceKind(refs[j+2])))continue;const from=index.get(refs[j])?.dominatorIndex;if(from)edges[cursor[from]++]=to;}}
       for(let i=1;i<items.length;i++){const item=items[i];if(item.kind==='instance')weights[i]=item.length;else if(item.kind==='objectArray')weights[i]=item.length*idSize;else if(item.kind==='primitiveArray')weights[i]=item.length*typeSize(item.type);else unknownBytes[i]=1;}
       const result=dominatorsCsr(offsets,edges,weights,unknownBytes),firstChild=new Int32Array(result.count+1),nextSibling=new Int32Array(result.count+1),childCount=new Int32Array(result.count+1);
       for(let i=2;i<=result.count;i++){const p=result.idom[i];nextSibling[i]=firstChild[p];firstChild[p]=i;childCount[p]++;}
@@ -443,7 +493,7 @@ export function parseHprof(data, { indexed = false, includeExamples = true } = {
     const name=item=>item.kind==='class'?(strings.get(classNames.get(item.id))||item.id).replaceAll('/','.'):(names.get(item.cls)||item.cls||'未知类');
     return {parentId,offset,total:childCount[parent],reachable:result.count-1,indexed:index.size,edgeCount:graph.edgeCount,excludeNonStrong,excludedEdges,incomplete:graph.incomplete||missingRoots>0,missingTargets:graph.missingTargets,missingRoots,skipped:graph.skipped,edgeLimitReached:graph.limited,
       items:list.slice(offset,offset+limit).map(i=>{const item=items[result.vertex[i]];return {id:item.id,className:name(item),kind:item.kind,dominatedObjects:result.dominated[i],recordedPayloadBytes:result.payload[i],unknownPayloadObjects:result.unknown[i],children:childCount[i]};}),
-      note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，其他引用语义仍可能未识别':'未区分强弱引用'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
+      note:`基于已记录引用、对象类关系和 GC 根计算的近似支配关系；${excludeNonStrong?'已排除可识别的弱、软、虚引用 referent 字段，FinalizerReference 会标注并保留，其他引用语义仍可能未识别':'未区分强弱引用；弱、软、虚引用及 FinalizerReference 会标注'}，可能缺少运行时边。记录数据字节不含对象头、对齐或类对象大小，不是保留大小；图不完整时支配关系可能改变。`};
   }
-  return {summary,objectDetail,classInstances,bitmaps,bitmapPngs,bitmapPng,bitmapBuffer,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree};
+  return {summary,objectDetail,classInstances,bitmaps,bitmapPngs,bitmapPng,bitmapBuffer,duplicateBitmaps,duplicateStrings,searchStrings,destroyedActivities,rootPath,rootPaths,leakCanaryRetainedObjects,incomingReferences,dominatorTree,setMappingText,clearMapping};
 }

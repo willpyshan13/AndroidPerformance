@@ -11,7 +11,9 @@ test('Compose Inspector resources verify classpath jar hashes',async()=>{
  try{
   await mkdir(join(dir,'lib'));const jar=Buffer.from('test-jar'),sha256=createHash('sha256').update(jar).digest('hex');
   await writeFile(join(dir,'lib','fake.jar'),jar);await writeFile(join(dir,'classpath.json'),JSON.stringify([{file:'lib/fake.jar',size:jar.length,sha256}]));
-  assert.equal((await resolveComposeInspectorResources({inspectorDir:dir,javaPath:'/java'})).available,true);
+  assert.equal((await resolveComposeInspectorResources({inspectorDir:dir,javaPath:process.execPath})).available,true);
+  const missingJava=await resolveComposeInspectorResources({inspectorDir:dir,javaPath:join(dir,'missing-java')});
+  assert.equal(missingJava.available,false);assert.match(missingJava.reason,/Java runtime 不可用/);
   await writeFile(join(dir,'lib','fake.jar'),'bad--jar');
   const result=await resolveComposeInspectorResources({inspectorDir:dir,javaPath:'/java'});
   assert.equal(result.available,false);assert.match(result.reason,/校验失败/);

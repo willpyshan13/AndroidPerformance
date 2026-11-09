@@ -5,6 +5,7 @@ import {delimiter,join,resolve,dirname,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {validateTarget} from './adb.js';
+import {constants} from 'node:fs';
 
 const exec=promisify(execFile),root=dirname(dirname(fileURLToPath(import.meta.url)));
 const MAX_DUMP_BYTES=32*1024*1024,MAX_TOKEN_LENGTH=8192,TIMEOUT=180000;
@@ -21,6 +22,7 @@ export async function resolveComposeInspectorResources({inspectorDir=join(root,'
     jars.push(file);
   }
   const java=javaPath||process.env.JAVA_HOME&&join(process.env.JAVA_HOME,'bin',process.platform==='win32'?'java.exe':'java')||'java';
+  if(isAbsolute(java))try{await access(java,process.platform==='win32'?constants.F_OK:constants.X_OK);}catch{return {available:false,reason:`Compose Inspector Java runtime 不可用：${java}`,inspectorDir};}
   return {available:true,inspectorDir,classpath:jars.join(delimiter),javaPath:java,version:'Android Studio UI Inspector · AOSP'};
 }
 

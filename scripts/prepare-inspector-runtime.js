@@ -15,7 +15,9 @@ const artifacts={
  }
 };
 const artifact=artifacts[target];
-if(!artifact)throw new Error(`Android Studio UI Inspector Java 25 运行时尚无内置资源：${target}`);
+if(!artifact&&target==='win32/x64')await import('./prepare-inspector-runtime-windows.js');
+else if(!artifact)throw new Error(`Android Studio UI Inspector Java 25 运行时尚无内置资源：${target}`);
+if(artifact){
 const root=dirname(dirname(fileURLToPath(import.meta.url))),tools=join(root,'tools');
 const temp=await mkdtemp(join(tmpdir(),'apw-inspector-runtime-'));
 const archive=join(temp,artifact.archive),unpacked=join(temp,'unpacked'),stage=join(tools,`.java25-runtime-${process.pid}`),dest=join(tools,'java25-runtime');
@@ -55,4 +57,5 @@ try{
 }finally{
  await rm(temp,{recursive:true,force:true});
  await rm(stage,{recursive:true,force:true});
+}
 }

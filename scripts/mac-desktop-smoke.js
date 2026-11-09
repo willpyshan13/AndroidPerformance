@@ -52,7 +52,7 @@ try {
   await stat(join(resources, 'trace-processor', 'trace_processor_shell'));
   const nativeSymbolizer=join(resources,'native-symbolizer','llvm-symbolizer'),nativeSymbolizerVersion=spawnSync(nativeSymbolizer,['--version'],{encoding:'utf8',timeout:15_000});
   if(nativeSymbolizerVersion.error||nativeSymbolizerVersion.status!==0||!`${nativeSymbolizerVersion.stdout}\n${nativeSymbolizerVersion.stderr}`.includes('LLVM'))throw new Error(`Bundled LLVM DWARF symbolizer failed to start: ${nativeSymbolizerVersion.stderr||nativeSymbolizerVersion.error?.message||`exit code ${nativeSymbolizerVersion.status}`}`);
-  const nativeDemangler=join(resources,'native-symbolizer','llvm-cxxfilt'),nativeDemangleSmoke=spawnSync(nativeDemangler,['_ZN3apw11SmokeWorker3runEv'],{encoding:'utf8',timeout:15_000});
+  const nativeDemangler=join(resources,'native-symbolizer','llvm-cxxfilt'),nativeDemangleSmoke=spawnSync(nativeDemangler,['--no-strip-underscore','_ZN3apw11SmokeWorker3runEv'],{encoding:'utf8',timeout:15_000});
   if(nativeDemangleSmoke.error||nativeDemangleSmoke.status!==0||nativeDemangleSmoke.stdout.trim()!=='apw::SmokeWorker::run()')throw new Error(`Bundled LLVM C++ demangler failed: ${nativeDemangleSmoke.stderr||nativeDemangleSmoke.error?.message||nativeDemangleSmoke.stdout||`exit code ${nativeDemangleSmoke.status}`}`);
   await stat(join(resources, 'perfetto-ui', 'index.html'));
   const simpleperfDir=join(resources,'simpleperf'),pythonPath=join(simpleperfDir,'python','bin','python3.11');

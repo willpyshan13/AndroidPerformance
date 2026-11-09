@@ -163,3 +163,30 @@ export function deobfuscateJavaMethod(mappingText,symbol){
  }
  return results;
 }
+
+export function indexJavaMapping(mappingText){
+ const classes=new Map();let current=null;
+ for(const raw of String(mappingText).split(/\r?\n/)){
+  const classMatch=raw.match(/^\s*([^\s]+)\s+->\s+([^\s:]+):\s*$/);
+  if(classMatch){current={originalClass:classMatch[1],obfuscatedClass:classMatch[2],methods:new Map()};classes.set(current.obfuscatedClass.replaceAll('$','.'),current);continue;}
+  if(!current)continue;
+  const arrow=raw.lastIndexOf(' -> ');if(arrow<0)continue;
+  const left=raw.slice(0,arrow).trim(),obfuscatedMethod=raw.slice(arrow+4).trim();if(!/^[A-Za-z_$][\w$]*$/.test(obfuscatedMethod))continue;
+  const signature=left.replace(/^\d+:\d+:/,'');const open=signature.indexOf('('),close=signature.indexOf(')',open+1);if(open<0||close<open)continue;
+  const originalMethod=signature.slice(0,open).trim().split(/\s+/).at(-1)?.split('.').at(-1);if(!originalMethod)continue;
+  const obfuscatedRange=left.match(/^(\d+):(\d+):/),originalRange=left.match(/\)(?::(\d+):(\d+))?\s*$/);
+  const value={originalClass:current.originalClass,originalMethod,obfuscatedClass:current.obfuscatedClass,obfuscatedMethod,
+   obfuscatedStart:obfuscatedRange?Number(obfuscatedRange[1]):null,obfuscatedEnd:obfuscatedRange?Number(obfuscatedRange[2]):null,
+   originalStart:originalRange?.[1]?Number(originalRange[1]):null,originalEnd:originalRange?.[2]?Number(originalRange[2]):null};
+  let entries=current.methods.get(obfuscatedMethod);if(!entries){entries=[];current.methods.set(obfuscatedMethod,entries);}entries.push(value);
+ }
+ return {classes,methodCount:[...classes.values()].reduce((total,item)=>total+[...item.methods.values()].reduce((n,entries)=>n+entries.length,0),0)};
+}
+
+export function resolveJavaMappingFrame(index,frame){
+ if(!index?.classes||typeof frame?.className!=='string'||typeof frame.methodName!=='string')return [];
+ const cls=index.classes.get(frame.className.replaceAll('$','.'));if(!cls)return [];
+ const entries=cls.methods.get(frame.methodName)||[];
+ const hasLine=Number.isInteger(frame.lineNumber)&&frame.lineNumber>0;
+ return entries.filter(entry=>!hasLine||entry.obfuscatedStart===null||frame.lineNumber>=entry.obfuscatedStart&&frame.lineNumber<=entry.obfuscatedEnd).map(entry=>({...entry,obfuscatedLine:hasLine?frame.lineNumber:null}));
+}

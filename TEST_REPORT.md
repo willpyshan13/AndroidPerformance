@@ -1,3 +1,9 @@
+## CI 首轮验收修复（2026-11-09）
+
+- 提交 `dc86bed` 的 Windows job 在 Python runtime 解压时失败：Git Bash 的 GNU tar 将 Windows 盘符当作远程主机。统一使用系统 `System32/tar.exe`，同时覆盖 Python、Shark 归档和安装后 Java 解压路径。
+- 同一提交的 macOS job 自动测试与语法检查已通过，打包因固定指定的 `node_modules/electron/dist` 不存在而失败。打包前显式运行 Electron 官方安装脚本，复用已安装运行时或下载校验锁定版本，再提供给 electron-builder。
+- 本机相关回归 9 项通过，语法与 diff 检查通过；远程修复验收继续进行。
+
 # 最新真机验证（2026-11-09）
 
 本轮使用用户 Android 7.1.2 设备完成真实采集；CPU 活动采样、HPROF/Shark、帧、布局、电池与启动链路通过。ART 标准头兼容已修复，日历应用采集成功，目标 debug 应用空文件仍未通过。详见 [本轮真机报告](docs/DEVICE_TEST_20261109.md)。

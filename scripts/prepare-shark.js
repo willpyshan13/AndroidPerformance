@@ -8,6 +8,7 @@ import {promisify} from 'node:util';
 import {pipeline} from 'node:stream/promises';
 import {execFile} from 'node:child_process';
 import yauzl from 'yauzl';
+import {tarExecutable} from '../src/host-tools.js';
 
 const version='2.14';
 const javaVersion='17.0.21+9';
@@ -72,7 +73,7 @@ async function prepareRuntime(){
   const actual=createHash('sha256').update(await readFile(runtimeArchive)).digest('hex');
   if(actual!==checksums[target])throw new Error(`Temurin JRE SHA-256 不匹配：${actual}`);
   await mkdir(runtimeStage,{recursive:true});
-  await run('tar',['-xzf',runtimeArchive,'-C',runtimeStage],{timeout:120000,maxBuffer:2*1024*1024});
+  await run(tarExecutable(),['-xzf',runtimeArchive,'-C',runtimeStage],{timeout:120000,maxBuffer:2*1024*1024});
   const javaHome=await findJavaHome(runtimeStage);if(!javaHome)throw new Error('Temurin JRE 压缩包中找不到 Java runtime');
   const packed=join(runtimeStage,'packed');await rename(javaHome,packed);
   for(const entry of await readdir(runtimeStage))if(entry!=='packed')await rm(join(runtimeStage,entry),{recursive:true,force:true});
@@ -107,6 +108,6 @@ try{
  const dest=join(tools,'shark-cli'),runtimeDest=join(tools,'java-runtime');await rm(dest,{recursive:true,force:true});await rm(runtimeDest,{recursive:true,force:true});
  await rename(stage,dest);await rename(runtimeStage,runtimeDest);
  const java=join(runtimeDest,'bin',process.platform==='win32'?'java.exe':'java');await chmod(java,0o755).catch(()=>{});
- await run(process.platform==='win32'?'tar.exe':'tar',['-czf',join(tools,'java-runtime.tar.gz'),'-C',runtimeDest,'.'],{timeout:300000,maxBuffer:2*1024*1024});
+ await run(tarExecutable(),['-czf',join(tools,'java-runtime.tar.gz'),'-C',runtimeDest,'.'],{timeout:300000,maxBuffer:2*1024*1024});
  console.log(`Shark CLI ${version} 与 ${runtimeDescription} 已准备；核心 JAR ${includedJars.length} 个，归档 SHA-256 ${expected}`);
 }finally{await rm(tmp,{recursive:true,force:true});await rm(stage,{recursive:true,force:true});await rm(runtimeStage,{recursive:true,force:true});}

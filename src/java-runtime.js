@@ -3,6 +3,7 @@ import {dirname,join,isAbsolute} from 'node:path';
 import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {tarExecutable} from './host-tools.js';
 
 const run=promisify(execFile);
 
@@ -25,7 +26,7 @@ export async function resolveGradleJavaPath({fallbackJavaPath,env=process.env,pl
  return fallbackJavaPath;
 }
 
-export async function ensureWindowsJavaRuntime(archive,destination,{runner=run,tar=process.platform==='win32'?'tar.exe':'tar'}={}){
+export async function ensureWindowsJavaRuntime(archive,destination,{runner=run,tar=tarExecutable()}={}){
  const executable=join(destination,'bin','java.exe');
  try{if((await stat(executable)).isFile())return destination;}catch{}
  const archivePath=await realpath(archive);

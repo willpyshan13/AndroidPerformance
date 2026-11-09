@@ -5,6 +5,7 @@ import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {tarExecutable} from '../src/host-tools.js';
 
 const version='3.11.18',release='20261026';
 const artifacts={
@@ -38,7 +39,7 @@ try{
  const actual=createHash('sha256').update(await readFile(archive)).digest('hex');
  if(actual!==artifact.sha256)throw new Error(`Python runtime SHA-256 不匹配：${actual}`);
  await mkdir(stage,{recursive:true});
- await run(process.platform==='win32'?'tar.exe':'tar',['-xzf',archive,'-C',stage,'--strip-components=1'],{timeout:180000,maxBuffer:2*1024*1024});
+ await run(tarExecutable(),['-xzf',archive,'-C',stage,'--strip-components=1'],{timeout:180000,maxBuffer:2*1024*1024});
  const executable=join(stage,process.platform==='win32'?'python.exe':join('bin','python3.11'));
  await access(executable);
  if(process.platform!=='win32')await chmod(executable,0o755);

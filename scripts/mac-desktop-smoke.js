@@ -1,3 +1,4 @@
+import {actionableRendererErrors} from './desktop-smoke-errors.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -123,9 +124,8 @@ try {
   if(process.env.APW_SMOKE_NETWORK_SERIAL&&(!ready.rendererState.networkAgentDeviceSmoke?.ok||!ready.rendererState.networkAgentDeviceSmoke?.emptyAgentState))throw new Error(`Packaged macOS live Network Agent UI smoke failed: ${JSON.stringify(ready.rendererState.networkAgentDeviceSmoke)}`);
   if(!ready.rendererState.homeArtifactChecks?.section||!ready.rendererState.homeArtifactChecks?.emptyState)throw new Error(`Packaged macOS home artifact section/empty state failed: ${JSON.stringify(ready.rendererState.homeArtifactChecks)}`);
   if(process.env.APW_SMOKE_APK_PATH&&!ready.rendererState.apkAnalysisSmoke?.ok)throw new Error(`Packaged macOS APK analysis UI smoke failed: ${JSON.stringify(ready.rendererState.apkAnalysisSmoke)}`);
-  const rendererErrors=childOutput.split(/\r?\n/).filter(line=>line.includes('Renderer console error:'));
-  const actionableRendererErrors=rendererErrors.filter(line=>!/(?:127\.0\.0\.1:9001|storage\.cloud\.google\.com\/perfetto-ui-internal|perfetto-gae-internal\.googleplex\.com|Ignoring message - document not ready yet\.)/.test(line));
-  if(actionableRendererErrors.length)throw new Error(`Packaged macOS renderer logged an error:\n${actionableRendererErrors.join('\n')}`);
+  const rendererErrors=actionableRendererErrors(childOutput);
+  if(rendererErrors.length)throw new Error(`Packaged macOS renderer logged an error:\n${rendererErrors.join('\n')}`);
   if (!ready.menuLabels?.includes('File') || !ready.menuLabels.includes('Analyze') || ready.menuLabels.some(label => /[\u3400-\u9fff]/.test(label))) throw new Error(`Packaged macOS menu did not restore English labels: ${JSON.stringify(ready.menuLabels)}`);
   const page = await fetch(ready.origin, { signal: AbortSignal.timeout(10_000) });
   if (!page.ok) throw new Error(`Packaged macOS main page returned HTTP ${page.status}`);

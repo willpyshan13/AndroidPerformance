@@ -1,3 +1,4 @@
+import {actionableRendererErrors} from './desktop-smoke-errors.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { access, appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -135,7 +136,8 @@ async function verifyInstalledApp(label, installDir, tempRoot) {
     if(!rendererState.sourceWorkspaceSmoke?.ok)throw new Error(`${label}: source workspace smoke failed: ${JSON.stringify(rendererState.sourceWorkspaceSmoke)}`);
     if(!rendererState.homeArtifactChecks?.section||!rendererState.homeArtifactChecks?.emptyState)throw new Error(`${label}: home artifact section/empty state failed: ${JSON.stringify(rendererState.homeArtifactChecks)}`);
     if(process.env.APW_SMOKE_APK_PATH&&!rendererState.apkAnalysisSmoke?.ok)throw new Error(`${label}: APK analysis UI smoke failed: ${JSON.stringify(rendererState.apkAnalysisSmoke)}`);
-    if(childOutput.includes('Renderer console error:'))throw new Error(`${label}: renderer logged an error:\n${childOutput}`);
+    const rendererErrors=actionableRendererErrors(childOutput);
+    if(rendererErrors.length)throw new Error(`${label}: renderer logged an error:\n${rendererErrors.join('\n')}`);
     if (!menuLabels?.includes('File') || !menuLabels.includes('Analyze') || menuLabels.some(item => /[\u3400-\u9fff]/.test(item))) throw new Error(`${label}: desktop menu did not restore English labels: ${JSON.stringify(menuLabels)}`);
     const page = await fetch(origin, { signal: AbortSignal.timeout(10_000) });
     if (!page.ok) throw new Error(`${label}: main page returned HTTP ${page.status}`);

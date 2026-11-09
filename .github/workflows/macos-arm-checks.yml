@@ -47,11 +47,14 @@ jobs:
       - name: Prepare Trace Processor
         if: steps.prepared-tools.outputs.cache-hit != 'true'
         run: node scripts/run-npm-task.js prepare:trace-processor
-      - uses: actions/setup-java@v6
+      - name: Use preinstalled Java 17
         if: steps.prepared-tools.outputs.cache-hit != 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
+        shell: bash
+        run: |
+          jdk_home="$(/usr/libexec/java_home -v 17)"
+          "$jdk_home/bin/java" -version
+          echo "JAVA_HOME=$jdk_home" >> "$GITHUB_ENV"
+          echo "$jdk_home/bin" >> "$GITHUB_PATH"
       - uses: android-actions/setup-android@v4
         if: steps.prepared-tools.outputs.cache-hit != 'true'
         with:

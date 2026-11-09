@@ -501,7 +501,7 @@ CSV、Markdown 和分析 JSON 是结果快照，不能普遍替代原始二进�
 | APK 的 Manifest 解析失败 | 检查 AAPT2 是否准备；保留报错与 APK 变体信息，不能用空结果当作成功 |
 | 某个按钮禁用或提示任务忙 | 检查运行任务、演示模式、设备/应用选择、系统版本和工具可用性；等待停止/取消清理结束 |
 | 本机服务端口占用 | 浏览器开发模式指定其他 `PORT`；桌面模式自动选择本机端口 |
-| Windows 构建完成但不能运行 | Windows 原生验收仍待执行；保留安装/启动报错，不以 macOS 测试替代 Windows 结果 |
+| Windows 构建完成但不能运行 | Windows 原生安装及启动检查已通过；卸载流程仍待确认。保留具体安装或启动报错，并检查设备驱动 |
 
 源码浏览器模式指定端口/ADB 的示例：
 
@@ -548,7 +548,7 @@ npm start
 - [Android 7.1.2 真机采集报告](docs/DEVICE_TEST_20261109.md)：真实 CPU、HPROF、帧、布局、启动和 ART 交叉验证；包含目标 ART 空文件问题。
 - [历史测试记录](TEST_REPORT.md)与 [APK 测试记录](APK_TEST_REPORT.md)。
 
-最近完整自动回归：**477 项，460 通过、17 个可选外部样本跳过、0 失败**。macOS ARM64 桌面包已验证 16 页及主要导入、导出和回放流程。Windows 原生安装、新系统 FrameTimeline/完整 Inspector/heapprofd 等仍有待验收项。
+最近完整自动回归：**483 项，466 通过、17 个可选外部样本跳过、0 失败**。macOS ARM64 桌面包已验证 16 页及主要导入、导出和回放流程。Windows MSI 和 NSIS 已在原生 runner 安装并通过桌面启动检查；卸载流程仍待确认。新系统 FrameTimeline/完整 Inspector/heapprofd 等仍有待验收项。
 
 ```sh
 npm run check  # JavaScript 语法检查

@@ -1,3 +1,13 @@
+## 提交后两平台回归（2026-11-09）
+
+- macOS ARM64 最新代码的完整 CI [42586000421](https://github.com/willpyshan13/AndroidPerformance/actions/runs/42586000421) 通过：真实 AAPT2 APK 分析、完整自动测试、语法检查、桌面打包与安装目录启动检查。此前从空缓存准备全部工具的 [42583712912](https://github.com/willpyshan13/AndroidPerformance/actions/runs/42583712912) 也通过。
+- 本机完整自动回归为 483 项：466 通过、17 个可选外部样本跳过、0 失败；语法检查通过。
+- Windows 原生回归暴露 13 项测试平台假设，已修正路径分隔符、`java.exe`、系统临时目录、CRLF 和 POSIX mode 断言；Macrobenchmark 的 shell 测试替换为跨平台 Node 子进程，仍验证参数数组、环境变量、新产物导入和禁用 shell。相关定向回归 90 项中 82 通过、8 个可选样本跳过、0 失败。
+- GitHub 官方资产 API 在 CI 使用 Actions 自带的只读令牌，令牌不进入子进程命令行或错误输出。Electron 备用下载继续使用其 npm 包内的固定校验值，由官方 `@electron/get` 验证，不关闭校验。
+- Windows MSI 已实际安装并完成桌面 readiness 检查，但早期 smoke 将嵌入 Perfetto UI 的可选外部探测遭 CSP 拦截当成产品错误。两平台共用精确分类规则：只允许已知 viewer 来源、已知探测 URL 和 CSP 拦截文案，其他异常保留失败；本机打包桌面 smoke 与对应回归已通过，安全策略不变。
+- Windows 原生 CI [42586000538](https://github.com/willpyshan13/AndroidPerformance/actions/runs/42586000538) 已通过完整测试、MSI/NSIS 构建与各自安装启动检查；之后卸载/清理步骤长时间未结束，整条 CI 尚未成功。已避免 NSIS 卸载子进程继承输出管道并设置 20 分钟步骤上限，修复后的原生卸载结果待验证。
+- macOS Java 17 使用 runner 预装 JDK，减少重复下载。整个流程不创建 Release、不上传构建产物。
+
 ## 官方下载备用通道验证（2026-11-09）
 
 - 发布页直链持续 HTTP 504 时，先从同一官方仓库/版本查询精确资源，再以 `Accept: application/octet-stream` 从 GitHub 资产 API 下载；不使用第三方镜像，原 SHA-256 校验保留。

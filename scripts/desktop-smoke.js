@@ -196,7 +196,9 @@ async function smokeNsis(tempRoot) {
       const uninstallerName = (await readdir(installDir)).find(name => /^uninstall .*\.exe$/i.test(name));
       if (!uninstallerName) uninstallFailure = new Error('NSIS uninstaller was not found in the installation directory');
       else {
-        const uninstall = spawnSync(join(installDir, uninstallerName), ['/S'], { encoding: 'utf8', timeout: 180_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+        // NSIS may launch a detached copy; inherited output pipes can keep
+        // spawnSync waiting after the original uninstaller exits on Windows.
+        const uninstall = spawnSync(join(installDir, uninstallerName), ['/S'], { stdio: 'ignore', timeout: 180_000, windowsHide: true });
         if (uninstall.error || uninstall.status !== 0) uninstallFailure = await commandFailure('NSIS uninstallation', uninstall);
       }
     }

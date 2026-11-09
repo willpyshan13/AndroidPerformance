@@ -71,4 +71,5 @@ jobs:
       - run: npm run check
       - run: npm run package:win
       - name: Install both Windows packages and verify desktop startup
+        timeout-minutes: 20
         run: node scripts/desktop-smoke.js

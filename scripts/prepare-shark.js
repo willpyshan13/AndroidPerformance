@@ -69,7 +69,7 @@ async function prepareRuntime(){
  const target=osMap[process.platform]&&archMap[process.arch]?`${osMap[process.platform]}/${archMap[process.arch]}`:null;
  if(target&&checksums[target]){
   const url=`https://api.adoptium.net/v3/binary/version/jdk-${javaVersion.replace('+','%2B')}/${target}/jre/hotspot/normal/eclipse`;
-  await run('curl',['-fsSL','--retry','2','--connect-timeout','10','--max-time','240',url,'-o',runtimeArchive],{timeout:250000});
+  await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','240',url,'-o',runtimeArchive],{timeout:250000});
   const actual=createHash('sha256').update(await readFile(runtimeArchive)).digest('hex');
   if(actual!==checksums[target])throw new Error(`Temurin JRE SHA-256 不匹配：${actual}`);
   await mkdir(runtimeStage,{recursive:true});
@@ -92,12 +92,12 @@ async function prepareRuntime(){
 }
 try{
  await mkdir(tools,{recursive:true});
- await run('curl',['-fsSL','--retry','2','--connect-timeout','10','--max-time','180',asset,'-o',archive],{timeout:190000});
+ await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','180',asset,'-o',archive],{timeout:190000});
  const actual=createHash('sha256').update(await readFile(archive)).digest('hex');if(actual!==expected)throw new Error(`Shark CLI ZIP SHA-256 不匹配：${actual}`);
  await mkdir(stage,{recursive:true});await extractCoreJars();
  await mkdir(join(stage,'licenses'),{recursive:true});
- await run('curl',['-fsSL','--max-time','30',apacheLicenseUrl,'-o',join(stage,'licenses','Apache-2.0.txt')],{timeout:40000});
- await run('curl',['-fsSL','--max-time','30',jlineLicenseUrl,'-o',join(stage,'licenses','BSD-2-Clause-JLine.txt')],{timeout:40000});
+ await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','30',apacheLicenseUrl,'-o',join(stage,'licenses','Apache-2.0.txt')],{timeout:40000});
+ await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','30',jlineLicenseUrl,'-o',join(stage,'licenses','BSD-2-Clause-JLine.txt')],{timeout:40000});
  const apache=await readFile(join(stage,'licenses','Apache-2.0.txt'),'utf8'),bsd=await readFile(join(stage,'licenses','BSD-2-Clause-JLine.txt'),'utf8');
  if(!apache.includes('Apache License')||!apache.includes('Version 2.0')||!bsd.includes('Redistribution and use in source and binary forms'))throw new Error('Shark CLI 许可证校验失败');
  await writeFile(join(stage,'NOTICE.txt'),'Shark CLI and Shark Android libraries are Copyright 2015 Square, Inc. and licensed under Apache-2.0.\nIncluded Kotlin standard library, Okio, and Clikt use Apache-2.0. JLine 2.14.6 is distributed under BSD-2-Clause. Full license texts are in licenses/.\n');

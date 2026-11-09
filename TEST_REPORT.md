@@ -1,3 +1,8 @@
+## CI 下载稳定性（2026-11-09）
+
+- 第二轮 Windows Python 包及 macOS Shark 包下载返回 HTTP 504；增强工具下载的 curl 全错误重试并保留 SHA-256 校验。
+- 测试诊断现在仅在测试步骤实际失败时执行，避免工具尚未准备就产生无关测试失败。
+
 ## CI 首轮验收修复（2026-11-09）
 
 - 提交 `dc86bed` 的 Windows job 在 Python runtime 解压时失败：Git Bash 的 GNU tar 将 Windows 盘符当作远程主机。统一使用系统 `System32/tar.exe`，同时覆盖 Python、Shark 归档和安装后 Java 解压路径。

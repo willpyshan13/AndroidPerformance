@@ -63,8 +63,9 @@ jobs:
       - name: Analyze a generated APK with the SDK AAPT2
         run: npm run smoke:apk-tools
       - run: npm test
+        id: test-suite
       - name: Identify individual failing test files
-        if: failure()
+        if: failure() && steps.test-suite.outcome == 'failure'
         run: node scripts/diagnose-tests.js
       - run: npm run check
       - run: npm run package:win

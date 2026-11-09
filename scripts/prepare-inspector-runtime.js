@@ -34,7 +34,7 @@ async function findJavaHome(directory,depth=0){
 
 try{
  await mkdir(tools,{recursive:true});
- await run('curl',['-fsSL','--retry','2','--connect-timeout','10','--max-time','240',artifact.url,'-o',archive],{timeout:250000});
+ await run('curl',['-fsSL','--retry','5','--retry-all-errors','--retry-delay','2','--connect-timeout','10','--max-time','240',artifact.url,'-o',archive],{timeout:250000});
  const actual=createHash('sha256').update(await readFile(archive)).digest('hex');
  if(actual!==artifact.sha256)throw new Error(`Temurin JRE ${version} SHA-256 不匹配：${actual}`);
  await mkdir(unpacked,{recursive:true});

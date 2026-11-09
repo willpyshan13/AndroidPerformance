@@ -82,8 +82,9 @@ jobs:
       - run: node scripts/run-npm-task.js prepare:perfetto-ui
         if: steps.prepared-tools.outputs.cache-hit != 'true'
       - run: npm test
+        id: test-suite
       - name: Identify individual failing test files
-        if: failure()
+        if: failure() && steps.test-suite.outcome == 'failure'
         run: node scripts/diagnose-tests.js
       - run: npm run check
       - run: node scripts/run-npm-task.js package:mac
